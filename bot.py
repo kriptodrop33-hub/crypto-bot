@@ -367,18 +367,17 @@ async def set_callback(update: Update, context):
     """set_ ile başlayan callback'leri işler."""
     q = update.callback_query
 
-    # ── Admin kontrolü: DM'de serbest, grupta sadece admin ──
-    chat = q.message.chat
-    if chat.type != "private":
-        try:
-            member = await context.bot.get_chat_member(chat.id, q.from_user.id)
-            if member.status not in ("administrator", "creator"):
-                await q.answer("🚫 Bu işlem sadece grup adminlerine açıktır.", show_alert=True)
-                return
-        except Exception as e:
-            log.warning(f"set_callback admin kontrol: {e}")
-            await q.answer("Yetki kontrol edilemedi.", show_alert=True)
+    # ── Admin kontrolü: her zaman GROUP_CHAT_ID üzerinden kontrol ──
+    # DM'de de, grupta da — GROUP_CHAT_ID'nin admini olup olmadığına bak
+    try:
+        member = await context.bot.get_chat_member(GROUP_CHAT_ID, q.from_user.id)
+        if member.status not in ("administrator", "creator"):
+            await q.answer("🚫 Bu işlem sadece grup adminlerine açıktır.", show_alert=True)
             return
+    except Exception as e:
+        log.warning(f"set_callback admin kontrol: {e}")
+        await q.answer("🚫 Yetki kontrol edilemedi.", show_alert=True)
+        return
 
     await q.answer()
 
