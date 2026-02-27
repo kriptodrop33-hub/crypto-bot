@@ -988,10 +988,13 @@ async def favori_command(update: Update, context):
         "Kullanim:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n`/favori liste`\n`/favori analiz`",
         parse_mode="Markdown"
     )
+
+
+async def alarm_duraklat(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
     if len(args) < 2:
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "Kullanim: `/alarm_duraklat BTCUSDT 2` (saat)", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
@@ -1005,11 +1008,12 @@ async def favori_command(update: Update, context):
             until, user_id, symbol
         )
     if r == "UPDATE 0":
-        await send_temp(context.bot, update.effective_chat.id, "`" + symbol + "` icin alarm bulunamadi.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id,
+            f"`{symbol}` icin alarm bulunamadi.", parse_mode="Markdown")
     else:
-        await send_temp(context.bot, update.effective_chat.id, 
-            "⏸ *" + symbol + "* alarmi `" + str(int(saat)) + " saat` duraklatildi. "
-            "Tekrar aktif: `" + until.strftime("%H:%M") + " UTC`",
+        await send_temp(context.bot, update.effective_chat.id,
+            f"⏸ *{symbol}* alarmi `{int(saat)} saat` duraklatildi. "
+            f"Tekrar aktif: `{until.strftime('%H:%M')} UTC`",
             parse_mode="Markdown"
         )
 
