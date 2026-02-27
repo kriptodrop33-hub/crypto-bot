@@ -184,8 +184,8 @@ def calc_rsi(data, period=14):
             gains.append(max(diff, 0))
             losses.append(abs(min(diff, 0)))
         if len(gains) < period:
-        return 0.0
-    avg_gain = sum(gains[-period:]) / period
+            return 0.0
+        avg_gain = sum(gains[-period:]) / period
         avg_loss = sum(losses[-period:]) / period
         if avg_loss == 0:
             return 100.0
@@ -740,33 +740,41 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             "SELECT user_id, symbol, threshold FROM user_alarms WHERE active=1"
         )
 
-    # Grup alarmlari
+    # ── Grup alarmları ──
     if group_row and group_row["alarm_active"]:
         threshold = group_row["threshold"]
+        mode      = group_row["mode"]  # both / up / down
+
         for symbol, prices in list(price_memory.items()):
             if len(prices) < 2:
                 continue
+
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
-            trigger = False
-        if mode == "both" and abs(ch5) >= threshold:
-            trigger = True
-        elif mode == "up" and ch5 >= threshold:
-            trigger = True
-        elif mode == "down" and ch5 <= -threshold:
-            trigger = True
 
-        if not trigger:
-            continue
-                key = f"group_{symbol}"
-                if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
-                    continue
-                cooldowns[key] = now
-                await send_full_analysis(
-                    context.bot, GROUP_CHAT_ID,
-                    symbol, "ANLIK SINYAL UYARISI", threshold
-                )
+            if mode == "both":
+                triggered = abs(ch5) >= threshold
+            elif mode == "up":
+                triggered = ch5 >= threshold
+            elif mode == "down":
+                triggered = ch5 <= -threshold
+            else:
+                triggered = abs(ch5) >= threshold
 
-    # Kisisel alarmlar
+            if not triggered:
+                continue
+
+            key = f"group_{symbol}"
+            if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
+                continue
+            cooldowns[key] = now
+
+            yon = "📈 5dk YUKSELIŞ UYARISI" if ch5 > 0 else "📉 5dk DÜŞÜŞ UYARISI"
+            await send_full_analysis(
+                context.bot, GROUP_CHAT_ID,
+                symbol, yon, threshold
+            )
+
+    # ── Kişisel alarmlar ──
     for row in user_rows:
         symbol    = row["symbol"]
         user_id   = row["user_id"]
@@ -777,29 +785,24 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
-        trigger = False
-        if mode == "both" and abs(ch5) >= threshold:
-            trigger = True
-        elif mode == "up" and ch5 >= threshold:
-            trigger = True
-        elif mode == "down" and ch5 <= -threshold:
-            trigger = True
-
-        if not trigger:
+        if abs(ch5) < threshold:
             continue
-            key = f"user_{user_id}_{symbol}"
-            if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
-                continue
-            cooldowns[key] = now
-            try:
-                await send_full_analysis(
-                    context.bot, user_id,
-                    symbol,
-                    f"KISISEL ALARM — {symbol}",
-                    threshold
-                )
-            except Exception as e:
-                log.warning(f"Kisisel alarm gonderilemedi (user={user_id}): {e}")
+
+        key = f"user_{user_id}_{symbol}"
+        if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
+            continue
+        cooldowns[key] = now
+
+        yon = "📈" if ch5 > 0 else "📉"
+        try:
+            await send_full_analysis(
+                context.bot, user_id,
+                symbol,
+                f"🔔 KİŞİSEL ALARM {yon} — {symbol}",
+                threshold
+            )
+        except Exception as e:
+            log.warning(f"Kisisel alarm gonderilemedi (user={user_id}): {e}")
 
 # ================= WEBSOCKET =================
 
