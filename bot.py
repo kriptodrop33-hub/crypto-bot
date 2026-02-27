@@ -227,7 +227,107 @@ async def status(update: Update, context):
         f"Eşik: %{row[1]}\n"
         f"Mod: {row[2]}"
     )
+# ================= ADMIN =================
 
+async def alarm_on(update: Update, context):
+    if update.effective_chat.id != GROUP_CHAT_ID:
+        return
+
+    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
+    conn.commit()
+    await update.effective_message.reply_text("✅ Alarm Açıldı")
+
+
+async def alarm_off(update: Update, context):
+    if update.effective_chat.id != GROUP_CHAT_ID:
+        return
+
+    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
+    conn.commit()
+    await update.effective_message.reply_text("❌ Alarm Kapandı")
+
+
+async def set_threshold(update: Update, context):
+    try:
+        value = float(context.args[0])
+        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
+        conn.commit()
+        await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
+    except:
+        await update.effective_message.reply_text("Kullanım: /set 7")
+
+
+async def set_mode(update: Update, context):
+    try:
+        mode = context.args[0].lower()
+        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
+        conn.commit()
+        await update.effective_message.reply_text(f"Mod: {mode}")
+    except:
+        await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
+
+
+# ================= USER ALARM =================
+
+async def myalarm(update: Update, context):
+    try:
+        symbol = context.args[0].upper()
+        threshold = float(context.args[1])
+
+        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)",
+                       (update.effective_user.id, symbol, threshold))
+        conn.commit()
+
+        await update.effective_message.reply_text(
+            f"🎯 {symbol} %{threshold} alarm eklendi."
+        )
+    except:
+        await update.effective_message.reply_text(
+            "Kullanım: /myalarm BTCUSDT 3"
+        )
+
+
+# ================= SYMBOL =================
+
+async def reply_symbol(update: Update, context):
+    if not update.message:
+        return
+
+    symbol = update.message.text.upper().strip()
+
+    if not symbol.endswith("USDT"):
+        return
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+                data = await resp.json()
+
+        price = float(data["lastPrice"])
+        ch24 = float(data["priceChangePercent"])
+
+        await update.message.reply_text(
+            f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
+        )
+
+    except:
+        pass
+
+
+# ================= CALLBACK =================
+
+async def button(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "top24":
+        await top24(update, context)
+    elif query.data == "top5":
+        await top5(update, context)
+    elif query.data == "market":
+        await market(update, context)
+    elif query.data == "status":
+        await status(update, context)
 # ================= ALARM JOB =================
 
 async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
