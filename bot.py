@@ -290,13 +290,13 @@ def calc_market_score(ticker, ch5m, ch1h, ch4h, ch24, rsi7, rsi14):
         bar = "🟢🟢🟢🟢🟢"
     elif score >= 60:
         label = "💪 Guçlu — Pozitif"
-        bar = "🟢🟢🟢🟡⬜"
+        bar = "🟢🟢🟢🟡➖"
     elif score >= 40:
         label = "😐 Notr — Bekle"
-        bar = "🟡🟡🟡⬜⬜"
+        bar = "🟡🟡🟡➖➖"
     elif score >= 20:
         label = "⚠️ Zayif — Dikkat"
-        bar = "🔴🔴⬜⬜⬜"
+        bar = "🔴🔴➖➖➖"
     else:
         label = "🚨 Cok Zayif — SAT sinyali"
         bar = "🔴🔴🔴🔴🔴"
@@ -1342,6 +1342,43 @@ async def button_handler(update: Update, context):
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_alarms WHERE user_id=$1", uid)
             await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
+    elif q.data == "fav_liste":
+        await favori_command(update, context)
+    elif q.data == "fav_analiz":
+        user_id = q.from_user.id
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT symbol FROM favorites WHERE user_id=$1", user_id)
+        if not rows:
+            await q.message.reply_text("⭐ Favori listeniz bos.", parse_mode="Markdown")
+        else:
+            await q.message.reply_text(f"📊 *{len(rows)} coin analiz ediliyor...*", parse_mode="Markdown")
+            for r in rows:
+                await send_full_analysis(context.bot, q.message.chat.id, r["symbol"], "⭐ FAVORİ ANALİZ")
+                await asyncio.sleep(1.5)
+    elif q.data.startswith("fav_deleteall_"):
+        uid = int(q.data.split("_")[-1])
+        if q.from_user.id == uid:
+            async with db_pool.acquire() as conn:
+                await conn.execute("DELETE FROM favorites WHERE user_id=$1", uid)
+            await q.message.reply_text("🗑 Tum favorileriniz silindi.")
+    elif q.data == "mtf_help":
+        await q.message.reply_text(
+            "📊 *Coklu Zaman Dilimi Analizi*\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanim: `/mtf BTCUSDT`\n\n"
+            "15dk · 1sa · 4sa · 1gn · 1hf\n"
+            "RSI ve trend yonunu gosterir.",
+            parse_mode="Markdown"
+        )
+    elif q.data == "zamanla_help":
+        await q.message.reply_text(
+            "⏰ *Zamanlanmis Gorevler*\n━━━━━━━━━━━━━━━━━━\n"
+            "`/zamanla analiz BTCUSDT 09:00`\n"
+            "`/zamanla rapor 08:00`\n"
+            "`/zamanla liste`\n`/zamanla sil`",
+            parse_mode="Markdown"
+        )
+    elif q.data == "alarm_history":
+        await alarm_gecmis(update, context)
     elif q.data == "set_open":
         # Grup ise admin kontrolü yap
         if q.message.chat.type != "private":
@@ -1519,7 +1556,7 @@ async def post_init(app):
 def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    app.job_queue.run_repeating(alarm_job,       interval=60,   first=30)
+    app.job_queue.run_repeating(alarm_job,       interval=10,   first=30)
     app.job_queue.run_repeating(whale_job,       interval=120,  first=60)
     app.job_queue.run_repeating(scheduled_job,   interval=60,   first=10)
 
