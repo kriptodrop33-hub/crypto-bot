@@ -58,7 +58,8 @@ async def init_db():
                 chat_id      BIGINT PRIMARY KEY,
                 alarm_active INTEGER DEFAULT 1,
                 threshold    REAL    DEFAULT 5,
-                mode         TEXT    DEFAULT 'both'
+                mode         TEXT    DEFAULT 'both',
+                delete_delay INTEGER DEFAULT 30
             )
         """)
         await conn.execute("""
@@ -114,8 +115,12 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            INSERT INTO groups (chat_id, threshold, mode)
-            VALUES ($1, $2, $3)
+            ALTER TABLE groups
+            ADD COLUMN IF NOT EXISTS delete_delay INTEGER DEFAULT 30
+        """)
+        await conn.execute("""
+            INSERT INTO groups (chat_id, threshold, mode, delete_delay)
+            VALUES ($1, $2, $3, 30)
             ON CONFLICT (chat_id) DO NOTHING
         """, GROUP_CHAT_ID, DEFAULT_THRESHOLD, DEFAULT_MODE)
 
@@ -138,6 +143,37 @@ def get_number_emoji(n):
 
 def format_price(price):
     return f"{price:,.2f}" if price >= 1 else f"{price:.8g}"
+
+async def auto_delete(bot, chat_id, message_id, delay=30):
+    """Mesajı delay saniye sonra siler. Sadece grup mesajları için kullanılır."""
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+async def get_delete_delay() -> int:
+    """DB'den grup silme gecikmesini okur."""
+    try:
+        async with db_pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT delete_delay FROM groups WHERE chat_id=$1", GROUP_CHAT_ID
+            )
+        return int(r["delete_delay"]) if r and r["delete_delay"] else 30
+    except Exception:
+        return 30
+
+async def send_temp(bot, chat_id, text, delay=None, **kwargs):
+    """Grupta geçici mesaj gönderir, delay sn sonra siler. DM'de silmez."""
+    msg = await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    try:
+        chat = await bot.get_chat(chat_id)
+        if chat.type in ("group", "supergroup"):
+            d = delay if delay is not None else await get_delete_delay()
+            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, d))
+    except Exception:
+        pass
+    return msg
 
 # ================= MUM GRAFIGI (onbellekli) =================
 
@@ -417,7 +453,7 @@ async def fetch_all_analysis(symbol):
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w
 
-async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None):
+async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24, k1w) = await fetch_all_analysis(symbol)
@@ -450,7 +486,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             elif r <= 45: return "🟡 Dusus"
             else:         return "🟢 Normal"
 
-        # 3 ayrı skor
         sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14)
         sd, ld, bd = calc_score_daily(ticker, k4h_42, k1h_24, k1d)
         sw, lw, bw = calc_score_weekly(ticker, k1d, k1w)
@@ -491,17 +526,22 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             )
         ]])
 
-        await bot.send_message(chat_id=chat_id, text=text,
-                               reply_markup=keyboard, parse_mode="Markdown")
+        msg = await bot.send_message(chat_id=chat_id, text=text,
+                                     reply_markup=keyboard, parse_mode="Markdown")
+        if auto_del:
+            delay = await get_delete_delay()
+            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, delay))
 
         chart_buf = await generate_candlestick_chart(symbol)
         if chart_buf:
-            await bot.send_photo(
+            photo_msg = await bot.send_photo(
                 chat_id=chat_id,
                 photo=InputFile(chart_buf, filename=f"{symbol}_4h.png"),
                 caption=f"🕯️ *{symbol}* — 4sa | ⏱{sh} 📅{sd} 📆{sw}",
                 parse_mode="Markdown"
             )
+            if auto_del:
+                asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, delay))
 
     except Exception as e:
         err = str(e)
@@ -512,58 +552,8 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
 # ================= ADMIN KONTROL =================
 
-# ================= DM YÖNLENDİRME =================
-
-async def dm_redirect(update: Update, context, action_func):
-    """
-    Grup mesajında çağrılırsa:
-      - Kullanıcı mesajını siler (mümkünse)
-      - Gruba kısa yönlendirme mesajı atar (10sn sonra silinir)
-      - İşlemi DM'de yapar
-    DM'de ise direkt çalıştırır.
-    """
-    chat = update.effective_chat
-    user = update.effective_user
-
-    if chat.type == "private":
-        await action_func()
-        return
-
-    # Grup mesajını sil
-    try:
-        await update.message.delete()
-    except Exception:
-        pass
-
-    # Gruba geçici bilgi mesajı
-    try:
-        note = await context.bot.send_message(
-            chat.id,
-            f"👤 {user.first_name} — sonuç DM'inize gönderildi.",
-            parse_mode="Markdown"
-        )
-        # 8 saniye sonra bu mesajı da sil
-        async def _delete_note():
-            await asyncio.sleep(8)
-            try: await note.delete()
-            except: pass
-        asyncio.create_task(_delete_note())
-    except Exception:
-        pass
-
-    # İşlemi DM'de yap
-    try:
-        await action_func(dm=True)
-    except TypeError:
-        await action_func()
-
 async def is_admin(update: Update, context) -> bool:
-    """
-    - Ozel mesaj (DM): her zaman True (admin kontrolu gerek yok)
-    - Grupta: o grubun adminlerini kontrol et
-    """
     chat = update.effective_chat
-    # DM veya kanal ise direkt izin ver
     if chat.type == "private":
         return True
     user_id = update.effective_user.id
@@ -574,516 +564,182 @@ async def is_admin(update: Update, context) -> bool:
         log.warning(f"Admin kontrol hatasi: {e}")
         return False
 
-# ================= /set KOMUTU =================
-
 SET_THRESHOLD_PRESETS = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
+DELETE_DELAY_PRESETS  = [15, 30, 60, 120, 300]   # saniye
 
 async def build_set_panel(context):
-    """Panel metnini ve klavyesini oluşturur."""
     async with db_pool.acquire() as conn:
         r = await conn.fetchrow(
-            "SELECT alarm_active, threshold FROM groups WHERE chat_id=$1",
+            "SELECT alarm_active, threshold, delete_delay FROM groups WHERE chat_id=$1",
             GROUP_CHAT_ID
         )
     threshold    = r["threshold"]
     alarm_active = r["alarm_active"]
+    del_delay    = r["delete_delay"] or 30
 
+    # Eşik butonları
     threshold_buttons = []
     row = []
     for val in SET_THRESHOLD_PRESETS:
         label = f"{'✅ ' if threshold == val else ''}%{val:.0f}"
         row.append(InlineKeyboardButton(label, callback_data=f"set_threshold_{val}"))
         if len(row) == 4:
-            threshold_buttons.append(row)
-            row = []
-    if row:
-        threshold_buttons.append(row)
+            threshold_buttons.append(row); row = []
+    if row: threshold_buttons.append(row)
+    threshold_buttons.append([InlineKeyboardButton("✏️ Manuel Eşik", callback_data="set_threshold_custom")])
 
-    threshold_buttons.append([
-        InlineKeyboardButton("✏️ Manuel Gir", callback_data="set_threshold_custom")
-    ])
+    # Silme süresi butonları
+    delay_row = []
+    for val in DELETE_DELAY_PRESETS:
+        label_map = {15: "15sn", 30: "30sn", 60: "1dk", 120: "2dk", 300: "5dk"}
+        label = f"{'✅ ' if del_delay == val else ''}{label_map.get(val, str(val)+'sn')}"
+        delay_row.append(InlineKeyboardButton(label, callback_data=f"set_delay_{val}"))
+    threshold_buttons.append(delay_row)
+
     threshold_buttons.append([
         InlineKeyboardButton(
             f"🔔 Alarm: {'AKTİF ✅' if alarm_active else 'KAPALI ❌'}",
             callback_data="set_toggle_alarm"
         )
     ])
-    threshold_buttons.append([
-        InlineKeyboardButton("❌ Kapat", callback_data="set_close")
-    ])
+    threshold_buttons.append([InlineKeyboardButton("❌ Kapat", callback_data="set_close")])
 
+    delay_label = {15: "15 sn", 30: "30 sn", 60: "1 dk", 120: "2 dk", 300: "5 dk"}.get(del_delay, f"{del_delay} sn")
     text = (
         "⚙️ *Grup Ayarları — Admin Paneli*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🔔 *Alarm Durumu:* `{'AKTİF' if alarm_active else 'KAPALI'}`\n"
-        f"🎯 *Mevcut Eşik:* `%{threshold}`\n\n"
-        "Eşik seçin veya manuel girin:"
+        f"🎯 *Alarm Eşiği:* `%{threshold}`\n"
+        f"🗑 *Mesaj Silme:* `{delay_label}` sonra\n\n"
+        "Eşik seçin, silme süresi ayarlayın:"
     )
     return text, InlineKeyboardMarkup(threshold_buttons)
 
 
 async def set_command(update: Update, context):
-    """/set komutu — sadece grup admini veya DM."""
-    # DM'de her zaman izin ver, grupta admin kontrolü
     chat = update.effective_chat
     if chat.type != "private":
         try:
             member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
             if member.status not in ("administrator", "creator"):
-                await update.message.reply_text(
-                    "🚫 *Bu komut sadece grup adminlerine açıktır.*",
-                    parse_mode="Markdown"
-                )
+                await update.message.reply_text("🚫 *Bu komut sadece grup adminlerine açıktır.*", parse_mode="Markdown")
                 return
         except Exception as e:
             log.warning(f"Admin kontrol: {e}")
             await update.message.reply_text("⚠️ Yetki kontrol edilemedi.", parse_mode="Markdown")
             return
-
     text, keyboard = await build_set_panel(context)
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def set_callback(update: Update, context):
-    """set_ ile başlayan callback'leri işler."""
     q = update.callback_query
-
-    # Her zaman GROUP_CHAT_ID üzerinden admin kontrolü
     try:
         member = await context.bot.get_chat_member(GROUP_CHAT_ID, q.from_user.id)
         if member.status not in ("administrator", "creator"):
-            await q.answer("🚫 Bu işlem sadece grup adminlerine açıktır.", show_alert=True)
+            await q.answer("🚫 Sadece grup adminleri.", show_alert=True)
             return
     except Exception as e:
-        log.warning(f"set_callback admin kontrol: {e}")
+        log.warning(f"set_callback admin: {e}")
         await q.answer("🚫 Yetki kontrol edilemedi.", show_alert=True)
         return
 
     await q.answer()
 
-    # set_open: Paneli göster
+    if q.data == "set_close":
+        try: await q.message.delete()
+        except: pass
+        return
+
+    if q.data == "set_toggle_alarm":
+        async with db_pool.acquire() as conn:
+            r = await conn.fetchrow("SELECT alarm_active FROM groups WHERE chat_id=$1", GROUP_CHAT_ID)
+            new_val = 0 if r["alarm_active"] else 1
+            await conn.execute("UPDATE groups SET alarm_active=$1 WHERE chat_id=$2", new_val, GROUP_CHAT_ID)
+        text, keyboard = await build_set_panel(context)
+        await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
+    if q.data.startswith("set_threshold_"):
+        val_str = q.data.replace("set_threshold_", "")
+        if val_str == "custom":
+            context.user_data["awaiting_threshold"] = True
+            await q.message.reply_text("✏️ Yeni eşik değeri girin (0.1 – 100):\nÖrnek: `4.5`", parse_mode="Markdown")
+            return
+        try:
+            val = float(val_str)
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE groups SET threshold=$1 WHERE chat_id=$2", val, GROUP_CHAT_ID)
+            text, keyboard = await build_set_panel(context)
+            await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.warning(f"set_threshold: {e}")
+        return
+
+    if q.data.startswith("set_delay_"):
+        try:
+            delay_val = int(q.data.replace("set_delay_", ""))
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE groups SET delete_delay=$1 WHERE chat_id=$2", delay_val, GROUP_CHAT_ID)
+            text, keyboard = await build_set_panel(context)
+            await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.warning(f"set_delay: {e}")
+        return
+
     if q.data == "set_open":
         text, keyboard = await build_set_panel(context)
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
-        return
-
-    # ── Alarm toggle ──
-    if q.data == "set_toggle_alarm":
-        async with db_pool.acquire() as conn:
-            r = await conn.fetchrow(
-                "SELECT alarm_active FROM groups WHERE chat_id=$1", GROUP_CHAT_ID
-            )
-            new_val = 0 if r["alarm_active"] else 1
-            await conn.execute(
-                "UPDATE groups SET alarm_active=$1 WHERE chat_id=$2",
-                new_val, GROUP_CHAT_ID
-            )
-        durum = "AKTİF ✅" if new_val else "KAPALI ❌"
-        await q.message.reply_text(
-            f"🔔 Grup alarmı *{durum}* olarak ayarlandı.",
-            parse_mode="Markdown"
-        )
-        await q.message.delete()
-        return
-
-    # ── Paneli kapat ──
-    if q.data == "set_close":
-        await q.message.delete()
-        return
-
-    # ── Manuel eşik girişi ──
-    if q.data == "set_threshold_custom":
-        context.user_data["awaiting_threshold"] = True
-        await q.message.reply_text(
-            "✏️ Yeni alarm eşiğini yazın (örnek: `4.5`):",
-            parse_mode="Markdown"
-        )
-        await q.message.delete()
-        return
-
-    # ── Hazır eşik seçimi ──
-    if q.data.startswith("set_threshold_"):
-        try:
-            val = float(q.data.replace("set_threshold_", ""))
-        except ValueError:
-            return
-
-        async with db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE groups SET threshold=$1 WHERE chat_id=$2",
-                val, GROUP_CHAT_ID
-            )
-
-        await q.message.reply_text(
-            f"✅ Alarm eşiği *%{val}* olarak güncellendi.\n"
-            f"Artık 5 dakikada bu oranı aşan coinlerde alarm tetiklenecek.",
-            parse_mode="Markdown"
-        )
-        await q.message.delete()
 
 
 async def handle_threshold_input(update: Update, context):
-    """Manuel eşik girişini yakalar."""
     if not context.user_data.get("awaiting_threshold"):
-        return False  # Bu mesajı biz işlemedik
-
-    # Admin kontrolü
+        return False
     if not await is_admin(update, context):
         context.user_data.pop("awaiting_threshold", None)
         return True
-
     text = update.message.text.strip().replace(",", ".")
     try:
         val = float(text)
         if not (0.1 <= val <= 100):
             raise ValueError
     except ValueError:
-        await update.message.reply_text(
-            "⚠️ Geçersiz değer. 0.1 ile 100 arasında bir sayı girin.\nÖrnek: `4.5`",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("⚠️ 0.1 ile 100 arasında sayı girin. Örnek: `4.5`", parse_mode="Markdown")
         return True
-
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE groups SET threshold=$1 WHERE chat_id=$2",
-            val, GROUP_CHAT_ID
-        )
-
+        await conn.execute("UPDATE groups SET threshold=$1 WHERE chat_id=$2", val, GROUP_CHAT_ID)
     context.user_data.pop("awaiting_threshold", None)
-    await update.message.reply_text(
-        f"✅ Alarm eşiği *%{val}* olarak güncellendi!",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"✅ Alarm eşiği *%{val}* olarak güncellendi!", parse_mode="Markdown")
     return True
 
-# ================= SEMBOL TEPKI =================
+# ================= SEMBOL TEPKİ =================
 
 async def reply_symbol(update: Update, context):
     if not update.message or not update.message.text:
         return
-
     if await handle_threshold_input(update, context):
         return
 
     raw    = update.message.text.upper().strip()
-    symbol = raw.replace("#","").replace("/","")
+    symbol = raw.replace("#", "").replace("/", "")
     if not symbol.endswith("USDT"):
         return
 
     chat = update.effective_chat
-    user = update.effective_user
+    is_group = chat.type in ("group", "supergroup")
 
-    if chat.type == "private":
-        await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
-        return
-
-    # Grup: kullanıcı mesajını sil
-    try:
-        await update.message.delete()
-    except Exception:
-        pass
-
-    # Önce DM'e göndermeyi dene
-    dm_success = False
-    try:
-        await send_full_analysis(context.bot, user.id, symbol, "PIYASA ANALIZ RAPORU")
-        dm_success = True
-    except Exception as e:
-        log.info(f"DM gönderilemedi ({user.id}): {e}")
-
-    if dm_success:
-        # Gruba 8sn'de silinen bilgi notu
+    # Kullanıcı mesajını sil (grupta)
+    if is_group:
         try:
-            bot_info = await context.bot.get_me()
-            note = await context.bot.send_message(
-                chat.id,
-                f"👤 {user.first_name} — `{symbol}` analizi [DM'inize](https://t.me/{bot_info.username}) gönderildi.",
-                parse_mode="Markdown",
-                disable_web_page_preview=True
-            )
-            async def _del_note():
-                await asyncio.sleep(8)
-                try: await note.delete()
-                except: pass
-            asyncio.create_task(_del_note())
+            await update.message.delete()
         except Exception:
             pass
-    else:
-        # DM açık değil: gruba gönder, 60sn sonra sil
-        try:
-            msgs = []
-            # send_full_analysis gruba gönder, mesajları yakala
-            await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
-            # DM aç yönlendirmesi
-            bot_info = await context.bot.get_me()
-            warn = await context.bot.send_message(
-                chat.id,
-                f"👤 {user.first_name} — sonraki sorgular DM'inize gitsin: [bota buradan yazın](https://t.me/{bot_info.username}) ve /start deyin.",
-                parse_mode="Markdown",
-                disable_web_page_preview=True
-            )
-            async def _del_warn():
-                await asyncio.sleep(30)
-                try: await warn.delete()
-                except: pass
-            asyncio.create_task(_del_warn())
-        except Exception as e:
-            log.warning(f"reply_symbol fallback hatasi: {e}")
 
-# ================= KISISEL ALARM =================
-
-async def my_alarm(update: Update, context):
-    user    = update.effective_user
-    user_id = user.id
-
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT symbol, threshold, active FROM user_alarms WHERE user_id=$1",
-            user_id
-        )
-
-    if not rows:
-        text = (
-            "🔔 *Kisisel Alarm Paneli*\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "Henuz aktif alarminiz yok.\n\n"
-            "➕ Alarm eklemek icin:\n"
-            "`/alarm_ekle BTCUSDT 3.5`\n"
-            "_(sembol ve % esik degeri)_"
-        )
-    else:
-        text = "🔔 *Kisisel Alarmlariniz*\n━━━━━━━━━━━━━━━━━━\n"
-        for r in rows:
-            durum = "✅ Aktif" if r["active"] else "⏸ Durduruldu"
-            text += f"• `{r['symbol']}` → `%{r['threshold']}` — {durum}\n"
-        text += "\n`/alarm_ekle BTCUSDT 3.5` — yeni ekle\n`/alarm_sil BTCUSDT` — sil"
-
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("➕ Alarm Ekle",  callback_data="alarm_guide"),
-        InlineKeyboardButton("🗑 Tumunu Sil", callback_data=f"alarm_deleteall_{user_id}")
-    ]])
-
-    msg = update.callback_query.message if update.callback_query else update.message
-    await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
-
-
-async def alarm_ekle(update: Update, context):
-    user    = update.effective_user
-    user_id = user.id
-    username = user.username or user.first_name
-
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "Kullanim: `/alarm_ekle BTCUSDT 3.5`\n_(sembol ve % esik degeri)_",
-            parse_mode="Markdown"
-        )
-        return
-
-    symbol = context.args[0].upper().replace("#","").replace("/","")
-    if not symbol.endswith("USDT"):
-        symbol += "USDT"
-
-    try:
-        threshold = float(context.args[1])
-    except ValueError:
-        await update.message.reply_text("Esik degeri sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown")
-        return
-
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO user_alarms (user_id, username, symbol, threshold, active)
-            VALUES ($1, $2, $3, $4, 1)
-            ON CONFLICT (user_id, symbol)
-            DO UPDATE SET threshold=$4, active=1
-        """, user_id, username, symbol, threshold)
-
-    await update.message.reply_text(
-        f"✅ *{symbol}* icin `%{threshold}` esikli alarm eklendi!\n"
-        f"5 dakikalik harekette bu esigi asarsa size ozel mesaj atacagim.",
-        parse_mode="Markdown"
+    await send_full_analysis(
+        context.bot,
+        chat.id, symbol, "PIYASA ANALIZ RAPORU",
+        auto_del=is_group
     )
-
-
-async def alarm_sil(update: Update, context):
-    user_id = update.effective_user.id
-
-    if not context.args:
-        await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
-        return
-
-    symbol = context.args[0].upper().replace("#","").replace("/","")
-    if not symbol.endswith("USDT"):
-        symbol += "USDT"
-
-    async with db_pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM user_alarms WHERE user_id=$1 AND symbol=$2",
-            user_id, symbol
-        )
-
-    if result == "DELETE 0":
-        await context.bot.send_message(get_target_chat_id(update, context), f"`{symbol}` icin kayitli alarm bulunamadi.", parse_mode="Markdown")
-    else:
-        await context.bot.send_message(get_target_chat_id(update, context), f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
-
-
-# ================= FAVORİLER =================
-
-async def favori_command(update: Update, context):
-    user_id = update.effective_user.id
-    args    = context.args or []
-    msg     = update.callback_query.message if update.callback_query else update.message
-
-    if not args or args[0].lower() == "liste":
-        async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT symbol FROM favorites WHERE user_id=$1 ORDER BY symbol", user_id)
-        if not rows:
-            await context.bot.send_message(get_target_chat_id(update, context), 
-                "⭐ *Favori Listeniz Bos*\n━━━━━━━━━━━━━━━━━━\n"
-                "Eklemek icin:\n`/favori ekle BTCUSDT`",
-                parse_mode="Markdown"
-            )
-            return
-        syms = [r["symbol"] for r in rows]
-        text = "⭐ *Favorileriniz*\n━━━━━━━━━━━━━━━━━━\n"
-        for s in syms:
-            text += "• `" + s + "`\n"
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📊 Hepsini Analiz Et", callback_data="fav_analiz"),
-            InlineKeyboardButton("🗑 Tumunu Sil",        callback_data="fav_deleteall_" + str(user_id))
-        ]])
-        await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown", reply_markup=keyboard)
-        return
-
-    if args[0].lower() == "ekle":
-        if len(args) < 2:
-            await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
-        symbol = args[1].upper().replace("#","").replace("/","")
-        if not symbol.endswith("USDT"): symbol += "USDT"
-        async with db_pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO favorites(user_id,symbol) VALUES($1,$2) ON CONFLICT DO NOTHING",
-                user_id, symbol)
-        await context.bot.send_message(get_target_chat_id(update, context), "⭐ `" + symbol + "` favorilere eklendi!", parse_mode="Markdown")
-        return
-
-    if args[0].lower() == "sil":
-        if len(args) < 2:
-            await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
-        symbol = args[1].upper().replace("#","").replace("/","")
-        if not symbol.endswith("USDT"): symbol += "USDT"
-        async with db_pool.acquire() as conn:
-            await conn.execute("DELETE FROM favorites WHERE user_id=$1 AND symbol=$2", user_id, symbol)
-        await context.bot.send_message(get_target_chat_id(update, context), "🗑 `" + symbol + "` favorilerden silindi.", parse_mode="Markdown")
-        return
-
-    if args[0].lower() == "analiz":
-        async with db_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT symbol FROM favorites WHERE user_id=$1", user_id)
-        if not rows:
-            await context.bot.send_message(get_target_chat_id(update, context), "⭐ Favori listeniz bos.", parse_mode="Markdown"); return
-        await context.bot.send_message(get_target_chat_id(update, context), "📊 *" + str(len(rows)) + " coin analiz ediliyor...*", parse_mode="Markdown")
-        for r in rows:
-            await send_full_analysis(context.bot, update.effective_chat.id, r["symbol"], "⭐ FAVORİ ANALİZ")
-            await asyncio.sleep(1.5)
-        return
-
-    await context.bot.send_message(get_target_chat_id(update, context), 
-        "Kullanim:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n"
-        "`/favori liste`\n`/favori analiz`",
-        parse_mode="Markdown"
-    )
-
-
-# ================= GRUP → DM YÖNLENDIRME WRAPPER =================
-
-async def group_to_dm(update: Update, context, handler_func):
-    """
-    Kişisel komutları grup yerine DM'de çalıştırır.
-    DM başarısız olursa (Forbidden) gruba gönderir + "bot'a DM açın" uyarısı verir.
-    """
-    chat = update.effective_chat
-    if chat.type == "private":
-        await handler_func(update, context)
-        return
-
-    user = update.effective_user
-
-    # Kullanıcı mesajını sil
-    try:
-        await update.message.delete()
-    except Exception:
-        pass
-
-    bot_info = await context.bot.get_me()
-    bot_link = f"https://t.me/{bot_info.username}"
-
-    # 1. Deneme: DM'e gönder
-    context.user_data["_dm_target"] = user.id
-    dm_ok = False
-    try:
-        await handler_func(update, context)
-        dm_ok = True
-    except Exception as e:
-        err = str(e)
-        if any(x in err for x in ("Forbidden", "bot was blocked", "chat not found", "user is deactivated")):
-            dm_ok = False
-        else:
-            log.warning(f"group_to_dm hatasi: {e}")
-            dm_ok = False  # bilinmeyen hata da fallback'e düşsün
-    finally:
-        context.user_data.pop("_dm_target", None)
-
-    if dm_ok:
-        # Gruba 8sn'de silinen başarı notu
-        try:
-            note = await context.bot.send_message(
-                chat.id,
-                f"👤 {user.first_name} — yanıt [DM'inize]({bot_link}) gönderildi.",
-                parse_mode="Markdown", disable_web_page_preview=True
-            )
-            async def _del():
-                await asyncio.sleep(8)
-                try: await note.delete()
-                except: pass
-            asyncio.create_task(_del())
-        except Exception:
-            pass
-    else:
-        # 2. Fallback: gruba gönder + uyarı
-        context.user_data["_dm_target"] = None  # gruba yaz
-        try:
-            await handler_func(update, context)
-        except Exception as e:
-            log.warning(f"group_to_dm fallback hatasi: {e}")
-        finally:
-            context.user_data.pop("_dm_target", None)
-
-        # Gruba kalıcı uyarı (30sn sonra silinir)
-        try:
-            warn = await context.bot.send_message(
-                chat.id,
-                f"👤 {user.first_name} — sonraki sorgular DM'e gitsin: "
-                f"[bota buradan yazın]({bot_link}) ve /start deyin.",
-                parse_mode="Markdown", disable_web_page_preview=True
-            )
-            async def _del_warn():
-                await asyncio.sleep(30)
-                try: await warn.delete()
-                except: pass
-            asyncio.create_task(_del_warn())
-        except Exception:
-            pass
-
-
-def get_target_chat_id(update: Update, context) -> int:
-    """Handler içinde kullanılacak hedef chat_id'yi döner (DM veya mevcut chat)."""
-    target = context.user_data.get("_dm_target")
-    if target is None:
-        return update.effective_chat.id
-    return target
 
 # ================= GELİŞMİŞ KİŞİSEL ALARM =================
 
@@ -1141,8 +797,7 @@ async def my_alarm_v2(update: Update, context):
         [InlineKeyboardButton("🗑 Tumunu Sil", callback_data="alarm_deleteall_" + str(user_id)),
          InlineKeyboardButton("🔄 Yenile",      callback_data="my_alarm")]
     ])
-    target_id = get_target_chat_id(update, context)
-    await context.bot.send_message(target_id, text, parse_mode="Markdown", reply_markup=keyboard)
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def alarm_ekle_v2(update: Update, context):
@@ -1151,7 +806,7 @@ async def alarm_ekle_v2(update: Update, context):
     args     = context.args or []
 
     if len(args) < 2:
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "📌 *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
             "• `%`  : `/alarm_ekle BTCUSDT 3.5`\n"
             "• RSI  : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
@@ -1166,11 +821,11 @@ async def alarm_ekle_v2(update: Update, context):
     # RSI alarmı
     if args[1].lower() == "rsi":
         if len(args) < 3:
-            await context.bot.send_message(get_target_chat_id(update, context), 
+            await send_temp(context.bot, update.effective_chat.id, 
                 "Kullanim: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
         try:    rsi_lvl = float(args[2])
         except:
-            await context.bot.send_message(get_target_chat_id(update, context), "RSI degeri sayi olmali.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "RSI degeri sayi olmali.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,rsi_level,active)
@@ -1180,7 +835,7 @@ async def alarm_ekle_v2(update: Update, context):
             """, user_id, username, symbol, rsi_lvl)
         direction_str = "asagi" if len(args) < 4 or args[3].lower() in ("asagi","aşağı") else "yukari"
         yon_str = "altina dusunce" if direction_str == "asagi" else "ustune cikinca"
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!",
             parse_mode="Markdown"
         )
@@ -1189,13 +844,13 @@ async def alarm_ekle_v2(update: Update, context):
     # Bant alarmı
     if args[1].lower() == "bant":
         if len(args) < 4:
-            await context.bot.send_message(get_target_chat_id(update, context), 
+            await send_temp(context.bot, update.effective_chat.id, 
                 "Kullanim: `/alarm_ekle BTCUSDT bant 60000 70000`", parse_mode="Markdown"); return
         try:
             band_low  = float(args[2].replace(",","."))
             band_high = float(args[3].replace(",","."))
         except:
-            await context.bot.send_message(get_target_chat_id(update, context), "Fiyat degerleri sayi olmali.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Fiyat degerleri sayi olmali.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,band_low,band_high,active)
@@ -1203,7 +858,7 @@ async def alarm_ekle_v2(update: Update, context):
                 ON CONFLICT(user_id,symbol) DO UPDATE
                 SET alarm_type='band', band_low=$4, band_high=$5, threshold=0, active=1
             """, user_id, username, symbol, band_low, band_high)
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "✅ *" + symbol + "* `" + format_price(band_low) + " - " + format_price(band_high) +
             " USDT` bandından cikinca alarm verilecek!",
             parse_mode="Markdown"
@@ -1213,7 +868,7 @@ async def alarm_ekle_v2(update: Update, context):
     # % alarmı
     try:    threshold = float(args[1])
     except:
-        await context.bot.send_message(get_target_chat_id(update, context), "Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,active)
@@ -1221,7 +876,7 @@ async def alarm_ekle_v2(update: Update, context):
             ON CONFLICT(user_id,symbol) DO UPDATE
             SET threshold=$4, alarm_type='percent', active=1
         """, user_id, username, symbol, threshold)
-    await context.bot.send_message(get_target_chat_id(update, context), 
+    await send_temp(context.bot, update.effective_chat.id, 
         "✅ *" + symbol + "* icin `%" + str(threshold) + "` alarmi eklendi!",
         parse_mode="Markdown"
     )
@@ -1231,13 +886,13 @@ async def alarm_duraklat(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
     if len(args) < 2:
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "Kullanim: `/alarm_duraklat BTCUSDT 2` (saat)", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     try:    saat = float(args[1])
     except:
-        await context.bot.send_message(get_target_chat_id(update, context), "Saat sayi olmali.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "Saat sayi olmali.", parse_mode="Markdown"); return
     until = datetime.utcnow() + timedelta(hours=saat)
     async with db_pool.acquire() as conn:
         r = await conn.execute(
@@ -1245,9 +900,9 @@ async def alarm_duraklat(update: Update, context):
             until, user_id, symbol
         )
     if r == "UPDATE 0":
-        await context.bot.send_message(get_target_chat_id(update, context), "`" + symbol + "` icin alarm bulunamadi.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "`" + symbol + "` icin alarm bulunamadi.", parse_mode="Markdown")
     else:
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "⏸ *" + symbol + "* alarmi `" + str(int(saat)) + " saat` duraklatildi. "
             "Tekrar aktif: `" + until.strftime("%H:%M") + " UTC`",
             parse_mode="Markdown"
@@ -1263,7 +918,7 @@ async def alarm_gecmis(update: Update, context):
             ORDER BY triggered_at DESC LIMIT 15
         """, user_id)
     if not rows:
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "📋 *Alarm Gecmisi*\n━━━━━━━━━━━━━━━━━━\nHenuz tetiklenen alarm yok.",
             parse_mode="Markdown"
         )
@@ -1279,7 +934,7 @@ async def alarm_gecmis(update: Update, context):
         else:
             detail = "%" + str(round(r["trigger_val"], 2))
         text += yon + " `" + r["symbol"] + "` " + detail + "  `" + dt + "`\n"
-    await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
 
 
 # ================= ÇOKLU ZAMAN DİLİMİ =================
@@ -1288,11 +943,11 @@ async def mtf_command(update: Update, context):
     msg  = update.callback_query.message if update.callback_query else update.message
     args = context.args or []
     if not args:
-        await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/mtf BTCUSDT`", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "Kullanim: `/mtf BTCUSDT`", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
-    wait = await context.bot.send_message(get_target_chat_id(update, context), "⏳ Analiz yapiliyor...", parse_mode="Markdown")
+    wait = await send_temp(context.bot, update.effective_chat.id, "⏳ Analiz yapiliyor...", parse_mode="Markdown")
     try:
         async with aiohttp.ClientSession() as session:
             k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
@@ -1329,11 +984,11 @@ async def mtf_command(update: Update, context):
         text += "\n_🔵 Asiri Satim  🟢 Normal  🔴 Asiri Alim_"
 
         await wait.delete()
-        await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
     except Exception as e:
         await wait.delete()
         log.error("MTF hatasi: " + str(e))
-        await context.bot.send_message(get_target_chat_id(update, context), "⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
 
 
 # ================= WHALE ALARMI =================
@@ -1425,7 +1080,7 @@ async def zamanla_command(update: Update, context):
                 "SELECT task_type, symbol, hour, minute FROM scheduled_tasks WHERE chat_id=$1 AND active=1",
                 chat_id)
         if not rows:
-            await context.bot.send_message(get_target_chat_id(update, context), 
+            await send_temp(context.bot, update.effective_chat.id, 
                 "⏰ *Zamanlanmis Gorevler*\n━━━━━━━━━━━━━━━━━━\nGorev yok.\n\n"
                 "Eklemek icin:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`",
                 parse_mode="Markdown")
@@ -1434,45 +1089,45 @@ async def zamanla_command(update: Update, context):
             for r in rows:
                 sym_str = "`" + r["symbol"] + "` " if r["symbol"] else ""
                 text += "• " + r["task_type"] + " " + sym_str + "— `" + ("%02d:%02d" % (r["hour"],r["minute"])) + "` UTC\n"
-            await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
+            await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
         return
 
     if args[0].lower() == "sil":
         async with db_pool.acquire() as conn:
             await conn.execute("UPDATE scheduled_tasks SET active=0 WHERE chat_id=$1", chat_id)
-        await context.bot.send_message(get_target_chat_id(update, context), "🗑 Gorevler silindi.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "🗑 Gorevler silindi.", parse_mode="Markdown"); return
 
     if args[0].lower() == "analiz" and len(args) >= 3:
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         try:    h, m = map(int, args[2].split(":"))
         except:
-            await context.bot.send_message(get_target_chat_id(update, context), "Saat formati: `09:00`", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Saat formati: `09:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
                 VALUES($1,$2,'analiz',$3,$4,$5,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$4,minute=$5,active=1
             """, user_id, chat_id, symbol, h, m)
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "⏰ Her gun `" + ("%02d:%02d" % (h,m)) + "` UTC'de *" + symbol + "* analizi gonderilecek!",
             parse_mode="Markdown"); return
 
     if args[0].lower() == "rapor" and len(args) >= 2:
         try:    h, m = map(int, args[1].split(":"))
         except:
-            await context.bot.send_message(get_target_chat_id(update, context), "Saat formati: `08:00`", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Saat formati: `08:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
                 VALUES($1,$2,'rapor','',$3,$4,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$3,minute=$4,active=1
             """, user_id, chat_id, h, m)
-        await context.bot.send_message(get_target_chat_id(update, context), 
+        await send_temp(context.bot, update.effective_chat.id, 
             "⏰ Her Pazartesi `" + ("%02d:%02d" % (h,m)) + "` UTC'de haftalik rapor gonderilecek!",
             parse_mode="Markdown"); return
 
-    await context.bot.send_message(get_target_chat_id(update, context), 
+    await send_temp(context.bot, update.effective_chat.id, 
         "Kullanim:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
         "`/zamanla liste`\n`/zamanla sil`",
         parse_mode="Markdown")
@@ -1863,20 +1518,14 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("set",    set_command))
 
-    # Kişisel komutlar → grup olursa DM'e yönlendir
-    def dm(fn):
-        async def wrapper(update, context):
-            await group_to_dm(update, context, fn)
-        return wrapper
-
-    app.add_handler(CommandHandler("alarmim",        dm(my_alarm_v2)))
-    app.add_handler(CommandHandler("alarm_ekle",     dm(alarm_ekle_v2)))
-    app.add_handler(CommandHandler("alarm_sil",      dm(alarm_sil)))
-    app.add_handler(CommandHandler("alarm_duraklat", dm(alarm_duraklat)))
-    app.add_handler(CommandHandler("alarm_gecmis",   dm(alarm_gecmis)))
-    app.add_handler(CommandHandler("favori",         dm(favori_command)))
-    app.add_handler(CommandHandler("mtf",            dm(mtf_command)))
-    app.add_handler(CommandHandler("zamanla",        dm(zamanla_command)))
+    app.add_handler(CommandHandler("alarmim",        my_alarm_v2))
+    app.add_handler(CommandHandler("alarm_ekle",     alarm_ekle_v2))
+    app.add_handler(CommandHandler("alarm_sil",      alarm_sil))
+    app.add_handler(CommandHandler("alarm_duraklat", alarm_duraklat))
+    app.add_handler(CommandHandler("alarm_gecmis",   alarm_gecmis))
+    app.add_handler(CommandHandler("favori",         favori_command))
+    app.add_handler(CommandHandler("mtf",            mtf_command))
+    app.add_handler(CommandHandler("zamanla",        zamanla_command))
 
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
@@ -1886,4 +1535,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
