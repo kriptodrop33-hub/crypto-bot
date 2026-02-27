@@ -55,14 +55,6 @@ CREATE TABLE IF NOT EXISTS groups (
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS user_alarms (
-    user_id INTEGER,
-    symbol TEXT,
-    threshold REAL
-)
-""")
-
 conn.commit()
 
 cursor.execute(
@@ -148,15 +140,13 @@ async def help_command(update: Update, context):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 Top 24", callback_data="top24")],
         [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5")],
-        [InlineKeyboardButton("📈 Market", callback_data="market")],
         [InlineKeyboardButton("ℹ️ Status", callback_data="status")]
     ])
 
     text = (
         "🚀 KRİPTO ALARM BOTU\n\n"
-        "/start\n/help\n/top24\n/top5\n/market\n/status\n\n"
-        "ADMIN:\n/alarmon\n/alarmoff\n/set 7\n/mode pump|dump|both\n\n"
-        "KULLANICI:\n/myalarm BTCUSDT 3"
+        "/start\n/help\n/top24\n/top5\n/status\n\n"
+        "ADMIN:\n/alarmon\n/alarmoff\n/set 7\n/mode pump|dump|both"
     )
 
     await update.effective_message.reply_text(text, reply_markup=keyboard)
@@ -243,29 +233,18 @@ async def set_mode(update: Update, context):
     conn.commit()
     await update.effective_message.reply_text(f"Mod {mode}")
 
-# ================= SYMBOL =================
+# ================= CALLBACK FIX =================
 
-async def reply_symbol(update: Update, context):
-    if not update.message:
-        return
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-    symbol = update.message.text.upper().strip()
-    if not symbol.endswith("USDT"):
-        return
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-            data = await resp.json()
-
-    price=float(data["lastPrice"])
-    ch24=float(data["priceChangePercent"])
-
-    text=f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
-    await update.message.reply_text(text)
-
-    chart = await generate_candle_chart(symbol)
-    if chart:
-        await update.message.reply_photo(InputFile(chart))
+    if query.data == "top24":
+        await top24(update, context)
+    elif query.data == "top5":
+        await top5(update, context)
+    elif query.data == "status":
+        await status(update, context)
 
 # ================= ALARM JOB =================
 
@@ -304,29 +283,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             cooldowns[symbol] = now
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                    data = await resp.json()
-
-            price = float(data["lastPrice"])
-            change24 = float(data["priceChangePercent"])
-
-            rsi7 = await calculate_rsi(symbol, 7)
-            rsi14 = await calculate_rsi(symbol, 14)
-
-            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
-
-            text = (
-                f"{trend} ALARMI\n\n"
-                f"💎 {symbol}\n"
-                f"💰 Fiyat: {price}\n\n"
-                f"⚡ 5dk: %{change5:.2f}\n"
-                f"📊 24s: %{change24:.2f}\n\n"
-                f"📈 RSI(7): {rsi7}\n"
-                f"📉 RSI(14): {rsi14}\n\n"
-                f"🎯 Eşik: %{threshold}"
-            )
-
+            text = f"🚨 {symbol} %{change5:.2f} hareket etti!"
             await context.bot.send_message(GROUP_CHAT_ID, text)
 
             chart = await generate_candle_chart(symbol)
