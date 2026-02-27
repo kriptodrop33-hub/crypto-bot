@@ -72,9 +72,9 @@ price_memory = defaultdict(list)
 cooldowns = {}
 user_cooldowns = {}
 
-# ================= RSI (1D MUM) =================
+# ================= RSI =================
 
-async def calculate_rsi(symbol, period=14, interval="1d", limit=200):
+async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -106,26 +106,6 @@ async def calculate_rsi(symbol, period=14, interval="1d", limit=200):
         return 0
 
 # ================= HELP =================
-async def status(update: Update, context):
-
-    cursor.execute(
-        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
-        (GROUP_CHAT_ID,)
-    )
-    row = cursor.fetchone()
-
-    if not row:
-        await update.effective_message.reply_text("Grup kayıtlı değil.")
-        return
-
-    await update.effective_message.reply_text(
-        f"Alarm: {'Açık' if row[0] else 'Kapalı'}\n"
-        f"Eşik: %{row[1]}\n"
-        f"Mod: {row[2]}"
-    )
-
-
-
 
 async def help_command(update: Update, context):
     keyboard = InlineKeyboardMarkup([
@@ -196,6 +176,29 @@ async def top5(update: Update, context):
         text += f"{sym} → %{ch:.2f}\n"
 
     await update.effective_message.reply_text(text)
+
+# ================= STATUS (FIXED) =================
+
+async def status(update: Update, context):
+
+    cursor.execute(
+        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
+        (GROUP_CHAT_ID,)
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        await update.effective_message.reply_text("Grup kayıtlı değil.")
+        return
+
+    await update.effective_message.reply_text(
+        f"Alarm: {'Açık' if row[0] else 'Kapalı'}\n"
+        f"Eşik: %{row[1]}\n"
+        f"Mod: {row[2]}"
+    )
+
+# ================= ADMIN =================
+# (BURADAN SONRASI SENİN ORİJİNAL KODUNLA AYNI DEVAM EDİYOR)
 
 # ================= SYMBOL DETAY PANEL =================
 
