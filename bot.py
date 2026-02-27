@@ -24,7 +24,7 @@ from telegram.ext import (
     filters,
 )
 
-# ================= CONFIG =================a
+# ================= CONFIG =================
 
 TOKEN         = os.getenv("TELEGRAM_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
@@ -237,6 +237,72 @@ def calc_rsi(data, period=14):
     except:
         return 0.0
 
+def calc_market_score(ticker, ch5m, ch1h, ch4h, ch24, rsi7, rsi14):
+    """
+    Piyasa verilerini 100 uzerinden puanlar.
+    Skor: 0-39 = Zayif/Sat, 40-59 = Notr, 60-79 = Güçlü, 80-100 = Cok Güçlü/Al
+    """
+    score = 50  # Baslangic
+
+    # RSI bazli puan (max +-20)
+    if rsi14 <= 30:
+        score += 20   # Asiri satim -> al firsati
+    elif rsi14 <= 45:
+        score += 10
+    elif rsi14 >= 70:
+        score -= 20   # Asiri alim -> dikkat
+    elif rsi14 >= 55:
+        score -= 10
+
+    # RSI7 hizli tepki (max +-10)
+    if rsi7 < 30:
+        score += 10
+    elif rsi7 > 70:
+        score -= 10
+
+    # 5 dakikalik momentum (max +-10)
+    if ch5m > 3:    score += 10
+    elif ch5m > 1:  score += 5
+    elif ch5m < -3: score -= 10
+    elif ch5m < -1: score -= 5
+
+    # 1 saatlik trend (max +-10)
+    if ch1h > 5:    score += 10
+    elif ch1h > 2:  score += 5
+    elif ch1h < -5: score -= 10
+    elif ch1h < -2: score -= 5
+
+    # 4 saatlik trend (max +-10)
+    if ch4h > 5:    score += 10
+    elif ch4h > 2:  score += 5
+    elif ch4h < -5: score -= 10
+    elif ch4h < -2: score -= 5
+
+    # Hacim/24s degisim dogrulama (max +-5)
+    vol_change = float(ticker.get("quoteVolume", 0))
+    if ch24 > 5 and ch5m > 0:  score += 5
+    elif ch24 < -5 and ch5m < 0: score -= 5
+
+    score = max(0, min(100, round(score)))
+
+    if score >= 80:
+        label = "🚀 Cok Guçlu — AL sinyali"
+        bar = "🟢🟢🟢🟢🟢"
+    elif score >= 60:
+        label = "💪 Guçlu — Pozitif"
+        bar = "🟢🟢🟢🟡⬜"
+    elif score >= 40:
+        label = "😐 Notr — Bekle"
+        bar = "🟡🟡🟡⬜⬜"
+    elif score >= 20:
+        label = "⚠️ Zayif — Dikkat"
+        bar = "🔴🔴⬜⬜⬜"
+    else:
+        label = "🚨 Cok Zayif — SAT sinyali"
+        bar = "🔴🔴🔴🔴🔴"
+
+    return score, label, bar
+
 async def fetch_all_analysis(symbol):
     async with aiohttp.ClientSession() as session:
         async with session.get(
@@ -270,30 +336,51 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         rsi14  = calc_rsi(krsi, 14)
 
         def get_ui(val):
-            return ("🟢","+") if val > 0 else ("🔴","") if val < 0 else ("⚪","")
+            if val > 0:   return "🟢▲", "+"
+            elif val < 0: return "🔴▼", ""
+            else:         return "⚪→", ""
 
         e5,s5   = get_ui(ch5m)
         e1,s1   = get_ui(ch1h)
         e4,s4   = get_ui(ch4h)
         e24,s24 = get_ui(ch24)
 
+        # RSI yorumu
+        def rsi_label(r):
+            if r >= 70:   return "🔴 Asiri Alim"
+            elif r >= 55: return "🟡 Yukselis"
+            elif r <= 30: return "🔵 Asiri Satim"
+            elif r <= 45: return "🟡 Dusus"
+            else:         return "🟢 Normal"
+
+        # 100 uzerinden piyasa skoru
+        score, score_label, score_bar = calc_market_score(ticker, ch5m, ch1h, ch4h, ch24, rsi7, rsi14)
+
+        # Hacim bilgisi
+        vol_usdt = float(ticker.get("quoteVolume", 0))
+        vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
+
         text = (
             f"📊 *{extra_title}*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💎 *Parite:* `#{symbol}`\n"
-            f"💵 *Fiyat:* `{format_price(price)} USDT`\n\n"
-            f"*Performans Degisimleri:*\n"
-            f"{e5} `5dk  :` `% {s5}{ch5m:+.2f}`\n"
-            f"{e1} `1sa  :` `% {s1}{ch1h:+.2f}`\n"
-            f"{e4} `4sa  :` `% {s4}{ch4h:+.2f}`\n"
-            f"{e24} `24sa :` `% {s24}{ch24:+.2f}`\n\n"
-            f"📉 *RSI (Son 100 Saatlik Veri):*\n"
-            f"• RSI 7  : `{rsi7}`\n"
-            f"• RSI 14 : `{rsi14}`\n"
+            f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
+            f"📦 *24s Hacim:* `{vol_str} USDT`\n\n"
+            f"*📈 Performans Degisimleri:*\n"
+            f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
+            f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
+            f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
+            f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
+            f"📉 *RSI Analizi:*\n"
+            f"• RSI 7  : `{rsi7}` — {rsi_label(rsi7)}\n"
+            f"• RSI 14 : `{rsi14}` — {rsi_label(rsi14)}\n\n"
+            f"🎯 *Piyasa Skoru: {score}/100*\n"
+            f"{score_bar}\n"
+            f"_{score_label}_\n"
             f"──────────────────"
         )
         if threshold_info:
-            text += f"\n🎯 *Alarm Esigi:* `% {threshold_info}`"
+            text += f"\n🔔 *Alarm Esigi:* `%{threshold_info}`"
 
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton(
@@ -310,7 +397,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=InputFile(chart_buf, filename=f"{symbol}_4h.png"),
-                caption=f"🕯️ *{symbol}* — 4 Saatlik Mum Grafigi",
+                caption=f"🕯️ *{symbol}* — 4 Saatlik Mum Grafigi | Skor: {score}/100 {score_bar}",
                 parse_mode="Markdown"
             )
 
@@ -1166,23 +1253,40 @@ async def top5(update: Update, context):
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 data = await resp.json()
-        usdt = sorted(
-            [x for x in data if x["symbol"].endswith("USDT")],
-            key=lambda x: abs(float(x["priceChangePercent"])), reverse=True
-        )[:10]
+        usdt_list = [x for x in data if x["symbol"].endswith("USDT")]
+        positives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:5]
+        negatives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]))[:5]
+
         text = "⚡ *Piyasanin En Hareketlileri (24s baz)*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, c in enumerate(usdt, 1):
-            text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
+        text += "🟢 *YUKSELENLER*\n"
+        for i, c in enumerate(positives, 1):
+            pct = float(c["priceChangePercent"])
+            text += f"{get_number_emoji(i)} 🟢▲ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
+        text += "\n🔴 *DUSENLER*\n"
+        for i, c in enumerate(negatives, 1):
+            pct = float(c["priceChangePercent"])
+            text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
         text += "\n_⏳ WebSocket verisi henuz doluyor..._"
     else:
         changes = []
         for s, p in price_memory.items():
             if len(p) >= 2:
                 changes.append((s, ((p[-1][1]-p[0][1])/p[0][1])*100))
-        top = sorted(changes, key=lambda x: abs(x[1]), reverse=True)[:10]
+
+        positives = sorted([x for x in changes if x[1] > 0], key=lambda x: x[1], reverse=True)[:5]
+        negatives = sorted([x for x in changes if x[1] < 0], key=lambda x: x[1])[:5]
+
         text = "⚡ *Son 5 Dakikanin En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, (s, c) in enumerate(top, 1):
-            text += f"{get_number_emoji(i)} `{s:<12}` → `%{c:+6.2f}`\n"
+        text += "🟢 *YUKSELENLER — En Hizli 5*\n"
+        for i, (s, c) in enumerate(positives, 1):
+            text += f"{get_number_emoji(i)} 🟢▲ `{s:<12}` `%{c:+6.2f}`\n"
+        if not positives:
+            text += "_Yukseliş yok_\n"
+        text += "\n🔴 *DUSENLER — En Hizli 5*\n"
+        for i, (s, c) in enumerate(negatives, 1):
+            text += f"{get_number_emoji(i)} 🔴▼ `{s:<12}` `%{c:+6.2f}`\n"
+        if not negatives:
+            text += "_Dusus yok_\n"
 
     target = update.callback_query.message if update.callback_query else update.message
     await target.reply_text(text, parse_mode="Markdown")
