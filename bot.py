@@ -35,7 +35,7 @@ DEFAULT_MODE = "both"
 
 logging.basicConfig(level=logging.INFO)
 
-# ================= DATABASE =================
+# ================= DATABASE =================A
 
 conn = sqlite3.connect("groups.db", check_same_thread=False)
 cursor = conn.cursor()
