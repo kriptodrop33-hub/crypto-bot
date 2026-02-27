@@ -5,18 +5,13 @@ import asyncio
 import websockets
 import sqlite3
 import logging
-import io
 import matplotlib.pyplot as plt
 
+from io import BytesIO
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InputFile,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -54,14 +49,6 @@ CREATE TABLE IF NOT EXISTS groups (
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS user_alarms (
-    user_id INTEGER,
-    symbol TEXT,
-    threshold REAL
-)
-""")
-
 conn.commit()
 
 cursor.execute(
@@ -74,7 +61,6 @@ conn.commit()
 
 price_memory = defaultdict(list)
 cooldowns = {}
-user_cooldowns = {}
 
 # ================= RSI =================
 
@@ -109,67 +95,55 @@ async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
     except:
         return 0
 
-# ================= CHANGE =================
+# ================= CANDLE CHART =================
 
-async def get_interval_change(symbol, interval):
+async def generate_candle_chart(symbol):
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit=2"
+            f"{BINANCE_KLINES}?symbol={symbol}&interval=4h&limit=50"
         ) as resp:
             data = await resp.json()
 
-    open_price = float(data[0][1])
-    close_price = float(data[-1][4])
-    return round(((close_price - open_price) / open_price) * 100, 2)
-
-# ================= 4 SAATLİK MUM GRAFİĞİ =================
-
-async def generate_4h_candle_chart(symbol):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{BINANCE_KLINES}?symbol={symbol}&interval=1m&limit=240"
-        ) as resp:
-            data = await resp.json()
-
+    opens = [float(x[1]) for x in data]
     closes = [float(x[4]) for x in data]
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(closes)
-    plt.title(f"{symbol} - Son 4 Saat (1m)")
-    plt.xlabel("Dakika")
-    plt.ylabel("Fiyat")
-    plt.grid(True)
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png")
-    buf.seek(0)
+    for i in range(len(opens)):
+        color = "green" if closes[i] >= opens[i] else "red"
+        ax.plot([i, i], [opens[i], closes[i]], color=color, linewidth=6)
+
+    ax.set_title(f"{symbol} 4H Candle")
+    ax.grid(True)
+
+    buffer = BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
     plt.close()
 
-    return buf
+    return buffer
 
-# ================= HELP =================
+# ================= CHANGE DATA =================
 
-async def help_command(update: Update, context):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Top 24", callback_data="top24")],
-        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5")],
-        [InlineKeyboardButton("📈 Market", callback_data="market")],
-        [InlineKeyboardButton("ℹ️ Status", callback_data="status")]
-    ])
+async def get_multi_timeframe_change(symbol):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+            data = await resp.json()
 
-    text = (
-        "🚀 KRİPTO ALARM BOTU\n\n"
-        "/start\n/help\n/top24\n/top5\n/market\n/status\n\n"
-        "ADMIN:\n/alarmon\n/alarmoff\n/set 7\n/mode pump|dump|both\n\n"
-        "KULLANICI:\n/myalarm BTCUSDT 3"
-    )
+    change24 = float(data["priceChangePercent"])
 
-    await update.effective_message.reply_text(text, reply_markup=keyboard)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BINANCE_KLINES}?symbol={symbol}&interval=1h&limit=5"
+        ) as resp:
+            klines = await resp.json()
 
-async def start(update: Update, context):
-    await help_command(update, context)
+    change1h = ((float(klines[-1][4]) - float(klines[-2][4])) / float(klines[-2][4])) * 100
+    change4h = ((float(klines[-1][4]) - float(klines[-5][4])) / float(klines[-5][4])) * 100
 
-# ================= SYMBOL =================
+    return round(change24,2), round(change4h,2), round(change1h,2)
+
+# ================= SYMBOL DETAIL =================
 
 async def reply_symbol(update: Update, context):
     if not update.message:
@@ -186,60 +160,71 @@ async def reply_symbol(update: Update, context):
                 data = await resp.json()
 
         price = float(data["lastPrice"])
-        ch24 = float(data["priceChangePercent"])
-
-        ch4h = await get_interval_change(symbol, "4h")
-        ch1h = await get_interval_change(symbol, "1h")
-        ch15m = await get_interval_change(symbol, "15m")
 
         rsi7 = await calculate_rsi(symbol, 7)
         rsi14 = await calculate_rsi(symbol, 14)
 
-        chart = await generate_4h_candle_chart(symbol)
+        ch24, ch4, ch1 = await get_multi_timeframe_change(symbol)
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                "📊 Binance Grafik",
-                url=f"https://www.binance.com/en/trade/{symbol}"
-            )]
-        ])
+        chart = await generate_candle_chart(symbol)
 
-        caption = (
+        text = (
             f"💎 {symbol}\n\n"
             f"💰 Fiyat: {price}\n\n"
-            f"📊 24s: %{ch24:.2f}\n"
-            f"⏱ 4s: %{ch4h}\n"
-            f"⏱ 1s: %{ch1h}\n"
-            f"⏱ 15dk: %{ch15m}\n\n"
-            f"📈 RSI(7): {rsi7}\n"
+            f"📊 24s: %{ch24}\n"
+            f"📈 4s: %{ch4}\n"
+            f"⏱ 1s: %{ch1}\n\n"
+            f"📉 RSI(7): {rsi7}\n"
             f"📉 RSI(14): {rsi14}"
         )
 
-        await update.message.reply_photo(
-            photo=InputFile(chart),
-            caption=caption,
-            reply_markup=keyboard
-        )
+        await update.message.reply_photo(photo=chart, caption=text)
 
-    except Exception as e:
-        logging.error(e)
+    except:
+        pass
 
-# ================= CALLBACK =================
+# ================= TOP24 =================
 
-async def button(update: Update, context):
-    query = update.callback_query
-    await query.answer()
+async def top24(update: Update, context):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            data = await resp.json()
 
-    if query.data == "top24":
-        await top24(update, context)
-    elif query.data == "top5":
-        await top5(update, context)
-    elif query.data == "market":
-        await market(update, context)
-    elif query.data == "status":
-        await status(update, context)
+    usdt = [x for x in data if x["symbol"].endswith("USDT")]
+    top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
 
-# ================= ALARM JOB =================
+    text = "🔥 24 Saat Top 10\n\n"
+
+    for c in top:
+        text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
+
+    await update.message.reply_text(text)
+
+# ================= TOP5 =================
+
+async def top5(update: Update, context):
+    changes = []
+
+    for symbol, prices in price_memory.items():
+        if len(prices) >= 2:
+            old = prices[0][1]
+            new = prices[-1][1]
+            ch = ((new - old) / old) * 100
+            changes.append((symbol, ch))
+
+    top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
+
+    if not top:
+        await update.message.reply_text("Henüz 5dk veri yok.")
+        return
+
+    text = "⚡ 5 Dakika Top 10\n\n"
+    for sym, ch in top:
+        text += f"{sym} → %{ch:.2f}\n"
+
+    await update.message.reply_text(text)
+
+# ================= ALARM =================
 
 async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(
@@ -276,42 +261,29 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             cooldowns[symbol] = now
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                    data = await resp.json()
-
-            price = float(data["lastPrice"])
-            change24 = float(data["priceChangePercent"])
-
-            ch4h = await get_interval_change(symbol, "4h")
-            ch1h = await get_interval_change(symbol, "1h")
-            ch15m = await get_interval_change(symbol, "15m")
-
             rsi7 = await calculate_rsi(symbol, 7)
             rsi14 = await calculate_rsi(symbol, 14)
+            ch24, ch4, ch1 = await get_multi_timeframe_change(symbol)
+            chart = await generate_candle_chart(symbol)
 
-            chart = await generate_4h_candle_chart(symbol)
+            trend = "🚀 PUMP" if change5 > 0 else "🔻 DUMP"
 
-            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
-
-            caption = (
+            text = (
                 f"{trend} ALARMI\n\n"
                 f"💎 {symbol}\n"
-                f"💰 Fiyat: {price}\n\n"
                 f"⚡ 5dk: %{change5:.2f}\n"
-                f"📊 24s: %{change24:.2f}\n"
-                f"⏱ 4s: %{ch4h}\n"
-                f"⏱ 1s: %{ch1h}\n"
-                f"⏱ 15dk: %{ch15m}\n\n"
-                f"📈 RSI(7): {rsi7}\n"
-                f"📉 RSI(14): {rsi14}\n\n"
+                f"📊 24s: %{ch24}\n"
+                f"📈 4s: %{ch4}\n"
+                f"⏱ 1s: %{ch1}\n\n"
+                f"📉 RSI7: {rsi7}\n"
+                f"📉 RSI14: {rsi14}\n\n"
                 f"🎯 Eşik: %{threshold}"
             )
 
             await context.bot.send_photo(
                 chat_id=GROUP_CHAT_ID,
-                photo=InputFile(chart),
-                caption=caption
+                photo=chart,
+                caption=text
             )
 
 # ================= WEBSOCKET =================
@@ -360,19 +332,8 @@ def main():
 
     app.job_queue.run_repeating(alarm_job, interval=60, first=30)
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("top24", top24))
     app.add_handler(CommandHandler("top5", top5))
-    app.add_handler(CommandHandler("market", market))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("alarmon", alarm_on))
-    app.add_handler(CommandHandler("alarmoff", alarm_off))
-    app.add_handler(CommandHandler("set", set_threshold))
-    app.add_handler(CommandHandler("mode", set_mode))
-    app.add_handler(CommandHandler("myalarm", myalarm))
-
-    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
     print("🚀 BOT TAM AKTİF")
