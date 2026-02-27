@@ -185,8 +185,8 @@ async def generate_candlestick_chart(symbol: str):
         mpf.plot(
             df, type="candle", style=style,
             title=f"\n{symbol} - 4 Saatlik Mum Grafigi (Son 60 Mum)",
-            ylabel="Fiyat (USDT)", volume=True, figsize=(12,7),
-            savefig=dict(fname=buf, format="png", bbox_inches="tight", dpi=150),
+            ylabel="Fiyat (USDT)", volume=True, figsize=(8,4),
+            savefig=dict(fname=buf, format="png", bbox_inches="tight", dpi=90),
         )
         buf.seek(0)
         chart_cache[symbol] = (datetime.utcnow(), buf)
@@ -237,70 +237,160 @@ def calc_rsi(data, period=14):
     except:
         return 0.0
 
-def calc_market_score(ticker, ch5m, ch1h, ch4h, ch24, rsi7, rsi14):
+# ================= SKORLAMA =================
+
+def _score_label(score):
+    if score >= 75: return "🚀 Güçlü Al",  "🟢🟢🟢🟢🟢"
+    if score >= 60: return "📈 Pozitif",    "🟢🟢🟢🟡➖"
+    if score >= 45: return "😐 Nötr",       "🟡🟡🟡➖➖"
+    if score >= 30: return "📉 Zayıf",      "🔴🔴➖➖➖"
+    return              "🚨 Güçlü Sat",  "🔴🔴🔴🔴🔴"
+
+def _normalize(points, max_pts):
+    return max(0, min(100, round(((points + max_pts) / (max_pts * 2)) * 100)))
+
+def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
     """
-    Piyasa verilerini 100 uzerinden puanlar.
-    Skor: 0-39 = Zayif/Sat, 40-59 = Notr, 60-79 = Güçlü, 80-100 = Cok Güçlü/Al
+    SAATLİK SKOR — kısa vadeli momentum odaklı
+    Kullanılan: RSI(1h,14), RSI(1h,7), 15dk değişim, 5dk değişim, 1h hacim trendi
     """
-    score = 50  # Baslangic
+    p = 0
+    rsi14 = calc_rsi(k1h_series, 14)
+    rsi7  = calc_rsi(k1h_series, 7)
+    ch15m = calc_change(k15m) if k15m and len(k15m) >= 2 else 0
+    ch5m  = calc_change(k5m)  if k5m  and len(k5m)  >= 2 else 0
 
-    # RSI bazli puan (max +-20)
-    if rsi14 <= 30:
-        score += 20   # Asiri satim -> al firsati
-    elif rsi14 <= 45:
-        score += 10
-    elif rsi14 >= 70:
-        score -= 20   # Asiri alim -> dikkat
-    elif rsi14 >= 55:
-        score -= 10
+    # RSI14 aşırı bölge
+    if   rsi14 <= 25: p += 2
+    elif rsi14 <= 40: p += 1
+    elif rsi14 >= 75: p -= 2
+    elif rsi14 >= 60: p -= 1
 
-    # RSI7 hizli tepki (max +-10)
-    if rsi7 < 30:
-        score += 10
-    elif rsi7 > 70:
-        score -= 10
+    # RSI7 vs RSI14 momentum farkı
+    if   rsi7 > rsi14 + 8:  p += 2
+    elif rsi7 > rsi14:       p += 1
+    elif rsi7 < rsi14 - 8:  p -= 2
+    elif rsi7 < rsi14:       p -= 1
 
-    # 5 dakikalik momentum (max +-10)
-    if ch5m > 3:    score += 10
-    elif ch5m > 1:  score += 5
-    elif ch5m < -3: score -= 10
-    elif ch5m < -1: score -= 5
+    # 15dk + 5dk uyumu
+    if   ch5m > 1   and ch15m > 0.5: p += 2
+    elif ch5m > 0   or  ch15m > 0:   p += 1
+    elif ch5m < -1  and ch15m < -0.5: p -= 2
+    elif ch5m < 0   or  ch15m < 0:   p -= 1
 
-    # 1 saatlik trend (max +-10)
-    if ch1h > 5:    score += 10
-    elif ch1h > 2:  score += 5
-    elif ch1h < -5: score -= 10
-    elif ch1h < -2: score -= 5
+    # Son 1 saatlik fiyat hareketi
+    ch1h = calc_change(k1h_series[-2:]) if k1h_series and len(k1h_series) >= 2 else 0
+    if   ch1h > 2:  p += 2
+    elif ch1h > 0:  p += 1
+    elif ch1h < -2: p -= 2
+    elif ch1h < 0:  p -= 1
 
-    # 4 saatlik trend (max +-10)
-    if ch4h > 5:    score += 10
-    elif ch4h > 2:  score += 5
-    elif ch4h < -5: score -= 10
-    elif ch4h < -2: score -= 5
+    # Hacim uyumu (24s)
+    vol24 = float(ticker.get("quoteVolume", 0))
+    ch24  = float(ticker.get("priceChangePercent", 0))
+    if   vol24 > 30_000_000 and ch5m > 0: p += 2
+    elif vol24 > 10_000_000 and ch5m > 0: p += 1
+    elif vol24 > 30_000_000 and ch5m < 0: p -= 2
+    elif vol24 > 10_000_000 and ch5m < 0: p -= 1
 
-    # Hacim/24s degisim dogrulama (max +-5)
-    vol_change = float(ticker.get("quoteVolume", 0))
-    if ch24 > 5 and ch5m > 0:  score += 5
-    elif ch24 < -5 and ch5m < 0: score -= 5
+    score = _normalize(p, 10)
+    label, bar = _score_label(score)
+    return score, label, bar
 
-    score = max(0, min(100, round(score)))
+def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
+    """
+    GÜNLÜK SKOR — orta vadeli trend odaklı
+    Kullanılan: RSI(4h,14), 4h değişim, 1h×24 trend, 24s hacim/değişim, volatilite
+    """
+    p = 0
+    rsi14_4h = calc_rsi(k4h_series, 14)
+    rsi14_1h = calc_rsi(k1h_series, 14)
+    ch4h  = calc_change(k4h_series[-2:])  if k4h_series  and len(k4h_series)  >= 2 else 0
+    ch24h = calc_change(k1h_series)       if k1h_series  and len(k1h_series)  >= 2 else 0
+    ch14d = calc_change(k1d_series)       if k1d_series  and len(k1d_series)  >= 5 else 0
 
-    if score >= 80:
-        label = "🚀 Cok Guçlu — AL sinyali"
-        bar = "🟢🟢🟢🟢🟢"
-    elif score >= 60:
-        label = "💪 Guçlu — Pozitif"
-        bar = "🟢🟢🟢🟡➖"
-    elif score >= 40:
-        label = "😐 Notr — Bekle"
-        bar = "🟡🟡🟡➖➖"
-    elif score >= 20:
-        label = "⚠️ Zayif — Dikkat"
-        bar = "🔴🔴➖➖➖"
-    else:
-        label = "🚨 Cok Zayif — SAT sinyali"
-        bar = "🔴🔴🔴🔴🔴"
+    # RSI(4h) aşırı bölge
+    if   rsi14_4h <= 25: p += 2
+    elif rsi14_4h <= 40: p += 1
+    elif rsi14_4h >= 75: p -= 2
+    elif rsi14_4h >= 60: p -= 1
 
+    # RSI(1h) onay
+    if   rsi14_1h <= 35: p += 1
+    elif rsi14_1h >= 65: p -= 1
+
+    # 4sa fiyat trendi
+    if   ch4h > 3:  p += 2
+    elif ch4h > 1:  p += 1
+    elif ch4h < -3: p -= 2
+    elif ch4h < -1: p -= 1
+
+    # 24 saatlik trend (son 24 mum)
+    if   ch24h > 5:  p += 2
+    elif ch24h > 2:  p += 1
+    elif ch24h < -5: p -= 2
+    elif ch24h < -2: p -= 1
+
+    # Hacim + yön uyumu
+    vol24  = float(ticker.get("quoteVolume", 0))
+    ch24   = float(ticker.get("priceChangePercent", 0))
+    high   = float(ticker.get("highPrice", 1)) or 1
+    low    = float(ticker.get("lowPrice",  1)) or 1
+    volat  = ((high - low) / low) * 100
+    if   vol24 > 50_000_000 and ch24 > 3:  p += 2
+    elif vol24 > 20_000_000 and ch24 > 0:  p += 1
+    elif vol24 > 50_000_000 and ch24 < -3: p -= 2
+    elif vol24 > 20_000_000 and ch24 < 0:  p -= 1
+
+    score = _normalize(p, 10)
+    label, bar = _score_label(score)
+    return score, label, bar
+
+def calc_score_weekly(ticker, k1d_series, k1w_series):
+    """
+    HAFTALIK SKOR — uzun vadeli yapısal trend
+    Kullanılan: RSI(1d,14), RSI(1w,14), 7g/30g değişim, haftalık hacim, 200-periyot SMA yönü
+    """
+    p = 0
+    rsi14_1d = calc_rsi(k1d_series, 14)
+    rsi14_1w = calc_rsi(k1w_series, 14)
+    ch7d  = calc_change(k1d_series[-7:])  if k1d_series  and len(k1d_series)  >= 7  else 0
+    ch30d = calc_change(k1d_series)       if k1d_series  and len(k1d_series)  >= 5  else 0
+    ch4w  = calc_change(k1w_series[-4:])  if k1w_series  and len(k1w_series)  >= 4  else 0
+    ch12w = calc_change(k1w_series)       if k1w_series  and len(k1w_series)  >= 5  else 0
+
+    # RSI(1d) aşırı bölge
+    if   rsi14_1d <= 25: p += 2
+    elif rsi14_1d <= 40: p += 1
+    elif rsi14_1d >= 75: p -= 2
+    elif rsi14_1d >= 60: p -= 1
+
+    # RSI(1w) uzun vade onay
+    if   rsi14_1w <= 30: p += 2
+    elif rsi14_1w <= 45: p += 1
+    elif rsi14_1w >= 70: p -= 2
+    elif rsi14_1w >= 55: p -= 1
+
+    # 7 günlük fiyat trendi
+    if   ch7d > 10: p += 2
+    elif ch7d > 3:  p += 1
+    elif ch7d < -10: p -= 2
+    elif ch7d < -3:  p -= 1
+
+    # 4 haftalık trend
+    if   ch4w > 15: p += 2
+    elif ch4w > 5:  p += 1
+    elif ch4w < -15: p -= 2
+    elif ch4w < -5:  p -= 1
+
+    # 30 günlük makro trend
+    if   ch30d > 20: p += 2
+    elif ch30d > 5:  p += 1
+    elif ch30d < -20: p -= 2
+    elif ch30d < -5:  p -= 1
+
+    score = _normalize(p, 10)
+    label, bar = _score_label(score)
     return score, label, bar
 
 async def fetch_all_analysis(symbol):
@@ -311,18 +401,26 @@ async def fetch_all_analysis(symbol):
         ) as resp:
             ticker = await resp.json()
 
-        k4h, k1h, k5m, krsi = await asyncio.gather(
-            fetch_klines(session, symbol, "4h",  limit=2),
-            fetch_klines(session, symbol, "1h",  limit=2),
-            fetch_klines(session, symbol, "5m",  limit=2),
-            fetch_klines(session, symbol, "1h",  limit=100),
+        (k4h, k1h_2, k5m, k1h_100,
+         k1d, k15m, k4h_42, k1h_24,
+         k1w) = await asyncio.gather(
+            fetch_klines(session, symbol, "4h",  limit=2),     # anlık 4sa
+            fetch_klines(session, symbol, "1h",  limit=2),     # anlık 1sa
+            fetch_klines(session, symbol, "5m",  limit=2),     # anlık 5dk
+            fetch_klines(session, symbol, "1h",  limit=100),   # RSI hesabı
+            fetch_klines(session, symbol, "1d",  limit=30),    # günlük 30 gün
+            fetch_klines(session, symbol, "15m", limit=20),    # 15dk seri
+            fetch_klines(session, symbol, "4h",  limit=50),    # 4sa seri (skor)
+            fetch_klines(session, symbol, "1h",  limit=24),    # 24sa seri (skor)
+            fetch_klines(session, symbol, "1w",  limit=12),    # haftalık 12 hafta
         )
 
-    return ticker, k4h, k1h, k5m, krsi
+    return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w
 
 async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None):
     try:
-        ticker, k4h, k1h, k5m, krsi = await fetch_all_analysis(symbol)
+        (ticker, k4h, k1h_2, k5m, k1h_100,
+         k1d, k15m, k4h_42, k1h_24, k1w) = await fetch_all_analysis(symbol)
 
         if "lastPrice" not in ticker:
             return
@@ -330,10 +428,10 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         price  = float(ticker["lastPrice"])
         ch24   = float(ticker["priceChangePercent"])
         ch4h   = calc_change(k4h)
-        ch1h   = calc_change(k1h)
+        ch1h   = calc_change(k1h_2)
         ch5m   = calc_change(k5m)
-        rsi7   = calc_rsi(krsi, 7)
-        rsi14  = calc_rsi(krsi, 14)
+        rsi7   = calc_rsi(k1h_100, 7)
+        rsi14  = calc_rsi(k1h_100, 14)
 
         def get_ui(val):
             if val > 0:   return "🟢▲", "+"
@@ -345,7 +443,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         e4,s4   = get_ui(ch4h)
         e24,s24 = get_ui(ch24)
 
-        # RSI yorumu
         def rsi_label(r):
             if r >= 70:   return "🔴 Asiri Alim"
             elif r >= 55: return "🟡 Yukselis"
@@ -353,10 +450,11 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             elif r <= 45: return "🟡 Dusus"
             else:         return "🟢 Normal"
 
-        # 100 uzerinden piyasa skoru
-        score, score_label, score_bar = calc_market_score(ticker, ch5m, ch1h, ch4h, ch24, rsi7, rsi14)
+        # 3 ayrı skor
+        sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14)
+        sd, ld, bd = calc_score_daily(ticker, k4h_42, k1h_24, k1d)
+        sw, lw, bw = calc_score_weekly(ticker, k1d, k1w)
 
-        # Hacim bilgisi
         vol_usdt = float(ticker.get("quoteVolume", 0))
         vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
 
@@ -366,17 +464,21 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             f"💎 *Parite:* `#{symbol}`\n"
             f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
             f"📦 *24s Hacim:* `{vol_str} USDT`\n\n"
-            f"*📈 Performans Degisimleri:*\n"
+            f"*📈 Performans:*\n"
             f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
             f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
             f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
             f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
-            f"📉 *RSI Analizi:*\n"
+            f"📉 *RSI:*\n"
             f"• RSI 7  : `{rsi7}` — {rsi_label(rsi7)}\n"
             f"• RSI 14 : `{rsi14}` — {rsi_label(rsi14)}\n\n"
-            f"🎯 *Piyasa Skoru: {score}/100*\n"
-            f"{score_bar}\n"
-            f"_{score_label}_\n"
+            f"🎯 *Piyasa Skoru*\n"
+            f"⏱ Saatlik : `{sh}/100` {bh}\n"
+            f"  _{lh}_\n"
+            f"📅 Günlük  : `{sd}/100` {bd}\n"
+            f"  _{ld}_\n"
+            f"📆 Haftalık: `{sw}/100` {bw}\n"
+            f"  _{lw}_\n"
             f"──────────────────"
         )
         if threshold_info:
@@ -397,7 +499,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=InputFile(chart_buf, filename=f"{symbol}_4h.png"),
-                caption=f"🕯️ *{symbol}* — 4 Saatlik Mum Grafigi | Skor: {score}/100 {score_bar}",
+                caption=f"🕯️ *{symbol}* — 4sa | ⏱{sh} 📅{sd} 📆{sw}",
                 parse_mode="Markdown"
             )
 
@@ -405,6 +507,51 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         log.error(f"Gonderim hatasi ({symbol}): {e}")
 
 # ================= ADMIN KONTROL =================
+
+# ================= DM YÖNLENDİRME =================
+
+async def dm_redirect(update: Update, context, action_func):
+    """
+    Grup mesajında çağrılırsa:
+      - Kullanıcı mesajını siler (mümkünse)
+      - Gruba kısa yönlendirme mesajı atar (10sn sonra silinir)
+      - İşlemi DM'de yapar
+    DM'de ise direkt çalıştırır.
+    """
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type == "private":
+        await action_func()
+        return
+
+    # Grup mesajını sil
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Gruba geçici bilgi mesajı
+    try:
+        note = await context.bot.send_message(
+            chat.id,
+            f"👤 {user.first_name} — sonuç DM'inize gönderildi.",
+            parse_mode="Markdown"
+        )
+        # 8 saniye sonra bu mesajı da sil
+        async def _delete_note():
+            await asyncio.sleep(8)
+            try: await note.delete()
+            except: pass
+        asyncio.create_task(_delete_note())
+    except Exception:
+        pass
+
+    # İşlemi DM'de yap
+    try:
+        await action_func(dm=True)
+    except TypeError:
+        await action_func()
 
 async def is_admin(update: Update, context) -> bool:
     """
@@ -618,11 +765,33 @@ async def reply_symbol(update: Update, context):
 
     raw    = update.message.text.upper().strip()
     symbol = raw.replace("#","").replace("/","")
-    if symbol.endswith("USDT"):
-        await send_full_analysis(
-            context.bot, update.effective_chat.id,
-            symbol, "PIYASA ANALIZ RAPORU"
-        )
+    if not symbol.endswith("USDT"):
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type == "private":
+        await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
+    else:
+        # Grup mesajını sil, DM'e gönder
+        try: await update.message.delete()
+        except: pass
+        try:
+            await send_full_analysis(context.bot, user.id, symbol, "PIYASA ANALIZ RAPORU")
+            note = await context.bot.send_message(
+                chat.id, f"👤 {user.first_name} — `{symbol}` analizi DM'inize gönderildi.",
+                parse_mode="Markdown"
+            )
+            async def _del():
+                await asyncio.sleep(8)
+                try: await note.delete()
+                except: pass
+            asyncio.create_task(_del())
+        except Exception as e:
+            log.warning(f"reply_symbol DM hatasi: {e}")
+            # Bot kullanıcıyla DM başlatamamışsa gruba gönder
+            await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
 
 # ================= KISISEL ALARM =================
 
@@ -789,6 +958,40 @@ async def favori_command(update: Update, context):
         parse_mode="Markdown"
     )
 
+
+# ================= GRUP → DM YÖNLENDIRME WRAPPER =================
+
+async def group_to_dm(update: Update, context, handler_func):
+    """Kişisel komutları grup yerine DM'de çalıştırır."""
+    chat = update.effective_chat
+    if chat.type == "private":
+        await handler_func(update, context)
+        return
+
+    user = update.effective_user
+    # Kullanıcı mesajını sil
+    try: await update.message.delete()
+    except: pass
+
+    # Komutu DM'de çalıştır
+    try:
+        await handler_func(update, context, force_dm=True)
+    except TypeError:
+        await handler_func(update, context)
+
+    # Gruba 8sn'de silinen kısa bilgi
+    try:
+        note = await context.bot.send_message(
+            chat.id,
+            f"👤 {user.first_name} — yanıt DM'inize gönderildi.",
+            parse_mode="Markdown"
+        )
+        async def _del():
+            await asyncio.sleep(8)
+            try: await note.delete()
+            except: pass
+        asyncio.create_task(_del())
+    except: pass
 
 # ================= GELİŞMİŞ KİŞİSEL ALARM =================
 
@@ -1560,20 +1763,28 @@ def main():
     app.job_queue.run_repeating(whale_job,       interval=120,  first=60)
     app.job_queue.run_repeating(scheduled_job,   interval=60,   first=10)
 
-    app.add_handler(CommandHandler("start",          start))
-    app.add_handler(CommandHandler("top24",          top24))
-    app.add_handler(CommandHandler("top5",           top5))
-    app.add_handler(CommandHandler("market",         market))
-    app.add_handler(CommandHandler("status",         status))
-    app.add_handler(CommandHandler("alarmim",        my_alarm_v2))
-    app.add_handler(CommandHandler("alarm_ekle",     alarm_ekle_v2))
-    app.add_handler(CommandHandler("alarm_sil",      alarm_sil))
-    app.add_handler(CommandHandler("alarm_duraklat", alarm_duraklat))
-    app.add_handler(CommandHandler("alarm_gecmis",   alarm_gecmis))
-    app.add_handler(CommandHandler("favori",         favori_command))
-    app.add_handler(CommandHandler("mtf",            mtf_command))
-    app.add_handler(CommandHandler("zamanla",        zamanla_command))
-    app.add_handler(CommandHandler("set",            set_command))
+    # Grup komutları → doğrudan
+    app.add_handler(CommandHandler("start",  start))
+    app.add_handler(CommandHandler("top24",  top24))
+    app.add_handler(CommandHandler("top5",   top5))
+    app.add_handler(CommandHandler("market", market))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("set",    set_command))
+
+    # Kişisel komutlar → grup olursa DM'e yönlendir
+    def dm(fn):
+        async def wrapper(update, context):
+            await group_to_dm(update, context, fn)
+        return wrapper
+
+    app.add_handler(CommandHandler("alarmim",        dm(my_alarm_v2)))
+    app.add_handler(CommandHandler("alarm_ekle",     dm(alarm_ekle_v2)))
+    app.add_handler(CommandHandler("alarm_sil",      dm(alarm_sil)))
+    app.add_handler(CommandHandler("alarm_duraklat", dm(alarm_duraklat)))
+    app.add_handler(CommandHandler("alarm_gecmis",   dm(alarm_gecmis)))
+    app.add_handler(CommandHandler("favori",         dm(favori_command)))
+    app.add_handler(CommandHandler("mtf",            dm(mtf_command)))
+    app.add_handler(CommandHandler("zamanla",        dm(zamanla_command)))
 
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
