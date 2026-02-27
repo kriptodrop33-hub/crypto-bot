@@ -171,6 +171,8 @@ def calc_change(data):
         return 0.0
     first = float(data[0][4])
     last  = float(data[-1][4])
+    if first == 0:
+        return 0.0
     return round(((last - first) / first) * 100, 2)
 
 def calc_rsi(data, period=14):
@@ -181,7 +183,9 @@ def calc_rsi(data, period=14):
             diff = closes[i] - closes[i-1]
             gains.append(max(diff, 0))
             losses.append(abs(min(diff, 0)))
-        avg_gain = sum(gains[-period:]) / period
+        if len(gains) < period:
+        return 0.0
+    avg_gain = sum(gains[-period:]) / period
         avg_loss = sum(losses[-period:]) / period
         if avg_loss == 0:
             return 100.0
@@ -743,7 +747,16 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if len(prices) < 2:
                 continue
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
-            if abs(ch5) >= threshold:
+            trigger = False
+        if mode == "both" and abs(ch5) >= threshold:
+            trigger = True
+        elif mode == "up" and ch5 >= threshold:
+            trigger = True
+        elif mode == "down" and ch5 <= -threshold:
+            trigger = True
+
+        if not trigger:
+            continue
                 key = f"group_{symbol}"
                 if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                     continue
@@ -764,7 +777,16 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             continue
 
         ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
-        if abs(ch5) >= threshold:
+        trigger = False
+        if mode == "both" and abs(ch5) >= threshold:
+            trigger = True
+        elif mode == "up" and ch5 >= threshold:
+            trigger = True
+        elif mode == "down" and ch5 <= -threshold:
+            trigger = True
+
+        if not trigger:
+            continue
             key = f"user_{user_id}_{symbol}"
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
