@@ -1,12 +1,11 @@
 import os
 import json
+import aiohttp
 import asyncio
+import websockets
 import sqlite3
 from datetime import datetime, timedelta
 from collections import defaultdict
-
-import aiohttp
-import websockets
 
 from telegram import (
     Update,
@@ -18,21 +17,15 @@ from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
     CommandHandler,
-    CallbackQueryHandler,
     ChatMemberHandler,
     MessageHandler,
     filters,
 )
 
-# ================= CONFIG =================
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-BINANCE_WS = "wss://stream.binance.com:9443/ws/!miniTicker@arr"
-BINANCE_24H = "https://api.binance.com/api/v3/ticker/24hr"
 
+BINANCE_24H = "https://api.binance.com/api/v3/ticker/24hr"
 COOLDOWN_MINUTES = 15
-PUMP_WINDOW = 30
-FIVE_MIN = 300
 
 # ================= DATABASE =================
 
@@ -43,7 +36,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS groups (
     chat_id INTEGER PRIMARY KEY,
     alarm_active INTEGER DEFAULT 1,
-    threshold REAL DEFAULT 7
+    threshold REAL DEFAULT 5
 )
 """)
 conn.commit()
@@ -53,166 +46,174 @@ conn.commit()
 price_memory = defaultdict(list)
 cooldowns = {}
 
-# ================= BOT COMMAND MENU =================
+# ================= ADMIN CHECK =================
 
-async def set_bot_commands(app):
-    commands = [
-        BotCommand("start", "Bot menüsünü aç"),
-        BotCommand("alarmon", "Alarmı aç"),
-        BotCommand("alarmoff", "Alarmı kapat"),
-        BotCommand("set", "Alarm yüzdesi ayarla"),
-        BotCommand("top24", "24 saat Top 10"),
-        BotCommand("top5", "5 dakika Top 10"),
-        BotCommand("status", "Alarm durumunu göster"),
-    ]
-    await app.bot.set_my_commands(commands)
-
-# ================= START =================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🔥 Top 10 (24s)", callback_data="top24"),
-            InlineKeyboardButton("⚡ Top 10 (5dk)", callback_data="top5"),
-        ],
-        [
-            InlineKeyboardButton("📊 Alarm Durumu", callback_data="status")
-        ]
-    ])
-
-    await update.message.reply_text(
-        "🚀 Crypto Alarm Bot\n\n"
-        "• Sembol yaz → BTCUSDT\n"
-        "• Alarm sistemi aktif\n"
-        "• Menüden seçim yap",
-        reply_markup=keyboard
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type == "private":
+        return True
+    member = await context.bot.get_chat_member(
+        update.effective_chat.id,
+        update.effective_user.id
     )
+    return member.status in ["administrator", "creator"]
+
+# ================= GROUP REGISTER =================
+
+async def added_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat.type in ["group", "supergroup"]:
+        cursor.execute("INSERT OR IGNORE INTO groups (chat_id) VALUES (?)", (chat.id,))
+        conn.commit()
+        await context.bot.send_message(chat.id, "✅ Alarm sistemi aktif.")
+
+# ================= BINANCE FETCH =================
+
+async def fetch_all():
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            return await resp.json()
 
 # ================= TOP 24 =================
 
 async def top24(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(BINANCE_24H) as resp:
-            data = await resp.json()
-
+    data = await fetch_all()
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
-    sorted_coins = sorted(usdt,
-                          key=lambda x: float(x["priceChangePercent"]),
-                          reverse=True)[:10]
+    top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
 
-    text = "🔥 TOP 10 (24 Saat)\n\n"
-    for coin in sorted_coins:
-        text += f"{coin['symbol']}  %{float(coin['priceChangePercent']):.2f}\n"
+    text = "📊 24 SAAT TOP 10\n\n"
+    for coin in top:
+        text += f"{coin['symbol']} → %{float(coin['priceChangePercent']):.2f}\n"
 
     await update.message.reply_text(text)
 
-# ================= TOP 5 DK =================
+# ================= TOP 5DK =================
 
 async def top5(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.utcnow()
-    results = []
+    changes = []
 
-    for symbol, prices in price_memory.items():
-        if len(prices) < 2:
-            continue
+    for symbol in price_memory:
+        prices = price_memory[symbol]
+        if len(prices) >= 2:
+            old_price = prices[0][1]
+            new_price = prices[-1][1]
+            change = ((new_price - old_price) / old_price) * 100
+            changes.append((symbol, change))
 
-        first_time, first_price = prices[0]
-        last_price = prices[-1][1]
+    top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
 
-        if now - first_time >= timedelta(seconds=FIVE_MIN):
-            change = ((last_price - first_price) / first_price) * 100
-            results.append((symbol, change))
-
-    results = sorted(results, key=lambda x: x[1], reverse=True)[:10]
-
-    text = "⚡ TOP 10 (5 Dakika)\n\n"
-    for symbol, change in results:
-        text += f"{symbol}  %{change:.2f}\n"
+    text = "⚡ 5 DAKİKA TOP 10\n\n"
+    for sym, ch in top:
+        text += f"{sym} → %{ch:.2f}\n"
 
     await update.message.reply_text(text)
 
-# ================= STATUS =================
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor.execute("SELECT alarm_active, threshold FROM groups WHERE chat_id=?",
-                   (update.effective_chat.id,))
-    row = cursor.fetchone()
-
-    if not row:
-        await update.message.reply_text("Grup kayıtlı değil.")
-        return
-
-    active, threshold = row
-    state = "✅ Açık" if active else "❌ Kapalı"
-
-    await update.message.reply_text(
-        f"Alarm: {state}\nYüzde: %{threshold}"
-    )
-
-# ================= ALARM COMMANDS =================
-
-async def alarm_on(update: Update, context):
-    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?",
-                   (update.effective_chat.id,))
-    conn.commit()
-    await update.message.reply_text("✅ Alarm açıldı.")
-
-async def alarm_off(update: Update, context):
-    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?",
-                   (update.effective_chat.id,))
-    conn.commit()
-    await update.message.reply_text("❌ Alarm kapatıldı.")
-
-async def set_threshold(update: Update, context):
-    try:
-        value = float(context.args[0])
-        cursor.execute(
-            "UPDATE groups SET threshold=? WHERE chat_id=?",
-            (value, update.effective_chat.id)
-        )
-        conn.commit()
-        await update.message.reply_text(f"🎯 Yeni alarm yüzdesi %{value}")
-    except:
-        await update.message.reply_text("Kullanım: /set 7")
-
 # ================= SYMBOL REPLY =================
 
-async def reply_coin(update: Update, context):
+async def reply_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
     symbol = update.message.text.upper().strip()
     if not symbol.endswith("USDT"):
         return
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-            data = await resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+                data = await resp.json()
 
-    if "lastPrice" not in data:
+        last_price = float(data["lastPrice"])
+        change_24 = float(data["priceChangePercent"])
+
+        change_30 = 0
+        change_5m = 0
+
+        if symbol in price_memory and len(price_memory[symbol]) >= 2:
+            old_price = price_memory[symbol][0][1]
+            change_5m = ((last_price - old_price) / old_price) * 100
+
+            recent = [
+                (t, p) for (t, p) in price_memory[symbol]
+                if datetime.utcnow() - t <= timedelta(seconds=30)
+            ]
+            if len(recent) >= 2:
+                change_30 = ((last_price - recent[0][1]) / recent[0][1]) * 100
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📈 Binance Grafik",
+                url=f"https://www.binance.com/en/trade/{symbol}"
+            )]
+        ])
+
+        text = (
+            f"💎 {symbol}\n\n"
+            f"Fiyat: {last_price}\n"
+            f"30sn: %{change_30:.2f}\n"
+            f"5dk: %{change_5m:.2f}\n"
+            f"24s: %{change_24:.2f}"
+        )
+
+        await update.message.reply_text(text, reply_markup=keyboard)
+
+    except:
         return
 
-    price = float(data["lastPrice"])
-    change24 = float(data["priceChangePercent"])
+# ================= ALARM JOB =================
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "📈 Binance Grafik",
-            url=f"https://www.binance.com/en/trade/{symbol}"
-        )]
-    ])
+async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
-    text = (
-        f"💎 {symbol}\n\n"
-        f"Fiyat: {price}\n"
-        f"24s: %{change24:.2f}"
-    )
+    cursor.execute("SELECT chat_id, threshold FROM groups WHERE alarm_active=1")
+    groups = cursor.fetchall()
+    if not groups:
+        return
 
-    await update.message.reply_text(text, reply_markup=keyboard)
+    now = datetime.utcnow()
 
-# ================= ENGINE =================
+    for symbol in price_memory:
+        prices = price_memory[symbol]
+        if len(prices) < 2:
+            continue
+
+        old_price = prices[0][1]
+        new_price = prices[-1][1]
+        change = ((new_price - old_price) / old_price) * 100
+
+        for chat_id, threshold in groups:
+
+            if abs(change) >= threshold:
+
+                if symbol in cooldowns:
+                    if now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES):
+                        continue
+
+                cooldowns[symbol] = now
+
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "📈 Binance Grafik",
+                        url=f"https://www.binance.com/en/trade/{symbol}"
+                    )]
+                ])
+
+                text = (
+                    f"🚨 5DK ALARM (%{threshold})\n\n"
+                    f"{symbol}\n"
+                    f"5dk: %{change:.2f}"
+                )
+
+                await context.bot.send_message(chat_id, text, reply_markup=keyboard)
+
+# ================= WEBSOCKET ENGINE =================
 
 async def binance_engine(app):
+
+    uri = "wss://stream.binance.com:9443/ws/!miniTicker@arr"
+
     while True:
         try:
-            async with websockets.connect(BINANCE_WS) as ws:
+            async with websockets.connect(uri) as ws:
                 async for message in ws:
                     data = json.loads(message)
                     now = datetime.utcnow()
@@ -223,28 +224,79 @@ async def binance_engine(app):
                             continue
 
                         price = float(coin["c"])
-                        price_memory[symbol].append((now, price))
 
+                        price_memory[symbol].append((now, price))
                         price_memory[symbol] = [
-                            (t, p) for t, p in price_memory[symbol]
-                            if now - t <= timedelta(seconds=FIVE_MIN)
+                            (t, p) for (t, p) in price_memory[symbol]
+                            if now - t <= timedelta(minutes=5)
                         ]
 
-        except:
+        except Exception as e:
+            print("WebSocket hata:", e)
             await asyncio.sleep(5)
 
-# ================= GROUP REGISTER =================
+# ================= COMMANDS =================
 
-async def added_to_group(update: Update, context):
-    chat = update.effective_chat
-    if chat.type in ["group", "supergroup"]:
-        cursor.execute("INSERT OR IGNORE INTO groups (chat_id) VALUES (?)", (chat.id,))
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Top 24 Saat", callback_data="top24")],
+        [InlineKeyboardButton("⚡ Top 5 Dakika", callback_data="top5")]
+    ])
+    await update.message.reply_text("🚀 Kripto Alarm Botu", reply_markup=keyboard)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "/start → Menü\n"
+        "/top24 → 24 saat top 10\n"
+        "/top5 → 5 dakika top 10\n"
+        "/status → Alarm durumu\n\n"
+        "ADMIN:\n"
+        "/alarmon\n"
+        "/alarmoff\n"
+        "/set 7"
+    )
+    await update.message.reply_text(text)
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cursor.execute("SELECT alarm_active, threshold FROM groups WHERE chat_id=?",
+                   (update.effective_chat.id,))
+    row = cursor.fetchone()
+    if not row:
+        await update.message.reply_text("Alarm aktif değil.")
+        return
+    await update.message.reply_text(f"Aktif: {row[0]} | Threshold: %{row[1]}")
+
+async def alarm_on(update: Update, context):
+    if not await is_admin(update, context):
+        return await update.message.reply_text("⛔ Admin gerekli.")
+    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?",
+                   (update.effective_chat.id,))
+    conn.commit()
+    await update.message.reply_text("✅ Alarm açıldı.")
+
+async def alarm_off(update: Update, context):
+    if not await is_admin(update, context):
+        return await update.message.reply_text("⛔ Admin gerekli.")
+    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?",
+                   (update.effective_chat.id,))
+    conn.commit()
+    await update.message.reply_text("❌ Alarm kapatıldı.")
+
+async def set_threshold(update: Update, context):
+    if not await is_admin(update, context):
+        return await update.message.reply_text("⛔ Admin gerekli.")
+    try:
+        value = float(context.args[0])
+        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?",
+                       (value, update.effective_chat.id))
         conn.commit()
+        await update.message.reply_text(f"Yeni threshold %{value}")
+    except:
+        await update.message.reply_text("Kullanım: /set 7")
 
 # ================= MAIN =================
 
 async def post_init(app):
-    await set_bot_commands(app)
     asyncio.create_task(binance_engine(app))
 
 def main():
@@ -255,17 +307,18 @@ def main():
         .build()
     )
 
+    app.add_handler(ChatMemberHandler(added_to_group, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("alarmon", alarm_on))
-    app.add_handler(CommandHandler("alarmoff", alarm_off))
-    app.add_handler(CommandHandler("set", set_threshold))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("top24", top24))
     app.add_handler(CommandHandler("top5", top5))
     app.add_handler(CommandHandler("status", status))
-    app.add_handler(ChatMemberHandler(added_to_group, ChatMemberHandler.MY_CHAT_MEMBER))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_coin))
+    app.add_handler(CommandHandler("alarmon", alarm_on))
+    app.add_handler(CommandHandler("alarmoff", alarm_off))
+    app.add_handler(CommandHandler("set", set_threshold))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT V4 AKTİF")
+    print("🚀 BOT AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
