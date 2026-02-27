@@ -72,9 +72,9 @@ price_memory = defaultdict(list)
 cooldowns = {}
 user_cooldowns = {}
 
-# ================= RSI =================
+# ================= RSI (1D MUM) =================
 
-async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
+async def calculate_rsi(symbol, period=14, interval="1d", limit=200):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -177,78 +177,7 @@ async def top5(update: Update, context):
 
     await update.effective_message.reply_text(text)
 
-# ================= STATUS =================
-
-async def status(update: Update, context):
-    if update.effective_chat.type == "private":
-        await update.effective_message.reply_text("Bot aktif. Tek grup modunda çalışıyor.")
-        return
-
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
-
-    cursor.execute(
-        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
-        (GROUP_CHAT_ID,)
-    )
-    row = cursor.fetchone()
-
-    await update.effective_message.reply_text(
-        f"Alarm: {'Açık' if row[0] else 'Kapalı'}\n"
-        f"Eşik: %{row[1]}\n"
-        f"Mod: {row[2]}"
-    )
-
-# ================= ADMIN =================
-
-async def alarm_on(update: Update, context):
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
-
-    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
-    conn.commit()
-    await update.effective_message.reply_text("✅ Alarm Açıldı")
-
-async def alarm_off(update: Update, context):
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
-
-    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
-    conn.commit()
-    await update.effective_message.reply_text("❌ Alarm Kapandı")
-
-async def set_threshold(update: Update, context):
-    try:
-        value = float(context.args[0])
-        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
-        conn.commit()
-        await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
-    except:
-        await update.effective_message.reply_text("Kullanım: /set 7")
-
-async def set_mode(update: Update, context):
-    try:
-        mode = context.args[0].lower()
-        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
-        conn.commit()
-        await update.effective_message.reply_text(f"Mod: {mode}")
-    except:
-        await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
-
-# ================= USER ALARM =================
-
-async def myalarm(update: Update, context):
-    try:
-        symbol = context.args[0].upper()
-        threshold = float(context.args[1])
-        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)",
-                       (update.effective_user.id, symbol, threshold))
-        conn.commit()
-        await update.effective_message.reply_text(f"🎯 {symbol} %{threshold} alarm eklendi.")
-    except:
-        await update.effective_message.reply_text("Kullanım: /myalarm BTCUSDT 3")
-
-# ================= SYMBOL =================
+# ================= SYMBOL DETAY PANEL =================
 
 async def reply_symbol(update: Update, context):
     if not update.message:
@@ -264,11 +193,33 @@ async def reply_symbol(update: Update, context):
                 data = await resp.json()
 
         price = float(data["lastPrice"])
-        ch24 = float(data["priceChangePercent"])
+        change24 = float(data["priceChangePercent"])
 
-        await update.message.reply_text(
-            f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
+        change5 = 0
+        if symbol in price_memory and len(price_memory[symbol]) >= 2:
+            old = price_memory[symbol][0][1]
+            new = price_memory[symbol][-1][1]
+            change5 = ((new - old) / old) * 100
+
+        rsi7 = await calculate_rsi(symbol, 7)
+        rsi14 = await calculate_rsi(symbol, 14)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📈 Binance", url=f"https://www.binance.com/en/trade/{symbol}")],
+            [InlineKeyboardButton("📊 TradingView", url=f"https://www.tradingview.com/symbols/{symbol}/")]
+        ])
+
+        text = (
+            f"💎 {symbol}\n"
+            f"💰 Fiyat: {price}\n\n"
+            f"⚡ 5dk: %{change5:.2f}\n"
+            f"📊 24s: %{change24:.2f}\n\n"
+            f"📈 RSI(7) Günlük: {rsi7}\n"
+            f"📉 RSI(14) Günlük: {rsi14}"
         )
+
+        await update.message.reply_text(text, reply_markup=keyboard)
+
     except:
         pass
 
@@ -284,8 +235,6 @@ async def button(update: Update, context):
         await top5(update, context)
     elif query.data == "market":
         await market(update, context)
-    elif query.data == "status":
-        await status(update, context)
 
 # ================= ALARM JOB =================
 
@@ -299,7 +248,6 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
     threshold = row[1]
     mode = row[2]
-
     now = datetime.utcnow()
 
     for symbol, prices in price_memory.items():
@@ -395,12 +343,6 @@ def main():
     app.add_handler(CommandHandler("top24", top24))
     app.add_handler(CommandHandler("top5", top5))
     app.add_handler(CommandHandler("market", market))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("alarmon", alarm_on))
-    app.add_handler(CommandHandler("alarmoff", alarm_off))
-    app.add_handler(CommandHandler("set", set_threshold))
-    app.add_handler(CommandHandler("mode", set_mode))
-    app.add_handler(CommandHandler("myalarm", myalarm))
 
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
