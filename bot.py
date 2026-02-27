@@ -273,11 +273,17 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 # ================= ADMIN KONTROL =================
 
 async def is_admin(update: Update, context) -> bool:
-    """Komutu gönderen kişi grup admini mi kontrol eder."""
+    """
+    - Ozel mesaj (DM): her zaman True (admin kontrolu gerek yok)
+    - Grupta: o grubun adminlerini kontrol et
+    """
+    chat = update.effective_chat
+    # DM veya kanal ise direkt izin ver
+    if chat.type == "private":
+        return True
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
     try:
-        member = await context.bot.get_chat_member(chat_id, user_id)
+        member = await context.bot.get_chat_member(chat.id, user_id)
         return member.status in ("administrator", "creator")
     except Exception as e:
         log.warning(f"Admin kontrol hatasi: {e}")
@@ -350,15 +356,17 @@ async def set_callback(update: Update, context):
     """set_ ile başlayan callback'leri işler."""
     q = update.callback_query
 
-    # Sadece adminler kullanabilsin
-    try:
-        member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
-        if member.status not in ("administrator", "creator"):
-            await q.answer("🚫 Bu işlem sadece adminlere açıktır.", show_alert=True)
+    # Sadece adminler kullanabilsin (DM'de serbest)
+    chat = q.message.chat
+    if chat.type != "private":
+        try:
+            member = await context.bot.get_chat_member(chat.id, q.from_user.id)
+            if member.status not in ("administrator", "creator"):
+                await q.answer("🚫 Bu işlem sadece grup adminlerine açıktır.", show_alert=True)
+                return
+        except:
+            await q.answer("Yetki kontrol edilemedi.", show_alert=True)
             return
-    except:
-        await q.answer("Yetki kontrol edilemedi.", show_alert=True)
-        return
 
     await q.answer()
 
@@ -695,13 +703,14 @@ async def button_handler(update: Update, context):
             message = q.message
             effective_user = q.from_user
             effective_chat = q.message.chat
-        try:
-            member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
-            if member.status not in ("administrator", "creator"):
-                await q.message.reply_text("🚫 *Bu panel sadece grup adminlerine açıktır.*", parse_mode="Markdown")
+        if q.message.chat.type != "private":
+            try:
+                member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
+                if member.status not in ("administrator", "creator"):
+                    await q.message.reply_text("🚫 *Bu panel sadece grup adminlerine açıktır.*", parse_mode="Markdown")
+                    return
+            except:
                 return
-        except:
-            return
         await set_command(FakeUpdate(), context)
 
 # ================= ALARM JOB =================
