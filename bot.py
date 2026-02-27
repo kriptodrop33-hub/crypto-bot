@@ -5,14 +5,13 @@ import asyncio
 import websockets
 import sqlite3
 import logging
-import matplotlib
-matplotlib.use("Agg")
+import io
 import matplotlib.pyplot as plt
-from io import BytesIO
+
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -72,32 +71,27 @@ price_memory = defaultdict(list)
 cooldowns = {}
 user_cooldowns = {}
 
-# ================= GRAPH =================
+# ================= GRAPH FUNCTION =================
 
-async def generate_chart(symbol):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{BINANCE_KLINES}?symbol={symbol}&interval=1m&limit=30"
-            ) as resp:
-                data = await resp.json()
-
-        closes = [float(x[4]) for x in data]
-
-        fig = plt.figure()
-        plt.plot(closes)
-        plt.title(symbol)
-        plt.xticks([])
-        plt.tight_layout()
-
-        buffer = BytesIO()
-        plt.savefig(buffer, format="png")
-        plt.close(fig)
-        buffer.seek(0)
-
-        return buffer
-    except:
+def generate_chart(symbol):
+    if symbol not in price_memory or len(price_memory[symbol]) < 2:
         return None
+
+    times = [t for t, _ in price_memory[symbol]]
+    prices = [p for _, p in price_memory[symbol]]
+
+    plt.figure(figsize=(6,3))
+    plt.plot(times, prices)
+    plt.title(f"{symbol} - Son 5 Dakika")
+    plt.xticks([])
+    plt.tight_layout()
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    plt.close()
+    buffer.seek(0)
+
+    return buffer
 
 # ================= RSI =================
 
@@ -110,9 +104,7 @@ async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
                 data = await resp.json()
 
         closes = [float(x[4]) for x in data]
-
-        gains = []
-        losses = []
+        gains, losses = [], []
 
         for i in range(1, len(closes)):
             diff = closes[i] - closes[i - 1]
@@ -154,6 +146,79 @@ async def help_command(update: Update, context):
 async def start(update: Update, context):
     await help_command(update, context)
 
+# ================= MARKET =================
+
+async def market(update: Update, context):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            data = await resp.json()
+
+    usdt = [x for x in data if x["symbol"].endswith("USDT")]
+    avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
+
+    await update.effective_message.reply_text(
+        f"📊 Market Ortalama: %{avg:.2f}"
+    )
+
+# ================= TOP24 =================
+
+async def top24(update: Update, context):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            data = await resp.json()
+
+    usdt = [x for x in data if x["symbol"].endswith("USDT")]
+    top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
+
+    text = "📊 24 Saat Top 10\n\n"
+    for c in top:
+        text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
+
+    await update.effective_message.reply_text(text)
+
+# ================= TOP5 =================
+
+async def top5(update: Update, context):
+    changes = []
+
+    for symbol, prices in price_memory.items():
+        if len(prices) >= 2:
+            old = prices[0][1]
+            new = prices[-1][1]
+            ch = ((new - old) / old) * 100
+            changes.append((symbol, ch))
+
+    top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
+
+    if not top:
+        await update.effective_message.reply_text("Henüz 5dk veri birikmedi.")
+        return
+
+    text = "⚡ 5 Dakika Top 10\n\n"
+    for sym, ch in top:
+        text += f"{sym} → %{ch:.2f}\n"
+
+    await update.effective_message.reply_text(text)
+
+# ================= STATUS =================
+
+async def status(update: Update, context):
+    cursor.execute(
+        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
+        (GROUP_CHAT_ID,)
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        await update.effective_message.reply_text("Grup kayıtlı değil.")
+        return
+
+    await update.effective_message.reply_text(
+        f"Alarm: {'Açık' if row[0] else 'Kapalı'}\n"
+        f"Eşik: %{row[1]}\n"
+        f"Mod: {row[2]}"
+    )
+
 # ================= SYMBOL =================
 
 async def reply_symbol(update: Update, context):
@@ -173,14 +238,12 @@ async def reply_symbol(update: Update, context):
         price = float(data["lastPrice"])
         ch24 = float(data["priceChangePercent"])
 
-        chart = await generate_chart(symbol)
+        text = f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
+        await update.message.reply_text(text)
 
-        caption = f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
-
+        chart = generate_chart(symbol)
         if chart:
-            await update.message.reply_photo(photo=chart, caption=caption)
-        else:
-            await update.message.reply_text(caption)
+            await update.message.reply_photo(photo=InputFile(chart))
 
     except:
         pass
@@ -234,7 +297,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
 
-            caption = (
+            text = (
                 f"{trend} ALARMI\n\n"
                 f"💎 {symbol}\n"
                 f"💰 Fiyat: {price}\n\n"
@@ -245,12 +308,11 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 f"🎯 Eşik: %{threshold}"
             )
 
-            chart = await generate_chart(symbol)
+            await context.bot.send_message(GROUP_CHAT_ID, text)
 
+            chart = generate_chart(symbol)
             if chart:
-                await context.bot.send_photo(GROUP_CHAT_ID, photo=chart, caption=caption)
-            else:
-                await context.bot.send_message(GROUP_CHAT_ID, caption)
+                await context.bot.send_photo(GROUP_CHAT_ID, photo=InputFile(chart))
 
 # ================= WEBSOCKET =================
 
@@ -304,13 +366,7 @@ def main():
     app.add_handler(CommandHandler("top5", top5))
     app.add_handler(CommandHandler("market", market))
     app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("alarmon", alarm_on))
-    app.add_handler(CommandHandler("alarmoff", alarm_off))
-    app.add_handler(CommandHandler("set", set_threshold))
-    app.add_handler(CommandHandler("mode", set_mode))
-    app.add_handler(CommandHandler("myalarm", myalarm))
 
-    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
     print("🚀 BOT TAM AKTİF")
