@@ -5,9 +5,10 @@ import asyncio
 import websockets
 import sqlite3
 import logging
+import io
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
-from io import BytesIO
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -49,6 +50,14 @@ CREATE TABLE IF NOT EXISTS groups (
 )
 """)
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_alarms (
+    user_id INTEGER,
+    symbol TEXT,
+    threshold REAL
+)
+""")
+
 conn.commit()
 
 cursor.execute(
@@ -64,7 +73,7 @@ cooldowns = {}
 
 # ================= RSI =================
 
-async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
+async def calculate_rsi(symbol, period=14, interval="1h", limit=200):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -95,53 +104,77 @@ async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
     except:
         return 0
 
-# ================= CANDLE CHART =================
+# ================= CHANGE CALC =================
 
-async def generate_candle_chart(symbol):
+async def get_interval_change(symbol, interval):
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"{BINANCE_KLINES}?symbol={symbol}&interval=4h&limit=50"
+            f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit=2"
         ) as resp:
             data = await resp.json()
 
-    opens = [float(x[1]) for x in data]
-    closes = [float(x[4]) for x in data]
+    if len(data) < 2:
+        return 0
+
+    old = float(data[0][4])
+    new = float(data[-1][4])
+    return round(((new - old) / old) * 100, 2)
+
+# ================= CANDLE PNG =================
+
+async def generate_candle_png(symbol):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BINANCE_KLINES}?symbol={symbol}&interval=4h&limit=60"
+        ) as resp:
+            data = await resp.json()
 
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    for i in range(len(opens)):
-        color = "green" if closes[i] >= opens[i] else "red"
-        ax.plot([i, i], [opens[i], closes[i]], color=color, linewidth=6)
+    for candle in data:
+        time = datetime.fromtimestamp(candle[0] / 1000)
+        open_price = float(candle[1])
+        high = float(candle[2])
+        low = float(candle[3])
+        close = float(candle[4])
 
-    ax.set_title(f"{symbol} 4H Candle")
+        color = "green" if close >= open_price else "red"
+
+        ax.plot([time, time], [low, high], color=color)
+        ax.plot([time, time], [open_price, close], linewidth=6, color=color)
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
+    ax.set_title(f"{symbol} 4H Chart")
     ax.grid(True)
 
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
 
-    return buffer
+    return buf
 
-# ================= CHANGE DATA =================
+# ================= HELP =================
 
-async def get_multi_timeframe_change(symbol):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-            data = await resp.json()
+async def help_command(update: Update, context):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Top 24", callback_data="top24")],
+        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5")],
+        [InlineKeyboardButton("📈 Market", callback_data="market")],
+        [InlineKeyboardButton("ℹ️ Status", callback_data="status")]
+    ])
 
-    change24 = float(data["priceChangePercent"])
+    text = (
+        "🚀 KRİPTO ALARM BOTU\n\n"
+        "/start\n/help\n/top24\n/top5\n/market\n/status\n\n"
+        "ADMIN:\n/alarmon\n/alarmoff\n/set 7\n/mode pump|dump|both\n\n"
+        "Sembol yaz: BTCUSDT"
+    )
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"{BINANCE_KLINES}?symbol={symbol}&interval=1h&limit=5"
-        ) as resp:
-            klines = await resp.json()
+    await update.effective_message.reply_text(text, reply_markup=keyboard)
 
-    change1h = ((float(klines[-1][4]) - float(klines[-2][4])) / float(klines[-2][4])) * 100
-    change4h = ((float(klines[-1][4]) - float(klines[-5][4])) / float(klines[-5][4])) * 100
-
-    return round(change24,2), round(change4h,2), round(change1h,2)
+async def start(update: Update, context):
+    await help_command(update, context)
 
 # ================= SYMBOL DETAIL =================
 
@@ -154,77 +187,37 @@ async def reply_symbol(update: Update, context):
     if not symbol.endswith("USDT"):
         return
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                data = await resp.json()
-
-        price = float(data["lastPrice"])
-
-        rsi7 = await calculate_rsi(symbol, 7)
-        rsi14 = await calculate_rsi(symbol, 14)
-
-        ch24, ch4, ch1 = await get_multi_timeframe_change(symbol)
-
-        chart = await generate_candle_chart(symbol)
-
-        text = (
-            f"💎 {symbol}\n\n"
-            f"💰 Fiyat: {price}\n\n"
-            f"📊 24s: %{ch24}\n"
-            f"📈 4s: %{ch4}\n"
-            f"⏱ 1s: %{ch1}\n\n"
-            f"📉 RSI(7): {rsi7}\n"
-            f"📉 RSI(14): {rsi14}"
-        )
-
-        await update.message.reply_photo(photo=chart, caption=text)
-
-    except:
-        pass
-
-# ================= TOP24 =================
-
-async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
-        async with session.get(BINANCE_24H) as resp:
+        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
             data = await resp.json()
 
-    usdt = [x for x in data if x["symbol"].endswith("USDT")]
-    top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
+    price = float(data["lastPrice"])
+    change24 = float(data["priceChangePercent"])
 
-    text = "🔥 24 Saat Top 10\n\n"
+    change1h = await get_interval_change(symbol, "1h")
+    change4h = await get_interval_change(symbol, "4h")
 
-    for c in top:
-        text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
+    rsi7 = await calculate_rsi(symbol, 7)
+    rsi14 = await calculate_rsi(symbol, 14)
 
-    await update.message.reply_text(text)
+    text = (
+        f"💎 {symbol}\n"
+        f"💰 Fiyat: {price}\n\n"
+        f"⏱ 1s: %{change1h}\n"
+        f"⏱ 4s: %{change4h}\n"
+        f"📊 24s: %{change24}\n\n"
+        f"📈 RSI(7): {rsi7}\n"
+        f"📉 RSI(14): {rsi14}"
+    )
 
-# ================= TOP5 =================
+    chart = await generate_candle_png(symbol)
 
-async def top5(update: Update, context):
-    changes = []
+    await update.message.reply_photo(
+        photo=InputFile(chart),
+        caption=text
+    )
 
-    for symbol, prices in price_memory.items():
-        if len(prices) >= 2:
-            old = prices[0][1]
-            new = prices[-1][1]
-            ch = ((new - old) / old) * 100
-            changes.append((symbol, ch))
-
-    top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
-
-    if not top:
-        await update.message.reply_text("Henüz 5dk veri yok.")
-        return
-
-    text = "⚡ 5 Dakika Top 10\n\n"
-    for sym, ch in top:
-        text += f"{sym} → %{ch:.2f}\n"
-
-    await update.message.reply_text(text)
-
-# ================= ALARM =================
+# ================= ALARM JOB =================
 
 async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(
@@ -263,26 +256,21 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             rsi7 = await calculate_rsi(symbol, 7)
             rsi14 = await calculate_rsi(symbol, 14)
-            ch24, ch4, ch1 = await get_multi_timeframe_change(symbol)
-            chart = await generate_candle_chart(symbol)
 
-            trend = "🚀 PUMP" if change5 > 0 else "🔻 DUMP"
+            chart = await generate_candle_png(symbol)
 
             text = (
-                f"{trend} ALARMI\n\n"
+                f"🚨 ALARM TETİKLENDİ\n\n"
                 f"💎 {symbol}\n"
-                f"⚡ 5dk: %{change5:.2f}\n"
-                f"📊 24s: %{ch24}\n"
-                f"📈 4s: %{ch4}\n"
-                f"⏱ 1s: %{ch1}\n\n"
-                f"📉 RSI7: {rsi7}\n"
-                f"📉 RSI14: {rsi14}\n\n"
+                f"⚡ 5dk: %{change5:.2f}\n\n"
+                f"📈 RSI(7): {rsi7}\n"
+                f"📉 RSI(14): {rsi14}\n\n"
                 f"🎯 Eşik: %{threshold}"
             )
 
             await context.bot.send_photo(
                 chat_id=GROUP_CHAT_ID,
-                photo=chart,
+                photo=InputFile(chart),
                 caption=text
             )
 
@@ -332,8 +320,8 @@ def main():
 
     app.job_queue.run_repeating(alarm_job, interval=60, first=30)
 
-    app.add_handler(CommandHandler("top24", top24))
-    app.add_handler(CommandHandler("top5", top5))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
     print("🚀 BOT TAM AKTİF")
