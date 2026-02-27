@@ -67,6 +67,26 @@ conn.commit()
 price_memory = defaultdict(list)
 cooldowns = {}
 
+# ================= GÖRSEL YARDIMCILAR =================
+
+def get_number_emoji(n):
+    """Sayıları şık emojilere dönüştürür, 10 numara dahil."""
+    emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟"}
+    return emojis.get(n, str(n))
+
+def format_price(price):
+    """Fiyatı okunaklı binlik ayıracıyla formatlar."""
+    if price >= 1:
+        return f"{price:,.2f}"
+    else:
+        return f"{price:.8g}"
+
+def get_trend_indicator(val):
+    """Değişime göre emoji ve işaret belirler."""
+    if val > 0: return "🟢", "+"
+    if val < 0: return "🔴", ""
+    return "⚪", ""
+
 # ================= ANALİZ FONKSİYONLARI =================
 
 async def get_price_change(symbol, interval, limit=2):
@@ -116,7 +136,7 @@ async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
         logging.error(f"RSI error {symbol}: {e}")
         return 0
 
-# ================= ANALİZ GÖNDER =================
+# ================= ANALİZ GÖNDER (FOTOĞRAFLI) =================
 
 async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None):
     try:
@@ -135,21 +155,25 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         rsi7 = await calculate_rsi(symbol, 7)
         rsi14 = await calculate_rsi(symbol, 14)
         
-        # Değişimlere göre emoji seçimi
-        def get_trend_emoji(val):
-            return "🟢" if val > 0 else "🔴" if val < 0 else "⚪"
+        e5, s5 = get_trend_indicator(ch5m)
+        e1, s1 = get_trend_indicator(ch1h)
+        e4, s4 = get_trend_indicator(ch4h)
+        e24, s24 = get_trend_indicator(ch24)
+
+        # TradingView Grafik Snapshot URL'si
+        chart_url = f"https://s3.tradingview.com/snapshots/c/{symbol.lower()}.png"
 
         text = (
             f"📊 *{extra_title}*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💎 *Parite:* `#{symbol}`\n"
-            f"💵 *Fiyat:* `{price:,.4f}`\n\n"
+            f"💵 *Fiyat:* `{format_price(price)} USDT`\n\n"
             f"*Performans Değişimleri:*\n"
-            f"{get_trend_emoji(ch5m)} `5dk :` `% {ch5m:+.2f}`\n"
-            f"{get_trend_emoji(ch1h)} `1sa :` `% {ch1h:+.2f}`\n"
-            f"{get_trend_emoji(ch4h)} `4sa :` `% {ch4h:+.2f}`\n"
-            f"{get_trend_emoji(ch24)} `24sa:` `% {ch24:+.2f}`\n\n"
-            f"📉 *RSI Göstergeleri:*\n"
+            f"{e5} `5dk  :` `% {s5}{ch5m:+.2f}`\n"
+            f"{e1} `1sa  :` `% {s1}{ch1h:+.2f}`\n"
+            f"{e4} `4sa  :` `% {s4}{ch4h:+.2f}`\n"
+            f"{e24} `24sa :` `% {s24}{ch24:+.2f}`\n\n"
+            f"📉 *RSI (Son 100 Saatlik Veri):*\n"
             f"• RSI 7  : `{rsi7}`\n"
             f"• RSI 14 : `{rsi14}`\n"
             f"──────────────────"
@@ -165,9 +189,10 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             )]
         ])
 
-        await bot.send_message(
+        await bot.send_photo(
             chat_id=chat_id,
-            text=text,
+            photo=chart_url,
+            caption=text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -203,7 +228,7 @@ async def start(update: Update, context):
     ])
     welcome_text = (
         "👋 *Kripto Analiz Asistanına Hoş Geldin!*\n\n"
-        "Sanal asistanın 7/24 piyasayı takip eder. Analiz almak için parite ismini yazman yeterli.\n\n"
+        "Analiz almak için parite ismini yazman yeterli.\n\n"
         "💡 *Örnek:* `BTCUSDT`"
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
@@ -216,7 +241,7 @@ async def market(update: Update, context):
     avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
     
     status_emoji = "🐂" if avg > 0 else "🐻"
-    msg = f"{status_emoji} *Piyasa Duyarlılığı:* `%{avg:+.2f}`"
+    msg = f"{status_emoji} *Piyasa Duyarlılığı:* `% {avg:+.2f}`"
     await (update.callback_query.message if update.callback_query else update.message).reply_text(msg, parse_mode="Markdown")
 
 async def top24(update: Update, context):
@@ -230,7 +255,7 @@ async def top24(update: Update, context):
     text = "🏆 *24 Saatlik Performans Liderleri*\n"
     text += "━━━━━━━━━━━━━━━━━━━━━\n"
     for i, c in enumerate(usdt, 1):
-        text += f"{i}️⃣ `{c['symbol']:<10}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
+        text += f"{get_number_emoji(i)} `{c['symbol']:<10}` → `% {float(c['priceChangePercent']):+6.2f}`\n"
     
     await (update.callback_query.message if update.callback_query else update.message).reply_text(text, parse_mode="Markdown")
 
@@ -247,7 +272,7 @@ async def top5(update: Update, context):
         text = "⚡ *Son 5 Dakikanın En Hareketlileri*\n"
         text += "━━━━━━━━━━━━━━━━━━━━━\n"
         for i, (s, c) in enumerate(top, 1):
-            text += f"{i}️⃣ `{s:<10}` → `%{c:+6.2f}`\n"
+            text += f"{get_number_emoji(i)} `{s:<10}` → `% {c:+6.2f}`\n"
             
     await (update.callback_query.message if update.callback_query else update.message).reply_text(text, parse_mode="Markdown")
 
@@ -346,10 +371,9 @@ def main():
 
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # 🔥 SENİN DÜZELTTİĞİN FİLTRE (KORUNDU)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT GÖRSEL GÜNCELLEME İLE AKTİF")
+    print("🚀 BOT TÜM ÖZELLİKLER VE GRAFİK DESTEĞİYLE AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
