@@ -342,7 +342,67 @@ async def reply_symbol(update: Update, context):
 
     except Exception as e:
         print(e)
+# ================= ALARM JOB =================
 
+async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
+    cursor.execute(
+        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
+        (GROUP_CHAT_ID,)
+    )
+    row = cursor.fetchone()
+
+    if not row or row[0] == 0:
+        return
+
+    threshold = row[1]
+    mode = row[2]
+    now = datetime.utcnow()
+
+    for symbol, prices in price_memory.items():
+        if len(prices) < 2:
+            continue
+
+        old = prices[0][1]
+        new = prices[-1][1]
+        change5 = ((new - old) / old) * 100
+
+        if mode == "pump" and change5 < 0:
+            continue
+        if mode == "dump" and change5 > 0:
+            continue
+
+        if abs(change5) >= threshold:
+
+            if symbol in cooldowns:
+                if now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES):
+                    continue
+
+            cooldowns[symbol] = now
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+                    data = await resp.json()
+
+            price = float(data["lastPrice"])
+            change24 = float(data["priceChangePercent"])
+
+            rsi7 = await calculate_rsi(symbol, 7)
+            rsi14 = await calculate_rsi(symbol, 14)
+
+            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
+
+            text = (
+                f"{trend} ALARMI\n\n"
+                f"💎 {symbol}\n"
+                f"💰 Fiyat: {price}\n\n"
+                f"⚡ 5dk: %{change5:.2f}\n"
+                f"📊 24s: %{change24:.2f}\n\n"
+                f"📈 RSI(7): {rsi7}\n"
+                f"📉 RSI(14): {rsi14}\n\n"
+                f"🎯 Eşik: %{threshold}"
+            )
+
+            await context.bot.send_message(GROUP_CHAT_ID, text)
 # ================= WEBSOCKET =================
 
 async def binance_engine():
