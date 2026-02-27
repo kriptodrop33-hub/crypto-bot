@@ -367,7 +367,7 @@ async def set_callback(update: Update, context):
     """set_ ile başlayan callback'leri işler."""
     q = update.callback_query
 
-    # Sadece adminler kullanabilsin (DM'de serbest)
+    # ── Admin kontrolü: DM'de serbest, grupta sadece admin ──
     chat = q.message.chat
     if chat.type != "private":
         try:
@@ -375,11 +375,18 @@ async def set_callback(update: Update, context):
             if member.status not in ("administrator", "creator"):
                 await q.answer("🚫 Bu işlem sadece grup adminlerine açıktır.", show_alert=True)
                 return
-        except:
+        except Exception as e:
+            log.warning(f"set_callback admin kontrol: {e}")
             await q.answer("Yetki kontrol edilemedi.", show_alert=True)
             return
 
     await q.answer()
+
+    # ── set_open: Paneli göster ──
+    if q.data == "set_open":
+        text, keyboard = await build_set_panel(context)
+        await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        return
 
     # ── Alarm toggle ──
     if q.data == "set_toggle_alarm":
@@ -708,23 +715,7 @@ async def button_handler(update: Update, context):
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_alarms WHERE user_id=$1", uid)
             await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
-    elif q.data == "set_open":
-        # Grup ise admin kontrolü yap
-        if q.message.chat.type != "private":
-            try:
-                member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
-                if member.status not in ("administrator", "creator"):
-                    await q.message.reply_text(
-                        "🚫 *Bu panel sadece grup adminlerine açıktır.*",
-                        parse_mode="Markdown"
-                    )
-                    return
-            except Exception as e:
-                log.warning(f"set_open admin kontrol: {e}")
-                return
-        # Paneli doğrudan gönder — FakeUpdate yok
-        text, keyboard = await build_set_panel(context)
-        await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    # set_open artık set_callback içinde işleniyor (set_ prefix'i yakalar)
 
 # ================= ALARM JOB =================
 
