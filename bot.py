@@ -759,7 +759,6 @@ async def reply_symbol(update: Update, context):
     if not update.message or not update.message.text:
         return
 
-    # Once manuel esik girisini kontrol et
     if await handle_threshold_input(update, context):
         return
 
@@ -773,25 +772,60 @@ async def reply_symbol(update: Update, context):
 
     if chat.type == "private":
         await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
-    else:
-        # Grup mesajını sil, DM'e gönder
-        try: await update.message.delete()
-        except: pass
+        return
+
+    # Grup: kullanıcı mesajını sil
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Önce DM'e göndermeyi dene
+    dm_success = False
+    try:
+        await send_full_analysis(context.bot, user.id, symbol, "PIYASA ANALIZ RAPORU")
+        dm_success = True
+    except Exception:
+        pass
+
+    if dm_success:
+        # Gruba 8sn'de silinen bilgi notu
         try:
-            await send_full_analysis(context.bot, user.id, symbol, "PIYASA ANALIZ RAPORU")
+            bot_info = await context.bot.get_me()
             note = await context.bot.send_message(
-                chat.id, f"👤 {user.first_name} — `{symbol}` analizi DM'inize gönderildi.",
-                parse_mode="Markdown"
+                chat.id,
+                f"👤 {user.first_name} — `{symbol}` analizi [DM'inize](https://t.me/{bot_info.username}) gönderildi.",
+                parse_mode="Markdown",
+                disable_web_page_preview=True
             )
-            async def _del():
+            async def _del_note():
                 await asyncio.sleep(8)
                 try: await note.delete()
                 except: pass
-            asyncio.create_task(_del())
-        except Exception as e:
-            log.warning(f"reply_symbol DM hatasi: {e}")
-            # Bot kullanıcıyla DM başlatamamışsa gruba gönder
+            asyncio.create_task(_del_note())
+        except Exception:
+            pass
+    else:
+        # DM açık değil: gruba gönder, 60sn sonra sil
+        try:
+            msgs = []
+            # send_full_analysis gruba gönder, mesajları yakala
             await send_full_analysis(context.bot, chat.id, symbol, "PIYASA ANALIZ RAPORU")
+            # DM aç yönlendirmesi
+            bot_info = await context.bot.get_me()
+            warn = await context.bot.send_message(
+                chat.id,
+                f"👤 {user.first_name} — sonraki sorgular DM'inize gitsin: [bota buradan yazın](https://t.me/{bot_info.username}) ve /start deyin.",
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+            async def _del_warn():
+                await asyncio.sleep(30)
+                try: await warn.delete()
+                except: pass
+            asyncio.create_task(_del_warn())
+        except Exception as e:
+            log.warning(f"reply_symbol fallback hatasi: {e}")
 
 # ================= KISISEL ALARM =================
 
@@ -871,7 +905,7 @@ async def alarm_sil(update: Update, context):
     user_id = update.effective_user.id
 
     if not context.args:
-        await update.message.reply_text("Kullanim: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
         return
 
     symbol = context.args[0].upper().replace("#","").replace("/","")
@@ -885,9 +919,9 @@ async def alarm_sil(update: Update, context):
         )
 
     if result == "DELETE 0":
-        await update.message.reply_text(f"`{symbol}` icin kayitli alarm bulunamadi.", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), f"`{symbol}` icin kayitli alarm bulunamadi.", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
 
 
 # ================= FAVORİLER =================
@@ -902,7 +936,7 @@ async def favori_command(update: Update, context):
             rows = await conn.fetch(
                 "SELECT symbol FROM favorites WHERE user_id=$1 ORDER BY symbol", user_id)
         if not rows:
-            await msg.reply_text(
+            await context.bot.send_message(get_target_chat_id(update, context), 
                 "⭐ *Favori Listeniz Bos*\n━━━━━━━━━━━━━━━━━━\n"
                 "Eklemek icin:\n`/favori ekle BTCUSDT`",
                 parse_mode="Markdown"
@@ -916,43 +950,43 @@ async def favori_command(update: Update, context):
             InlineKeyboardButton("📊 Hepsini Analiz Et", callback_data="fav_analiz"),
             InlineKeyboardButton("🗑 Tumunu Sil",        callback_data="fav_deleteall_" + str(user_id))
         ]])
-        await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown", reply_markup=keyboard)
         return
 
     if args[0].lower() == "ekle":
         if len(args) < 2:
-            await msg.reply_text("Kullanim: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO favorites(user_id,symbol) VALUES($1,$2) ON CONFLICT DO NOTHING",
                 user_id, symbol)
-        await msg.reply_text("⭐ `" + symbol + "` favorilere eklendi!", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), "⭐ `" + symbol + "` favorilere eklendi!", parse_mode="Markdown")
         return
 
     if args[0].lower() == "sil":
         if len(args) < 2:
-            await msg.reply_text("Kullanim: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM favorites WHERE user_id=$1 AND symbol=$2", user_id, symbol)
-        await msg.reply_text("🗑 `" + symbol + "` favorilerden silindi.", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), "🗑 `" + symbol + "` favorilerden silindi.", parse_mode="Markdown")
         return
 
     if args[0].lower() == "analiz":
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT symbol FROM favorites WHERE user_id=$1", user_id)
         if not rows:
-            await msg.reply_text("⭐ Favori listeniz bos.", parse_mode="Markdown"); return
-        await msg.reply_text("📊 *" + str(len(rows)) + " coin analiz ediliyor...*", parse_mode="Markdown")
+            await context.bot.send_message(get_target_chat_id(update, context), "⭐ Favori listeniz bos.", parse_mode="Markdown"); return
+        await context.bot.send_message(get_target_chat_id(update, context), "📊 *" + str(len(rows)) + " coin analiz ediliyor...*", parse_mode="Markdown")
         for r in rows:
             await send_full_analysis(context.bot, update.effective_chat.id, r["symbol"], "⭐ FAVORİ ANALİZ")
             await asyncio.sleep(1.5)
         return
 
-    await msg.reply_text(
+    await context.bot.send_message(get_target_chat_id(update, context), 
         "Kullanim:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n"
         "`/favori liste`\n`/favori analiz`",
         parse_mode="Markdown"
@@ -962,36 +996,61 @@ async def favori_command(update: Update, context):
 # ================= GRUP → DM YÖNLENDIRME WRAPPER =================
 
 async def group_to_dm(update: Update, context, handler_func):
-    """Kişisel komutları grup yerine DM'de çalıştırır."""
+    """
+    Kişisel komutları grup yerine DM'de çalıştırır.
+    Temel sorun: update.effective_chat grubu gösterir, DM'e yazamayız.
+    Çözüm: handler içindeki tüm reply'ları DM'e yönlendirmek için
+    context.user_data['force_chat_id'] kullanırız.
+    """
     chat = update.effective_chat
     if chat.type == "private":
         await handler_func(update, context)
         return
 
     user = update.effective_user
+
     # Kullanıcı mesajını sil
-    try: await update.message.delete()
-    except: pass
-
-    # Komutu DM'de çalıştır
     try:
-        await handler_func(update, context, force_dm=True)
-    except TypeError:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Handler'a DM hedefini bildir
+    context.user_data["_dm_target"] = user.id
+
+    dm_ok = False
+    try:
         await handler_func(update, context)
+        dm_ok = True
+    except Exception as e:
+        log.warning(f"group_to_dm handler hatasi: {e}")
+    finally:
+        context.user_data.pop("_dm_target", None)
 
-    # Gruba 8sn'de silinen kısa bilgi
+    # Gruba kısa bilgi notu (8sn sonra silinir)
     try:
+        bot_link = f"https://t.me/{(await context.bot.get_me()).username}"
+        if dm_ok:
+            note_text = f"👤 {user.first_name} — yanıt [DM'inize]({bot_link}) gönderildi."
+        else:
+            note_text = f"👤 {user.first_name} — lütfen önce [bota DM açın]({bot_link}) ve /start yazın."
         note = await context.bot.send_message(
-            chat.id,
-            f"👤 {user.first_name} — yanıt DM'inize gönderildi.",
-            parse_mode="Markdown"
+            chat.id, note_text,
+            parse_mode="Markdown",
+            disable_web_page_preview=True
         )
         async def _del():
             await asyncio.sleep(8)
             try: await note.delete()
             except: pass
         asyncio.create_task(_del())
-    except: pass
+    except Exception:
+        pass
+
+
+def get_target_chat_id(update: Update, context) -> int:
+    """Handler içinde kullanılacak hedef chat_id'yi döner (DM veya mevcut chat)."""
+    return context.user_data.get("_dm_target") or update.effective_chat.id
 
 # ================= GELİŞMİŞ KİŞİSEL ALARM =================
 
@@ -1049,8 +1108,8 @@ async def my_alarm_v2(update: Update, context):
         [InlineKeyboardButton("🗑 Tumunu Sil", callback_data="alarm_deleteall_" + str(user_id)),
          InlineKeyboardButton("🔄 Yenile",      callback_data="my_alarm")]
     ])
-    msg = update.callback_query.message if update.callback_query else update.message
-    await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    target_id = get_target_chat_id(update, context)
+    await context.bot.send_message(target_id, text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def alarm_ekle_v2(update: Update, context):
@@ -1059,7 +1118,7 @@ async def alarm_ekle_v2(update: Update, context):
     args     = context.args or []
 
     if len(args) < 2:
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "📌 *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
             "• `%`  : `/alarm_ekle BTCUSDT 3.5`\n"
             "• RSI  : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
@@ -1074,11 +1133,11 @@ async def alarm_ekle_v2(update: Update, context):
     # RSI alarmı
     if args[1].lower() == "rsi":
         if len(args) < 3:
-            await update.message.reply_text(
+            await context.bot.send_message(get_target_chat_id(update, context), 
                 "Kullanim: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
         try:    rsi_lvl = float(args[2])
         except:
-            await update.message.reply_text("RSI degeri sayi olmali.", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "RSI degeri sayi olmali.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,rsi_level,active)
@@ -1088,7 +1147,7 @@ async def alarm_ekle_v2(update: Update, context):
             """, user_id, username, symbol, rsi_lvl)
         direction_str = "asagi" if len(args) < 4 or args[3].lower() in ("asagi","aşağı") else "yukari"
         yon_str = "altina dusunce" if direction_str == "asagi" else "ustune cikinca"
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!",
             parse_mode="Markdown"
         )
@@ -1097,13 +1156,13 @@ async def alarm_ekle_v2(update: Update, context):
     # Bant alarmı
     if args[1].lower() == "bant":
         if len(args) < 4:
-            await update.message.reply_text(
+            await context.bot.send_message(get_target_chat_id(update, context), 
                 "Kullanim: `/alarm_ekle BTCUSDT bant 60000 70000`", parse_mode="Markdown"); return
         try:
             band_low  = float(args[2].replace(",","."))
             band_high = float(args[3].replace(",","."))
         except:
-            await update.message.reply_text("Fiyat degerleri sayi olmali.", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "Fiyat degerleri sayi olmali.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,band_low,band_high,active)
@@ -1111,7 +1170,7 @@ async def alarm_ekle_v2(update: Update, context):
                 ON CONFLICT(user_id,symbol) DO UPDATE
                 SET alarm_type='band', band_low=$4, band_high=$5, threshold=0, active=1
             """, user_id, username, symbol, band_low, band_high)
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "✅ *" + symbol + "* `" + format_price(band_low) + " - " + format_price(band_high) +
             " USDT` bandından cikinca alarm verilecek!",
             parse_mode="Markdown"
@@ -1121,7 +1180,7 @@ async def alarm_ekle_v2(update: Update, context):
     # % alarmı
     try:    threshold = float(args[1])
     except:
-        await update.message.reply_text("Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
+        await context.bot.send_message(get_target_chat_id(update, context), "Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,active)
@@ -1129,7 +1188,7 @@ async def alarm_ekle_v2(update: Update, context):
             ON CONFLICT(user_id,symbol) DO UPDATE
             SET threshold=$4, alarm_type='percent', active=1
         """, user_id, username, symbol, threshold)
-    await update.message.reply_text(
+    await context.bot.send_message(get_target_chat_id(update, context), 
         "✅ *" + symbol + "* icin `%" + str(threshold) + "` alarmi eklendi!",
         parse_mode="Markdown"
     )
@@ -1139,13 +1198,13 @@ async def alarm_duraklat(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
     if len(args) < 2:
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "Kullanim: `/alarm_duraklat BTCUSDT 2` (saat)", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     try:    saat = float(args[1])
     except:
-        await update.message.reply_text("Saat sayi olmali.", parse_mode="Markdown"); return
+        await context.bot.send_message(get_target_chat_id(update, context), "Saat sayi olmali.", parse_mode="Markdown"); return
     until = datetime.utcnow() + timedelta(hours=saat)
     async with db_pool.acquire() as conn:
         r = await conn.execute(
@@ -1153,9 +1212,9 @@ async def alarm_duraklat(update: Update, context):
             until, user_id, symbol
         )
     if r == "UPDATE 0":
-        await update.message.reply_text("`" + symbol + "` icin alarm bulunamadi.", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), "`" + symbol + "` icin alarm bulunamadi.", parse_mode="Markdown")
     else:
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "⏸ *" + symbol + "* alarmi `" + str(int(saat)) + " saat` duraklatildi. "
             "Tekrar aktif: `" + until.strftime("%H:%M") + " UTC`",
             parse_mode="Markdown"
@@ -1171,7 +1230,7 @@ async def alarm_gecmis(update: Update, context):
             ORDER BY triggered_at DESC LIMIT 15
         """, user_id)
     if not rows:
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "📋 *Alarm Gecmisi*\n━━━━━━━━━━━━━━━━━━\nHenuz tetiklenen alarm yok.",
             parse_mode="Markdown"
         )
@@ -1187,7 +1246,7 @@ async def alarm_gecmis(update: Update, context):
         else:
             detail = "%" + str(round(r["trigger_val"], 2))
         text += yon + " `" + r["symbol"] + "` " + detail + "  `" + dt + "`\n"
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
 
 
 # ================= ÇOKLU ZAMAN DİLİMİ =================
@@ -1196,11 +1255,11 @@ async def mtf_command(update: Update, context):
     msg  = update.callback_query.message if update.callback_query else update.message
     args = context.args or []
     if not args:
-        await msg.reply_text("Kullanim: `/mtf BTCUSDT`", parse_mode="Markdown"); return
+        await context.bot.send_message(get_target_chat_id(update, context), "Kullanim: `/mtf BTCUSDT`", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
-    wait = await msg.reply_text("⏳ Analiz yapiliyor...", parse_mode="Markdown")
+    wait = await context.bot.send_message(get_target_chat_id(update, context), "⏳ Analiz yapiliyor...", parse_mode="Markdown")
     try:
         async with aiohttp.ClientSession() as session:
             k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
@@ -1237,11 +1296,11 @@ async def mtf_command(update: Update, context):
         text += "\n_🔵 Asiri Satim  🟢 Normal  🔴 Asiri Alim_"
 
         await wait.delete()
-        await msg.reply_text(text, parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
     except Exception as e:
         await wait.delete()
         log.error("MTF hatasi: " + str(e))
-        await msg.reply_text("⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
+        await context.bot.send_message(get_target_chat_id(update, context), "⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
 
 
 # ================= WHALE ALARMI =================
@@ -1333,7 +1392,7 @@ async def zamanla_command(update: Update, context):
                 "SELECT task_type, symbol, hour, minute FROM scheduled_tasks WHERE chat_id=$1 AND active=1",
                 chat_id)
         if not rows:
-            await update.message.reply_text(
+            await context.bot.send_message(get_target_chat_id(update, context), 
                 "⏰ *Zamanlanmis Gorevler*\n━━━━━━━━━━━━━━━━━━\nGorev yok.\n\n"
                 "Eklemek icin:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`",
                 parse_mode="Markdown")
@@ -1342,45 +1401,45 @@ async def zamanla_command(update: Update, context):
             for r in rows:
                 sym_str = "`" + r["symbol"] + "` " if r["symbol"] else ""
                 text += "• " + r["task_type"] + " " + sym_str + "— `" + ("%02d:%02d" % (r["hour"],r["minute"])) + "` UTC\n"
-            await update.message.reply_text(text, parse_mode="Markdown")
+            await context.bot.send_message(get_target_chat_id(update, context), text, parse_mode="Markdown")
         return
 
     if args[0].lower() == "sil":
         async with db_pool.acquire() as conn:
             await conn.execute("UPDATE scheduled_tasks SET active=0 WHERE chat_id=$1", chat_id)
-        await update.message.reply_text("🗑 Gorevler silindi.", parse_mode="Markdown"); return
+        await context.bot.send_message(get_target_chat_id(update, context), "🗑 Gorevler silindi.", parse_mode="Markdown"); return
 
     if args[0].lower() == "analiz" and len(args) >= 3:
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         try:    h, m = map(int, args[2].split(":"))
         except:
-            await update.message.reply_text("Saat formati: `09:00`", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "Saat formati: `09:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
                 VALUES($1,$2,'analiz',$3,$4,$5,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$4,minute=$5,active=1
             """, user_id, chat_id, symbol, h, m)
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "⏰ Her gun `" + ("%02d:%02d" % (h,m)) + "` UTC'de *" + symbol + "* analizi gonderilecek!",
             parse_mode="Markdown"); return
 
     if args[0].lower() == "rapor" and len(args) >= 2:
         try:    h, m = map(int, args[1].split(":"))
         except:
-            await update.message.reply_text("Saat formati: `08:00`", parse_mode="Markdown"); return
+            await context.bot.send_message(get_target_chat_id(update, context), "Saat formati: `08:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
                 VALUES($1,$2,'rapor','',$3,$4,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$3,minute=$4,active=1
             """, user_id, chat_id, h, m)
-        await update.message.reply_text(
+        await context.bot.send_message(get_target_chat_id(update, context), 
             "⏰ Her Pazartesi `" + ("%02d:%02d" % (h,m)) + "` UTC'de haftalik rapor gonderilecek!",
             parse_mode="Markdown"); return
 
-    await update.message.reply_text(
+    await context.bot.send_message(get_target_chat_id(update, context), 
         "Kullanim:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
         "`/zamanla liste`\n`/zamanla sil`",
         parse_mode="Markdown")
