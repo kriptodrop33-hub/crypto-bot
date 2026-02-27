@@ -24,7 +24,7 @@ from telegram.ext import (
     filters,
 )
 
-# ================= CONFIG =================
+# ================= CONFIG =================a
 
 TOKEN         = os.getenv("TELEGRAM_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
