@@ -1,3 +1,4 @@
+cat > bot.py <<'PY'
 import os
 import io
 import json
@@ -43,12 +44,6 @@ logging.basicConfig(level=logging.INFO)
 conn = sqlite3.connect("groups.db", check_same_thread=False)
 cursor = conn.cursor()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS groups (
-    chat_id INTEGER PRIMARY KEY,
-    alarm_active INTEGER DEFAULT 1,
-    threshold REAL DEFAULT 5,
-    mode TEXT DEFAULT 'both'
 cursor.execute(
     "CREATE TABLE IF NOT EXISTS groups ("
     "chat_id INTEGER PRIMARY KEY, "
@@ -57,13 +52,7 @@ cursor.execute(
     "mode TEXT DEFAULT 'both'"
     ")"
 )
-""")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS user_alarms (
-    user_id INTEGER,
-    symbol TEXT,
-    threshold REAL
 cursor.execute(
     "CREATE TABLE IF NOT EXISTS user_alarms ("
     "user_id INTEGER, "
@@ -71,7 +60,6 @@ cursor.execute(
     "threshold REAL"
     ")"
 )
-""")
 
 conn.commit()
 
@@ -85,20 +73,10 @@ conn.commit()
 
 price_memory = defaultdict(list)
 cooldowns = {}
-user_cooldowns = {}
 
-# ================= RSI =================
 # ================= HELPERS =================
 
-async def calculate_rsi(symbol, period=14, interval="1m", limit=100):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}"
-            ) as resp:
-                data = await resp.json()
 
-        closes = [float(x[4]) for x in data]
 def calculate_rsi_from_closes(closes, period=14):
     if len(closes) <= period:
         return 0
@@ -111,35 +89,21 @@ def calculate_rsi_from_closes(closes, period=14):
         gains.append(max(diff, 0))
         losses.append(abs(min(diff, 0)))
 
-        gains = []
-        losses = []
     avg_gain = sum(gains[-period:]) / period
     avg_loss = sum(losses[-period:]) / period
 
-        for i in range(1, len(closes)):
-            diff = closes[i] - closes[i - 1]
-            gains.append(max(diff, 0))
-            losses.append(abs(min(diff, 0)))
     if avg_loss == 0:
         return 100
 
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return round(rsi, 2)
 
-        if avg_loss == 0:
-            return 100
 
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        return round(rsi, 2)
 async def fetch_json(session, url):
     async with session.get(url) as resp:
         return await resp.json()
 
-    except:
 
 def calculate_change_percent(closes, minutes):
     need = minutes + 1
@@ -151,7 +115,6 @@ def calculate_change_percent(closes, minutes):
     if previous == 0:
         return 0
 
-# ================= HELP =================
     return ((current - previous) / previous) * 100
 
 
@@ -268,12 +231,9 @@ async def help_command(update: Update, context):
 async def start(update: Update, context):
     await help_command(update, context)
 
-# ================= MARKET =================
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
-        async with session.get(BINANCE_24H) as resp:
-            data = await resp.json()
         data = await fetch_json(session, BINANCE_24H)
 
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
@@ -283,12 +243,9 @@ async def market(update: Update, context):
         f"📊 Market Ortalama: %{avg:.2f}"
     )
 
-# ================= TOP24 =================
 
 async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
-        async with session.get(BINANCE_24H) as resp:
-            data = await resp.json()
         data = await fetch_json(session, BINANCE_24H)
 
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
@@ -301,7 +258,6 @@ async def top24(update: Update, context):
 
     await update.effective_message.reply_text(text)
 
-# ================= TOP5 =================
 
 async def top5(update: Update, context):
     changes = []
@@ -325,7 +281,6 @@ async def top5(update: Update, context):
 
     await update.effective_message.reply_text(text)
 
-# ================= STATUS =================
 
 async def status(update: Update, context):
     cursor.execute(
@@ -371,7 +326,6 @@ async def set_threshold(update: Update, context):
         cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
         conn.commit()
         await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
-    except:
     except Exception:
         await update.effective_message.reply_text("Kullanım: /set 7")
 
@@ -382,7 +336,6 @@ async def set_mode(update: Update, context):
         cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
         conn.commit()
         await update.effective_message.reply_text(f"Mod: {mode}")
-    except:
     except Exception:
         await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
 
@@ -399,7 +352,6 @@ async def myalarm(update: Update, context):
         await update.effective_message.reply_text(
             f"🎯 {symbol} %{threshold} alarm eklendi."
         )
-    except:
     except Exception:
         await update.effective_message.reply_text(
             "Kullanım: /myalarm BTCUSDT 3"
@@ -418,22 +370,10 @@ async def reply_symbol(update: Update, context):
         return
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                data = await resp.json()
-
-        price = float(data["lastPrice"])
-        ch24 = float(data["priceChangePercent"])
-
-        await update.message.reply_text(
-            f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
-        )
         await send_symbol_report(context.bot, update.effective_chat.id, symbol)
     except Exception as exc:
         logging.error("symbol reply failed: %s", exc)
 
-    except:
-        pass
 
 # ================= CALLBACK =================
 
@@ -489,34 +429,11 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             cooldowns[symbol] = now
             trend = "🚀 YÜKSELİŞ ALARMI" if change5 > 0 else "🔻 DÜŞÜŞ ALARMI"
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                    data = await resp.json()
-
-            price = float(data["lastPrice"])
-            change24 = float(data["priceChangePercent"])
             try:
                 await send_symbol_report(context.bot, GROUP_CHAT_ID, symbol, prefix=f"{trend}\n🎯 Eşik: %{threshold}")
             except Exception as exc:
                 logging.error("alarm report failed: %s", exc)
 
-            rsi7 = await calculate_rsi(symbol, 7)
-            rsi14 = await calculate_rsi(symbol, 14)
-
-            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
-
-            text = (
-                f"{trend} ALARMI\n\n"
-                f"💎 {symbol}\n"
-                f"💰 Fiyat: {price}\n\n"
-                f"⚡ 5dk: %{change5:.2f}\n"
-                f"📊 24s: %{change24:.2f}\n\n"
-                f"📈 RSI(7): {rsi7}\n"
-                f"📉 RSI(14): {rsi14}\n\n"
-                f"🎯 Eşik: %{threshold}"
-            )
-
-            await context.bot.send_message(GROUP_CHAT_ID, text)
 
 # ================= WEBSOCKET =================
 
@@ -546,7 +463,6 @@ async def binance_engine():
                             if now - t <= timedelta(minutes=5)
                         ]
 
-        except:
         except Exception:
             await asyncio.sleep(5)
 
@@ -588,3 +504,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+PY
