@@ -504,6 +504,10 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             )
 
     except Exception as e:
+        err = str(e)
+        # Forbidden = kullanıcı bota DM açmamış → çağırana fırlat
+        if any(x in err for x in ("Forbidden", "bot was blocked", "chat not found", "user is deactivated")):
+            raise
         log.error(f"Gonderim hatasi ({symbol}): {e}")
 
 # ================= ADMIN KONTROL =================
@@ -785,8 +789,8 @@ async def reply_symbol(update: Update, context):
     try:
         await send_full_analysis(context.bot, user.id, symbol, "PIYASA ANALIZ RAPORU")
         dm_success = True
-    except Exception:
-        pass
+    except Exception as e:
+        log.info(f"DM gönderilemedi ({user.id}): {e}")
 
     if dm_success:
         # Gruba 8sn'de silinen bilgi notu
@@ -998,9 +1002,7 @@ async def favori_command(update: Update, context):
 async def group_to_dm(update: Update, context, handler_func):
     """
     Kişisel komutları grup yerine DM'de çalıştırır.
-    Temel sorun: update.effective_chat grubu gösterir, DM'e yazamayız.
-    Çözüm: handler içindeki tüm reply'ları DM'e yönlendirmek için
-    context.user_data['force_chat_id'] kullanırız.
+    DM başarısız olursa (Forbidden) gruba gönderir + "bot'a DM açın" uyarısı verir.
     """
     chat = update.effective_chat
     if chat.type == "private":
@@ -1015,42 +1017,73 @@ async def group_to_dm(update: Update, context, handler_func):
     except Exception:
         pass
 
-    # Handler'a DM hedefini bildir
-    context.user_data["_dm_target"] = user.id
+    bot_info = await context.bot.get_me()
+    bot_link = f"https://t.me/{bot_info.username}"
 
+    # 1. Deneme: DM'e gönder
+    context.user_data["_dm_target"] = user.id
     dm_ok = False
     try:
         await handler_func(update, context)
         dm_ok = True
     except Exception as e:
-        log.warning(f"group_to_dm handler hatasi: {e}")
+        err = str(e)
+        if any(x in err for x in ("Forbidden", "bot was blocked", "chat not found", "user is deactivated")):
+            dm_ok = False
+        else:
+            log.warning(f"group_to_dm hatasi: {e}")
+            dm_ok = False  # bilinmeyen hata da fallback'e düşsün
     finally:
         context.user_data.pop("_dm_target", None)
 
-    # Gruba kısa bilgi notu (8sn sonra silinir)
-    try:
-        bot_link = f"https://t.me/{(await context.bot.get_me()).username}"
-        if dm_ok:
-            note_text = f"👤 {user.first_name} — yanıt [DM'inize]({bot_link}) gönderildi."
-        else:
-            note_text = f"👤 {user.first_name} — lütfen önce [bota DM açın]({bot_link}) ve /start yazın."
-        note = await context.bot.send_message(
-            chat.id, note_text,
-            parse_mode="Markdown",
-            disable_web_page_preview=True
-        )
-        async def _del():
-            await asyncio.sleep(8)
-            try: await note.delete()
-            except: pass
-        asyncio.create_task(_del())
-    except Exception:
-        pass
+    if dm_ok:
+        # Gruba 8sn'de silinen başarı notu
+        try:
+            note = await context.bot.send_message(
+                chat.id,
+                f"👤 {user.first_name} — yanıt [DM'inize]({bot_link}) gönderildi.",
+                parse_mode="Markdown", disable_web_page_preview=True
+            )
+            async def _del():
+                await asyncio.sleep(8)
+                try: await note.delete()
+                except: pass
+            asyncio.create_task(_del())
+        except Exception:
+            pass
+    else:
+        # 2. Fallback: gruba gönder + uyarı
+        context.user_data["_dm_target"] = None  # gruba yaz
+        try:
+            await handler_func(update, context)
+        except Exception as e:
+            log.warning(f"group_to_dm fallback hatasi: {e}")
+        finally:
+            context.user_data.pop("_dm_target", None)
+
+        # Gruba kalıcı uyarı (30sn sonra silinir)
+        try:
+            warn = await context.bot.send_message(
+                chat.id,
+                f"👤 {user.first_name} — sonraki sorgular DM'e gitsin: "
+                f"[bota buradan yazın]({bot_link}) ve /start deyin.",
+                parse_mode="Markdown", disable_web_page_preview=True
+            )
+            async def _del_warn():
+                await asyncio.sleep(30)
+                try: await warn.delete()
+                except: pass
+            asyncio.create_task(_del_warn())
+        except Exception:
+            pass
 
 
 def get_target_chat_id(update: Update, context) -> int:
     """Handler içinde kullanılacak hedef chat_id'yi döner (DM veya mevcut chat)."""
-    return context.user_data.get("_dm_target") or update.effective_chat.id
+    target = context.user_data.get("_dm_target")
+    if target is None:
+        return update.effective_chat.id
+    return target
 
 # ================= GELİŞMİŞ KİŞİSEL ALARM =================
 
@@ -1853,3 +1886,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
