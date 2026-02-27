@@ -125,7 +125,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
                 data = await resp.json()
 
         if "lastPrice" not in data:
-            logging.warning(f"Sembol bulunamadı: {symbol}")
             return
 
         price = float(data["lastPrice"])
@@ -135,25 +134,33 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         ch5m = await get_price_change(symbol, "5m")
         rsi7 = await calculate_rsi(symbol, 7)
         rsi14 = await calculate_rsi(symbol, 14)
+        
+        # Değişimlere göre emoji seçimi
+        def get_trend_emoji(val):
+            return "🟢" if val > 0 else "🔴" if val < 0 else "⚪"
 
         text = (
-            f"🚨 *{extra_title}*\n\n"
-            f"🔥 *Sembol:* `{symbol}`\n"
-            f"💰 *Fiyat:* `{price}`\n\n"
-            f"📊 *Değişimler:*\n"
-            f"• 5dk:  `% {ch5m}`\n"
-            f"• 1s:   `% {ch1h}`\n"
-            f"• 4s:   `% {ch4h}`\n"
-            f"• 24s:  `% {ch24}`\n\n"
-            f"📉 *RSI (7/14):* `{rsi7}` / `{rsi14}`"
+            f"📊 *{extra_title}*\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💎 *Parite:* `#{symbol}`\n"
+            f"💵 *Fiyat:* `{price:,.4f}`\n\n"
+            f"*Performans Değişimleri:*\n"
+            f"{get_trend_emoji(ch5m)} `5dk :` `% {ch5m:+.2f}`\n"
+            f"{get_trend_emoji(ch1h)} `1sa :` `% {ch1h:+.2f}`\n"
+            f"{get_trend_emoji(ch4h)} `4sa :` `% {ch4h:+.2f}`\n"
+            f"{get_trend_emoji(ch24)} `24sa:` `% {ch24:+.2f}`\n\n"
+            f"📉 *RSI Göstergeleri:*\n"
+            f"• RSI 7  : `{rsi7}`\n"
+            f"• RSI 14 : `{rsi14}`\n"
+            f"──────────────────"
         )
 
         if threshold_info:
-            text += f"\n\n🎯 *Alarm Eşiği:* `% {threshold_info}`"
+            text += f"\n🎯 *Alarm Eşiği:* `% {threshold_info}`"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(
-                "📊 Binance Grafiği",
+                "📈 Binance'de Görüntüle",
                 url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
             )]
         ])
@@ -178,27 +185,28 @@ async def reply_symbol(update: Update, context):
     symbol = raw.replace("#", "").replace("/", "")
 
     if symbol.endswith("USDT"):
-        logging.info(f"Sembol algılandı: {symbol}")
         await send_full_analysis(
             context.bot,
             update.effective_chat.id,
             symbol,
-            "🔍 ANALİZ SONUCU"
+            "PİYASA ANALİZ RAPORU"
         )
 
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Market", callback_data="market"),
-         InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
-        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5"),
-         InlineKeyboardButton("ℹ️ Durum", callback_data="status")]
+        [InlineKeyboardButton("📊 Genel Market", callback_data="market")],
+        [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
+         InlineKeyboardButton("⚡ 5dk Flaşlar", callback_data="top5")],
+        [InlineKeyboardButton("⚙️ Sistem Durumu", callback_data="status")]
     ])
-    await update.message.reply_text(
-        "👋 Kripto Analiz Botu\nBTCUSDT yazarak analiz alabilirsiniz.",
-        reply_markup=keyboard
+    welcome_text = (
+        "👋 *Kripto Analiz Asistanına Hoş Geldin!*\n\n"
+        "Sanal asistanın 7/24 piyasayı takip eder. Analiz almak için parite ismini yazman yeterli.\n\n"
+        "💡 *Örnek:* `BTCUSDT`"
     )
+    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
@@ -206,7 +214,10 @@ async def market(update: Update, context):
             data = await resp.json()
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
-    await (update.callback_query.message if update.callback_query else update.message).reply_text(f"📊 Market Ortalama: %{avg:.2f}")
+    
+    status_emoji = "🐂" if avg > 0 else "🐻"
+    msg = f"{status_emoji} *Piyasa Duyarlılığı:* `%{avg:+.2f}`"
+    await (update.callback_query.message if update.callback_query else update.message).reply_text(msg, parse_mode="Markdown")
 
 async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
@@ -215,10 +226,13 @@ async def top24(update: Update, context):
     usdt = sorted([x for x in data if x["symbol"].endswith("USDT")],
                   key=lambda x: float(x["priceChangePercent"]),
                   reverse=True)[:10]
-    text = "📊 24 Saat Top 10\n\n"
-    for c in usdt:
-        text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
-    await (update.callback_query.message if update.callback_query else update.message).reply_text(text)
+    
+    text = "🏆 *24 Saatlik Performans Liderleri*\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n"
+    for i, c in enumerate(usdt, 1):
+        text += f"{i}️⃣ `{c['symbol']:<10}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
+    
+    await (update.callback_query.message if update.callback_query else update.message).reply_text(text, parse_mode="Markdown")
 
 async def top5(update: Update, context):
     changes = []
@@ -226,19 +240,28 @@ async def top5(update: Update, context):
         if len(p) >= 2:
             changes.append((s, ((p[-1][1]-p[0][1])/p[0][1])*100))
     top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
+    
     if not top:
-        text = "Veri bekleniyor..."
+        text = "⏳ *Veri toplanıyor, lütfen bekleyin...*"
     else:
-        text = "⚡ 5 Dakika Top 10\n\n"
-        for s, c in top:
-            text += f"{s} → %{c:.2f}\n"
-    await (update.callback_query.message if update.callback_query else update.message).reply_text(text)
+        text = "⚡ *Son 5 Dakikanın En Hareketlileri*\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━\n"
+        for i, (s, c) in enumerate(top, 1):
+            text += f"{i}️⃣ `{s:<10}` → `%{c:+6.2f}`\n"
+            
+    await (update.callback_query.message if update.callback_query else update.message).reply_text(text, parse_mode="Markdown")
 
 async def status(update: Update, context):
     cursor.execute("SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?", (GROUP_CHAT_ID,))
     r = cursor.fetchone()
-    text = f"Alarm: {'AÇIK' if r[0] else 'KAPALI'}\nEşik: %{r[1]}\nMod: {r[2]}"
-    await (update.callback_query.message if update.callback_query else update.message).reply_text(text)
+    text = (
+        "ℹ️ *Sistem Yapılandırması*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🔔 *Alarm Durumu:* `{'AKTİF' if r[0] else 'KAPALI'}`\n"
+        f"🎯 *Eşik Değeri:* `% {r[1]}`\n"
+        f"🔄 *İzleme Modu:* `{r[2].upper()}`"
+    )
+    await (update.callback_query.message if update.callback_query else update.message).reply_text(text, parse_mode="Markdown")
 
 # ================= CALLBACK =================
 
@@ -280,7 +303,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 context.bot,
                 GROUP_CHAT_ID,
                 symbol,
-                "🚀 HAREKETLİLİK UYARISI",
+                "🚀 ANLIK SİNYAL UYARISI",
                 threshold
             )
 
@@ -323,10 +346,10 @@ def main():
 
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # 🔥 DÜZELTİLMİŞ FİLTRE
+    # 🔥 SENİN DÜZELTTİĞİN FİLTRE (KORUNDU)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT TAM AKTİF")
+    print("🚀 BOT GÖRSEL GÜNCELLEME İLE AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
