@@ -882,7 +882,112 @@ async def alarm_ekle_v2(update: Update, context):
     )
 
 
-async def alarm_duraklat(update: Update, context):
+async def alarm_sil(update: Update, context):
+    user_id = update.effective_user.id
+    if not context.args:
+        await send_temp(context.bot, update.effective_chat.id,
+            "Kullanim: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
+        return
+    symbol = context.args[0].upper().replace("#","").replace("/","")
+    if not symbol.endswith("USDT"): symbol += "USDT"
+    async with db_pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM user_alarms WHERE user_id=$1 AND symbol=$2", user_id, symbol
+        )
+    if result == "DELETE 0":
+        await send_temp(context.bot, update.effective_chat.id,
+            f"`{symbol}` icin kayitli alarm bulunamadi.", parse_mode="Markdown")
+    else:
+        await send_temp(context.bot, update.effective_chat.id,
+            f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
+
+
+async def my_alarm(update: Update, context):
+    user_id = update.effective_user.id
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT symbol, threshold, active FROM user_alarms WHERE user_id=$1", user_id
+        )
+    if not rows:
+        text = (
+            "🔔 *Kisisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
+            "Henuz aktif alarminiz yok.\n\n"
+            "➕ Alarm eklemek icin:\n`/alarm_ekle BTCUSDT 3.5`"
+        )
+    else:
+        text = "🔔 *Kisisel Alarmlariniz*\n━━━━━━━━━━━━━━━━━━\n"
+        for r in rows:
+            durum = "✅ Aktif" if r["active"] else "⏸ Durduruldu"
+            text += f"• `{r['symbol']}` → `%{r['threshold']}` — {durum}\n"
+        text += "\n`/alarm_ekle BTCUSDT 3.5` — yeni ekle\n`/alarm_sil BTCUSDT` — sil"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("➕ Alarm Ekle",  callback_data="alarm_guide"),
+        InlineKeyboardButton("🗑 Tumunu Sil", callback_data=f"alarm_deleteall_{user_id}")
+    ]])
+    msg = update.callback_query.message if update.callback_query else update.message
+    await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def favori_command(update: Update, context):
+    user_id = update.effective_user.id
+    args    = context.args or []
+    msg     = update.callback_query.message if update.callback_query else update.message
+
+    if not args or args[0].lower() == "liste":
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT symbol FROM favorites WHERE user_id=$1 ORDER BY symbol", user_id)
+        if not rows:
+            await send_temp(context.bot, update.effective_chat.id,
+                "⭐ *Favori Listeniz Bos*\n━━━━━━━━━━━━━━━━━━\nEklemek icin:\n`/favori ekle BTCUSDT`",
+                parse_mode="Markdown"); return
+        syms = [r["symbol"] for r in rows]
+        text = "⭐ *Favorileriniz*\n━━━━━━━━━━━━━━━━━━\n" + "".join(f"• `{s}`\n" for s in syms)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📊 Hepsini Analiz Et", callback_data="fav_analiz"),
+            InlineKeyboardButton("🗑 Tumunu Sil",        callback_data=f"fav_deleteall_{user_id}")
+        ]])
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
+    if args[0].lower() == "ekle":
+        if len(args) < 2:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Kullanim: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#","").replace("/","")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        async with db_pool.acquire() as conn:
+            await conn.execute("INSERT INTO favorites(user_id,symbol) VALUES($1,$2) ON CONFLICT DO NOTHING", user_id, symbol)
+        await send_temp(context.bot, update.effective_chat.id,
+            "⭐ `" + symbol + "` favorilere eklendi!", parse_mode="Markdown"); return
+
+    if args[0].lower() == "sil":
+        if len(args) < 2:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Kullanim: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#","").replace("/","")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM favorites WHERE user_id=$1 AND symbol=$2", user_id, symbol)
+        await send_temp(context.bot, update.effective_chat.id,
+            "🗑 `" + symbol + "` favorilerden silindi.", parse_mode="Markdown"); return
+
+    if args[0].lower() == "analiz":
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT symbol FROM favorites WHERE user_id=$1", user_id)
+        if not rows:
+            await send_temp(context.bot, update.effective_chat.id,
+                "⭐ Favori listeniz bos.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id,
+            "📊 *" + str(len(rows)) + " coin analiz ediliyor...*", parse_mode="Markdown")
+        for r in rows:
+            await send_full_analysis(context.bot, update.effective_chat.id, r["symbol"], "⭐ FAVORİ ANALİZ")
+            await asyncio.sleep(1.5)
+        return
+
+    await send_temp(context.bot, update.effective_chat.id,
+        "Kullanim:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n`/favori liste`\n`/favori analiz`",
+        parse_mode="Markdown"
+    )
     user_id = update.effective_user.id
     args    = context.args or []
     if len(args) < 2:
