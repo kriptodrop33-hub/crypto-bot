@@ -264,9 +264,17 @@ async def binance_engine(app):
 
 # ================= MAIN =================
 
+async def post_init(app):
+    asyncio.create_task(binance_engine(app))
+
 def main():
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(ChatMemberHandler(added_to_group, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(CommandHandler("help", help_command))
@@ -275,14 +283,9 @@ def main():
     app.add_handler(CommandHandler("set", set_threshold))
     app.add_handler(CommandHandler("status", status))
 
-    async def post_init(app):
-        app.create_task(binance_engine(app))
+    print("🚀 PROFESYONEL BOT AKTİF")
 
-    app.post_init = post_init
-
-    print("🚀 PROFESYONEL V2 BOT AKTİF")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+    app.run_polling(
+        drop_pending_updates=True,
+        close_loop=False
+    )
