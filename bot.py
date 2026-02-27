@@ -39,9 +39,23 @@ DEFAULT_MODE = "both"
 logging.basicConfig(level=logging.INFO)
 
 # ================= DATABASE =================
-@@ -44,378 +50,456 @@ CREATE TABLE IF NOT EXISTS groups (
+
+conn = sqlite3.connect("groups.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS groups (
+    chat_id INTEGER PRIMARY KEY,
+    alarm_active INTEGER DEFAULT 1,
     threshold REAL DEFAULT 5,
     mode TEXT DEFAULT 'both'
+cursor.execute(
+    "CREATE TABLE IF NOT EXISTS groups ("
+    "chat_id INTEGER PRIMARY KEY, "
+    "alarm_active INTEGER DEFAULT 1, "
+    "threshold REAL DEFAULT 5, "
+    "mode TEXT DEFAULT 'both'"
+    ")"
 )
 """)
 
@@ -50,6 +64,12 @@ CREATE TABLE IF NOT EXISTS user_alarms (
     user_id INTEGER,
     symbol TEXT,
     threshold REAL
+cursor.execute(
+    "CREATE TABLE IF NOT EXISTS user_alarms ("
+    "user_id INTEGER, "
+    "symbol TEXT, "
+    "threshold REAL"
+    ")"
 )
 """)
 
@@ -91,47 +111,47 @@ def calculate_rsi_from_closes(closes, period=14):
         gains.append(max(diff, 0))
         losses.append(abs(min(diff, 0)))
 
-    avg_gain = sum(gains[-period:]) / period
-    avg_loss = sum(losses[-period:]) / period
-
         gains = []
         losses = []
-    if avg_loss == 0:
-        return 100
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
 
         for i in range(1, len(closes)):
             diff = closes[i] - closes[i - 1]
             gains.append(max(diff, 0))
             losses.append(abs(min(diff, 0)))
+    if avg_loss == 0:
+        return 100
+
+        avg_gain = sum(gains[-period:]) / period
+        avg_loss = sum(losses[-period:]) / period
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return round(rsi, 2)
 
-        avg_gain = sum(gains[-period:]) / period
-        avg_loss = sum(losses[-period:]) / period
-
         if avg_loss == 0:
             return 100
-async def fetch_json(session, url):
-    async with session.get(url) as resp:
-        return await resp.json()
 
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         return round(rsi, 2)
+async def fetch_json(session, url):
+    async with session.get(url) as resp:
+        return await resp.json()
 
     except:
+
 def calculate_change_percent(closes, minutes):
     need = minutes + 1
     if len(closes) < need:
         return 0
 
-# ================= HELP =================
     current = closes[-1]
     previous = closes[-need]
     if previous == 0:
         return 0
 
+# ================= HELP =================
     return ((current - previous) / previous) * 100
 
 
@@ -401,9 +421,6 @@ async def reply_symbol(update: Update, context):
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
                 data = await resp.json()
-        await send_symbol_report(context.bot, update.effective_chat.id, symbol)
-    except Exception as exc:
-        logging.error("symbol reply failed: %s", exc)
 
         price = float(data["lastPrice"])
         ch24 = float(data["priceChangePercent"])
@@ -411,6 +428,9 @@ async def reply_symbol(update: Update, context):
         await update.message.reply_text(
             f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
         )
+        await send_symbol_report(context.bot, update.effective_chat.id, symbol)
+    except Exception as exc:
+        logging.error("symbol reply failed: %s", exc)
 
     except:
         pass
@@ -475,13 +495,13 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             price = float(data["lastPrice"])
             change24 = float(data["priceChangePercent"])
-
-            rsi7 = await calculate_rsi(symbol, 7)
-            rsi14 = await calculate_rsi(symbol, 14)
             try:
                 await send_symbol_report(context.bot, GROUP_CHAT_ID, symbol, prefix=f"{trend}\n🎯 Eşik: %{threshold}")
             except Exception as exc:
                 logging.error("alarm report failed: %s", exc)
+
+            rsi7 = await calculate_rsi(symbol, 7)
+            rsi14 = await calculate_rsi(symbol, 14)
 
             trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
 
