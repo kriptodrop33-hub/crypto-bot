@@ -1,4 +1,6 @@
-python-telegram-bot[job-queue]==20.7
+
 aiohttp
 websockets
 matplotlib
+mplfinance
+python-telegram-bot[job-queue]
