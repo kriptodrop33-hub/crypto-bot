@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -101,7 +101,7 @@ async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
 
 # ================= ANA GÖNDERİM MERKEZİ =================
 
-async def send_full_analysis(bot, chat_id, symbol, extra_title=""):
+async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None):
     """Fiyatlar, RSI, Grafik ve Butonu bir arada gönderir."""
     try:
         async with aiohttp.ClientSession() as session:
@@ -116,29 +116,28 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title=""):
         rsi7 = await calculate_rsi(symbol, 7)
         rsi14 = await calculate_rsi(symbol, 14)
 
-        # Görsel Grafik (TradingView Snapshot)
-        # 4 Saatlik mumu temsil eden snapshot linki
+        # TradingView 4 Saatlik Snapshot PNG
         chart_url = f"https://s3.tradingview.com/snapshots/c/{symbol.lower()}.png"
 
         text = (
-            f"🔔 *{extra_title}*\n\n"
-            f"💎 **Sembol:** #{symbol}\n"
-            f"💰 **Güncel Fiyat:** `{price}`\n\n"
-            f"📊 **Zaman Bazlı Değişimler:**\n"
-            f"• 24 Saat: `% {ch24}`\n"
-            f"• 4 Saat:  `% {ch4h}`\n"
+            f"🚨 *{extra_title}*\n\n"
+            f"🔥 **Sembol:** `#{symbol}`\n"
+            f"💰 **Fiyat:** `{price}`\n\n"
+            f"📊 **Değişimler:**\n"
+            f"• 5 Dak:   `% {ch5m}`\n"
             f"• 1 Saat:  `% {ch1h}`\n"
-            f"• 5 Dak:   `% {ch5m}`\n\n"
-            f"📉 **RSI Göstergeleri:**\n"
-            f"• RSI (7): `{rsi7}`\n"
-            f"• RSI (14): `{rsi14}`\n"
+            f"• 4 Saat:  `% {ch4h}`\n"
+            f"• 24 Saat: `% {ch24}`\n\n"
+            f"📉 **RSI (7/14):** `{rsi7}` / `{rsi14}`\n"
         )
+        
+        if threshold_info:
+            text += f"🎯 **Alarm Eşiği:** `% {threshold_info}`\n"
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🌐 Binance'de İşlem Yap", url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT', '_USDT')}")]
+            [InlineKeyboardButton("📊 Binance Grafiği", url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT', '_USDT')}")]
         ])
 
-        # Fotoğraf ve metni birlikte gönderiyoruz
         await bot.send_photo(
             chat_id=chat_id,
             photo=chart_url,
@@ -152,31 +151,25 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title=""):
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context):
-    """Zenginleştirilmiş Start Menüsü"""
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Genel Market", callback_data="market"), InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
-        [InlineKeyboardButton("⚡ Hızlı 5dk", callback_data="top5"), InlineKeyboardButton("ℹ️ Bot Durumu", callback_data="status")],
-        [InlineKeyboardButton("🛠 Ayarlar / Admin", callback_data="admin_help")]
+        [InlineKeyboardButton("📊 Market", callback_data="market"), InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
+        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5"), InlineKeyboardButton("ℹ️ Durum", callback_data="status")],
+        [InlineKeyboardButton("🛠 Yardım / Admin", callback_data="admin_help")]
     ])
     
     welcome_text = (
-        "👋 **Kripto Analiz & Alarm Botuna Hoş Geldiniz!**\n\n"
-        "Bu bot Binance üzerindeki pariteleri saniyelik izler ve ani hareketlerde sizi uyarır.\n\n"
-        "💡 **Neler Yapabilirim?**\n"
-        "• Direkt bir coin adı yazın (Örn: `BTCUSDT`) detaylı analizini atayım.\n"
-        "• Gruplarda %5 ve üzeri ani hareketleri otomatik yakalarım.\n"
-        "• Teknik göstergeleri ve 4 saatlik grafikleri sunarım.\n\n"
-        "👇 Menüden keşfetmeye başlayın!"
+        "👋 **Kripto Sinyal Botuna Hoş Geldiniz!**\n\n"
+        "Binance paritelerini anlık izliyorum. #BTCUSDT gibi sembol yazarak analiz alabilir veya otomatik alarmları bekleyebilirsiniz.\n\n"
+        "👇 Menüyü kullanın:"
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 async def admin_help(update: Update, context):
     text = (
-        "⚙️ **Admin & Kullanıcı Komutları**\n\n"
-        "• `/alarmon` / `/alarmoff` - Gruba alarmı aç/kapat\n"
-        "• `/set 5` - Alarm eşiğini %5 yap\n"
-        "• `/mode pump` - Sadece yükselişleri bildir\n"
-        "• `/myalarm BTCUSDT 2` - Şahsi alarm kur"
+        "⚙️ **Admin Komutları**\n\n"
+        "• `/alarmon` / `/alarmoff` - Alarmı Yönet\n"
+        "• `/set 5` - Eşiği Değiştir\n"
+        "• `/mode pump|dump|both` - Mod Seçimi"
     )
     if update.callback_query:
         await update.callback_query.message.edit_text(text, parse_mode="Markdown")
@@ -214,7 +207,7 @@ async def top5(update: Update, context):
             changes.append((symbol, ch))
     top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
     if not top:
-        msg = "Henüz 5dk veri birikmedi."
+        msg = "Henüz veri birikmedi."
         if update.callback_query: await update.callback_query.message.reply_text(msg)
         else: await update.effective_message.reply_text(msg)
         return
@@ -226,26 +219,26 @@ async def top5(update: Update, context):
 async def status(update: Update, context):
     cursor.execute("SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?", (GROUP_CHAT_ID,))
     row = cursor.fetchone()
-    text = f"📢 **Bot Durumu**\n\nAlarm: `{'AÇIK' if row[0] else 'KAPALI'}`\nEşik: `%{row[1]}`\nMod: `{row[2]}`"
+    text = f"📢 **Sistem Durumu**\n\nAlarm: `{'AÇIK' if row[0] else 'KAPALI'}`\nGüncel Eşik: `%{row[1]}`\nMod: `{row[2]}`"
     if update.callback_query: await update.callback_query.message.reply_text(text, parse_mode="Markdown")
     else: await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 async def alarm_on(update: Update, context):
     cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
     conn.commit()
-    await update.message.reply_text("✅ Alarm Açıldı")
+    await update.message.reply_text("✅ Alarm Gruba Açıldı")
 
 async def alarm_off(update: Update, context):
     cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
     conn.commit()
-    await update.message.reply_text("❌ Alarm Kapandı")
+    await update.message.reply_text("❌ Alarm Gruba Kapatıldı")
 
 async def set_threshold(update: Update, context):
     try:
         val = float(context.args[0])
         cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (val, GROUP_CHAT_ID))
         conn.commit()
-        await update.message.reply_text(f"🎯 Eşik %{val} olarak güncellendi.")
+        await update.message.reply_text(f"🎯 Yeni Eşik: %{val}")
     except: await update.message.reply_text("Kullanım: /set 5")
 
 async def set_mode(update: Update, context):
@@ -253,7 +246,7 @@ async def set_mode(update: Update, context):
         m = context.args[0].lower()
         cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (m, GROUP_CHAT_ID))
         conn.commit()
-        await update.message.reply_text(f"🔄 Mod: {m}")
+        await update.message.reply_text(f"🔄 Alarm Modu: {m}")
     except: await update.message.reply_text("Kullanım: /mode pump|dump|both")
 
 async def myalarm(update: Update, context):
@@ -261,14 +254,14 @@ async def myalarm(update: Update, context):
         s, t = context.args[0].upper(), float(context.args[1])
         cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)", (update.effective_user.id, s, t))
         conn.commit()
-        await update.message.reply_text(f"🎯 {s} için %{t} alarmın kuruldu.")
+        await update.message.reply_text(f"🎯 {s} takibi %{t} ile kuruldu.")
     except: await update.message.reply_text("Kullanım: /myalarm BTCUSDT 3")
 
 async def reply_symbol(update: Update, context):
     if not update.message: return
     symbol = update.message.text.upper().strip()
     if not symbol.endswith("USDT"): return
-    await send_full_analysis(context.bot, update.effective_chat.id, symbol, "SEMBOL SORGUSU")
+    await send_full_analysis(context.bot, update.effective_chat.id, symbol, "🔍 ANALİZ SONUCU")
 
 async def button_handler(update: Update, context):
     query = update.callback_query
@@ -296,8 +289,9 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         if abs(change5) >= threshold:
             if symbol in cooldowns and now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES): continue
             cooldowns[symbol] = now
-            trend = "🚀 SERİ YÜKSELİŞ" if change5 > 0 else "🔻 SERİ DÜŞÜŞ"
-            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, f"{trend}")
+            trend = "🚀 SERİ PUMP" if change5 > 0 else "🔻 SERİ DUMP"
+            # Alarm anında threshold bilgisini de geçiyoruz
+            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, f"{trend} UYARISI", threshold_info=threshold)
 
 async def binance_engine():
     uri = "wss://stream.binance.com:9443/ws/!miniTicker@arr"
@@ -339,7 +333,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT TAM AKTİF")
+    print("🚀 BOT GÜNCELLENDİ VE AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
