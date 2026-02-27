@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -66,10 +66,9 @@ conn.commit()
 price_memory = defaultdict(list)
 cooldowns = {}
 
-# ================= YENİ ÖZELLİK FONKSİYONLARI =================
+# ================= YARDIMCI ANALİZ FONKSİYONLARI =================
 
 async def get_price_change(symbol, interval, limit=2):
-    """Belirlenen zaman dilimine göre fiyat değişim yüzdesini hesaplar."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}") as resp:
@@ -77,13 +76,11 @@ async def get_price_change(symbol, interval, limit=2):
                 if not data or len(data) < 2: return 0.0
                 first_close = float(data[0][4])
                 last_close = float(data[-1][4])
-                change = ((last_close - first_close) / first_close) * 100
-                return round(change, 2)
+                return round(((last_close - first_close) / first_close) * 100, 2)
     except:
         return 0.0
 
 async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
-    """RSI değerini hesaplar."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}") as resp:
@@ -102,60 +99,100 @@ async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
     except:
         return 0
 
-def get_binance_markup(symbol):
-    """Binance butonu oluşturur."""
-    url = f"https://www.binance.com/tr/trade/{symbol.replace('USDT', '_USDT')}"
-    keyboard = [[InlineKeyboardButton("📊 Binance Grafiği", url=url)]]
-    return InlineKeyboardMarkup(keyboard)
+# ================= ANA GÖNDERİM MERKEZİ =================
 
-async def format_and_send(bot, chat_id, symbol, extra_title=""):
-    """Detaylı coin bilgisini hazırlar ve gönderir."""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-            data = await resp.json()
+async def send_full_analysis(bot, chat_id, symbol, extra_title=""):
+    """Fiyatlar, RSI, Grafik ve Butonu bir arada gönderir."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+                data = await resp.json()
+        
+        price = float(data["lastPrice"])
+        ch24 = float(data["priceChangePercent"])
+        ch4h = await get_price_change(symbol, "4h")
+        ch1h = await get_price_change(symbol, "1h")
+        ch5m = await get_price_change(symbol, "5m")
+        rsi7 = await calculate_rsi(symbol, 7)
+        rsi14 = await calculate_rsi(symbol, 14)
+
+        # Görsel Grafik (TradingView Snapshot)
+        # 4 Saatlik mumu temsil eden snapshot linki
+        chart_url = f"https://s3.tradingview.com/snapshots/c/{symbol.lower()}.png"
+
+        text = (
+            f"🔔 *{extra_title}*\n\n"
+            f"💎 **Sembol:** #{symbol}\n"
+            f"💰 **Güncel Fiyat:** `{price}`\n\n"
+            f"📊 **Zaman Bazlı Değişimler:**\n"
+            f"• 24 Saat: `% {ch24}`\n"
+            f"• 4 Saat:  `% {ch4h}`\n"
+            f"• 1 Saat:  `% {ch1h}`\n"
+            f"• 5 Dak:   `% {ch5m}`\n\n"
+            f"📉 **RSI Göstergeleri:**\n"
+            f"• RSI (7): `{rsi7}`\n"
+            f"• RSI (14): `{rsi14}`\n"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🌐 Binance'de İşlem Yap", url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT', '_USDT')}")]
+        ])
+
+        # Fotoğraf ve metni birlikte gönderiyoruz
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=chart_url,
+            caption=text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logging.error(f"Gönderim hatası: {e}")
+
+# ================= KOMUTLAR =================
+
+async def start(update: Update, context):
+    """Zenginleştirilmiş Start Menüsü"""
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Genel Market", callback_data="market"), InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
+        [InlineKeyboardButton("⚡ Hızlı 5dk", callback_data="top5"), InlineKeyboardButton("ℹ️ Bot Durumu", callback_data="status")],
+        [InlineKeyboardButton("🛠 Ayarlar / Admin", callback_data="admin_help")]
+    ])
     
-    price = float(data["lastPrice"])
-    ch24 = float(data["priceChangePercent"])
-    ch4h = await get_price_change(symbol, "4h")
-    ch1h = await get_price_change(symbol, "1h")
-    ch5m = await get_price_change(symbol, "5m")
-    
-    rsi7 = await calculate_rsi(symbol, 7)
-    rsi14 = await calculate_rsi(symbol, 14)
-    
+    welcome_text = (
+        "👋 **Kripto Analiz & Alarm Botuna Hoş Geldiniz!**\n\n"
+        "Bu bot Binance üzerindeki pariteleri saniyelik izler ve ani hareketlerde sizi uyarır.\n\n"
+        "💡 **Neler Yapabilirim?**\n"
+        "• Direkt bir coin adı yazın (Örn: `BTCUSDT`) detaylı analizini atayım.\n"
+        "• Gruplarda %5 ve üzeri ani hareketleri otomatik yakalarım.\n"
+        "• Teknik göstergeleri ve 4 saatlik grafikleri sunarım.\n\n"
+        "👇 Menüden keşfetmeye başlayın!"
+    )
+    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+
+async def admin_help(update: Update, context):
     text = (
-        f"{extra_title}\n\n"
-        f"💎 **{symbol}**\n"
-        f"💰 Fiyat: `{price}`\n\n"
-        f"⌛ **Fiyat Değişimleri:**\n"
-        f"• 24 Saat: %{ch24}\n"
-        f"• 4 Saat:  %{ch4h}\n"
-        f"• 1 Saat:  %{ch1h}\n"
-        f"• 5 Dak:   %{ch5m}\n\n"
-        f"📈 **RSI Verileri:**\n"
-        f"• RSI(7):  {rsi7}\n"
-        f"• RSI(14): {rsi14}\n\n"
-        f"🖼 **4 Saatlik Mum Grafiği:**\n"
-        f"[Grafiği Gör](https://s3.tradingview.com/snapshots/c/{symbol.lower()}.png)"
+        "⚙️ **Admin & Kullanıcı Komutları**\n\n"
+        "• `/alarmon` / `/alarmoff` - Gruba alarmı aç/kapat\n"
+        "• `/set 5` - Alarm eşiğini %5 yap\n"
+        "• `/mode pump` - Sadece yükselişleri bildir\n"
+        "• `/myalarm BTCUSDT 2` - Şahsi alarm kur"
     )
-    
-    await bot.send_message(
-        chat_id, 
-        text, 
-        reply_markup=get_binance_markup(symbol),
-        parse_mode="Markdown",
-        disable_web_page_preview=False
-    )
+    if update.callback_query:
+        await update.callback_query.message.edit_text(text, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown")
 
-# ================= ESKİ İŞLEVLER (KORUNDU) =================
-
+# --- Eski Fonksiyonlar (Aynen Korundu) ---
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H) as resp:
             data = await resp.json()
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
-    await update.effective_message.reply_text(f"📊 Market Ortalama: %{avg:.2f}")
+    msg = f"📊 Market Ortalama: %{avg:.2f}"
+    if update.callback_query: await update.callback_query.message.reply_text(msg)
+    else: await update.effective_message.reply_text(msg)
 
 async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
@@ -163,9 +200,10 @@ async def top24(update: Update, context):
             data = await resp.json()
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
-    text = "📊 24 Saat Top 10\n\n"
-    for c in top: text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
-    await update.effective_message.reply_text(text)
+    text = "📊 **24 Saat Top 10**\n\n"
+    for c in top: text += f"`{c['symbol']}` → %{float(c['priceChangePercent']):.2f}\n"
+    if update.callback_query: await update.callback_query.message.reply_text(text, parse_mode="Markdown")
+    else: await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 async def top5(update: Update, context):
     changes = []
@@ -176,67 +214,70 @@ async def top5(update: Update, context):
             changes.append((symbol, ch))
     top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
     if not top:
-        await update.effective_message.reply_text("Henüz 5dk veri birikmedi.")
+        msg = "Henüz 5dk veri birikmedi."
+        if update.callback_query: await update.callback_query.message.reply_text(msg)
+        else: await update.effective_message.reply_text(msg)
         return
-    text = "⚡ 5 Dakika Top 10\n\n"
-    for sym, ch in top: text += f"{sym} → %{ch:.2f}\n"
-    await update.effective_message.reply_text(text)
+    text = "⚡ **5 Dakika Top 10**\n\n"
+    for sym, ch in top: text += f"`{sym}` → %{ch:.2f}\n"
+    if update.callback_query: await update.callback_query.message.reply_text(text, parse_mode="Markdown")
+    else: await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 async def status(update: Update, context):
     cursor.execute("SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?", (GROUP_CHAT_ID,))
     row = cursor.fetchone()
-    if not row: return
-    await update.effective_message.reply_text(f"Alarm: {'Açık' if row[0] else 'Kapalı'}\nEşik: %{row[1]}\nMod: {row[2]}")
+    text = f"📢 **Bot Durumu**\n\nAlarm: `{'AÇIK' if row[0] else 'KAPALI'}`\nEşik: `%{row[1]}`\nMod: `{row[2]}`"
+    if update.callback_query: await update.callback_query.message.reply_text(text, parse_mode="Markdown")
+    else: await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 async def alarm_on(update: Update, context):
     cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
     conn.commit()
-    await update.effective_message.reply_text("✅ Alarm Açıldı")
+    await update.message.reply_text("✅ Alarm Açıldı")
 
 async def alarm_off(update: Update, context):
     cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
     conn.commit()
-    await update.effective_message.reply_text("❌ Alarm Kapandı")
+    await update.message.reply_text("❌ Alarm Kapandı")
 
 async def set_threshold(update: Update, context):
     try:
-        value = float(context.args[0])
-        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
+        val = float(context.args[0])
+        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (val, GROUP_CHAT_ID))
         conn.commit()
-        await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
-    except: await update.effective_message.reply_text("Kullanım: /set 7")
+        await update.message.reply_text(f"🎯 Eşik %{val} olarak güncellendi.")
+    except: await update.message.reply_text("Kullanım: /set 5")
 
 async def set_mode(update: Update, context):
     try:
-        mode = context.args[0].lower()
-        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
+        m = context.args[0].lower()
+        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (m, GROUP_CHAT_ID))
         conn.commit()
-        await update.effective_message.reply_text(f"Mod: {mode}")
-    except: await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
+        await update.message.reply_text(f"🔄 Mod: {m}")
+    except: await update.message.reply_text("Kullanım: /mode pump|dump|both")
 
 async def myalarm(update: Update, context):
     try:
-        symbol, threshold = context.args[0].upper(), float(context.args[1])
-        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)", (update.effective_user.id, symbol, threshold))
+        s, t = context.args[0].upper(), float(context.args[1])
+        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)", (update.effective_user.id, s, t))
         conn.commit()
-        await update.effective_message.reply_text(f"🎯 {symbol} %{threshold} alarm eklendi.")
-    except: await update.effective_message.reply_text("Kullanım: /myalarm BTCUSDT 3")
+        await update.message.reply_text(f"🎯 {s} için %{t} alarmın kuruldu.")
+    except: await update.message.reply_text("Kullanım: /myalarm BTCUSDT 3")
 
 async def reply_symbol(update: Update, context):
     if not update.message: return
     symbol = update.message.text.upper().strip()
     if not symbol.endswith("USDT"): return
-    try:
-        await format_and_send(context.bot, update.effective_chat.id, symbol, "🔍 SEMBOL SORGUSU")
-    except: pass
+    await send_full_analysis(context.bot, update.effective_chat.id, symbol, "SEMBOL SORGUSU")
 
-async def button(update: Update, context):
+async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
-    if query.data == "top24": await top24(update, context)
+    if query.data == "market": await market(update, context)
+    elif query.data == "top24": await top24(update, context)
     elif query.data == "top5": await top5(update, context)
-    elif query.data == "market": await market(update, context)
     elif query.data == "status": await status(update, context)
+    elif query.data == "admin_help": await admin_help(update, context)
 
 # ================= ALARM JOB & ENGINE =================
 
@@ -255,8 +296,8 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         if abs(change5) >= threshold:
             if symbol in cooldowns and now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES): continue
             cooldowns[symbol] = now
-            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
-            await format_and_send(context.bot, GROUP_CHAT_ID, symbol, f"{trend} ALARMI")
+            trend = "🚀 SERİ YÜKSELİŞ" if change5 > 0 else "🔻 SERİ DÜŞÜŞ"
+            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, f"{trend}")
 
 async def binance_engine():
     uri = "wss://stream.binance.com:9443/ws/!miniTicker@arr"
@@ -283,8 +324,8 @@ def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
     app.job_queue.run_repeating(alarm_job, interval=60, first=30)
 
-    app.add_handler(CommandHandler("start", status))
-    app.add_handler(CommandHandler("help", status))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("top24", top24))
     app.add_handler(CommandHandler("top5", top5))
     app.add_handler(CommandHandler("market", market))
@@ -294,10 +335,11 @@ def main():
     app.add_handler(CommandHandler("set", set_threshold))
     app.add_handler(CommandHandler("mode", set_mode))
     app.add_handler(CommandHandler("myalarm", myalarm))
-    app.add_handler(CallbackQueryHandler(button))
+    
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT TAM AKTİF VE TÜM ÖZELLİKLER KORUNDU")
+    print("🚀 BOT TAM AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
