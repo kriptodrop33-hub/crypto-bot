@@ -5,6 +5,10 @@ import asyncio
 import websockets
 import sqlite3
 import logging
+import pandas as pd
+import mplfinance as mpf
+import matplotlib.pyplot as plt
+from io import BytesIO
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -66,7 +70,34 @@ conn.commit()
 
 price_memory = defaultdict(list)
 cooldowns = {}
-user_cooldowns = {}
+
+# ================= CANDLE CHART =================
+
+async def generate_candle_chart(symbol):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BINANCE_KLINES}?symbol={symbol}&interval=1m&limit=60"
+        ) as resp:
+            data = await resp.json()
+
+    df = pd.DataFrame(data, columns=[
+        "time","open","high","low","close","volume",
+        "_1","_2","_3","_4","_5","_6"
+    ])
+
+    df["time"] = pd.to_datetime(df["time"], unit="ms")
+    df.set_index("time", inplace=True)
+
+    df = df[["open","high","low","close","volume"]].astype(float)
+
+    buf = BytesIO()
+    mpf.plot(df, type="candle", volume=True, style="charles",
+             title=f"{symbol} - Son 1 Saat",
+             savefig=buf)
+
+    buf.seek(0)
+    plt.close("all")
+    return buf
 
 # ================= RSI =================
 
@@ -169,10 +200,10 @@ async def top5(update: Update, context):
     top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
 
     if not top:
-        await update.effective_message.reply_text("Henüz 5dk veri birikmedi.")
+        await update.effective_message.reply_text("Henüz veri birikmedi.")
         return
 
-    text = "⚡ 5 Dakika Top 10\n\n"
+    text = "⚡ 1 Saat Top 10\n\n"
     for sym, ch in top:
         text += f"{sym} → %{ch:.2f}\n"
 
@@ -197,100 +228,6 @@ async def status(update: Update, context):
         f"Mod: {row[2]}"
     )
 
-# ================= ADMIN =================
-
-async def alarm_on(update: Update, context):
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
-
-    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
-    conn.commit()
-    await update.effective_message.reply_text("✅ Alarm Açıldı")
-
-async def alarm_off(update: Update, context):
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
-
-    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
-    conn.commit()
-    await update.effective_message.reply_text("❌ Alarm Kapandı")
-
-async def set_threshold(update: Update, context):
-    try:
-        value = float(context.args[0])
-        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
-        conn.commit()
-        await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
-    except:
-        await update.effective_message.reply_text("Kullanım: /set 7")
-
-async def set_mode(update: Update, context):
-    try:
-        mode = context.args[0].lower()
-        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
-        conn.commit()
-        await update.effective_message.reply_text(f"Mod: {mode}")
-    except:
-        await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
-
-# ================= USER ALARM =================
-
-async def myalarm(update: Update, context):
-    try:
-        symbol = context.args[0].upper()
-        threshold = float(context.args[1])
-        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)",
-                       (update.effective_user.id, symbol, threshold))
-        conn.commit()
-        await update.effective_message.reply_text(
-            f"🎯 {symbol} %{threshold} alarm eklendi."
-        )
-    except:
-        await update.effective_message.reply_text(
-            "Kullanım: /myalarm BTCUSDT 3"
-        )
-
-# ================= SYMBOL =================
-
-async def reply_symbol(update: Update, context):
-    if not update.message:
-        return
-
-    symbol = update.message.text.upper().strip()
-
-    if not symbol.endswith("USDT"):
-        return
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
-                data = await resp.json()
-
-        price = float(data["lastPrice"])
-        ch24 = float(data["priceChangePercent"])
-
-        await update.message.reply_text(
-            f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
-        )
-
-    except:
-        pass
-
-# ================= CALLBACK =================
-
-async def button(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "top24":
-        await top24(update, context)
-    elif query.data == "top5":
-        await top5(update, context)
-    elif query.data == "market":
-        await market(update, context)
-    elif query.data == "status":
-        await status(update, context)
-
 # ================= ALARM JOB =================
 
 async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
@@ -313,14 +250,14 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
         old = prices[0][1]
         new = prices[-1][1]
-        change5 = ((new - old) / old) * 100
+        change = ((new - old) / old) * 100
 
-        if mode == "pump" and change5 < 0:
+        if mode == "pump" and change < 0:
             continue
-        if mode == "dump" and change5 > 0:
+        if mode == "dump" and change > 0:
             continue
 
-        if abs(change5) >= threshold:
+        if abs(change) >= threshold:
 
             if symbol in cooldowns:
                 if now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES):
@@ -338,20 +275,26 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             rsi7 = await calculate_rsi(symbol, 7)
             rsi14 = await calculate_rsi(symbol, 14)
 
-            trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
+            trend = "🚀 YÜKSELİŞ" if change > 0 else "🔻 DÜŞÜŞ"
 
             text = (
                 f"{trend} ALARMI\n\n"
                 f"💎 {symbol}\n"
                 f"💰 Fiyat: {price}\n\n"
-                f"⚡ 5dk: %{change5:.2f}\n"
+                f"⏱ 1 Saat: %{change:.2f}\n"
                 f"📊 24s: %{change24:.2f}\n\n"
                 f"📈 RSI(7): {rsi7}\n"
                 f"📉 RSI(14): {rsi14}\n\n"
                 f"🎯 Eşik: %{threshold}"
             )
 
-            await context.bot.send_message(GROUP_CHAT_ID, text)
+            chart = await generate_candle_chart(symbol)
+
+            await context.bot.send_photo(
+                chat_id=GROUP_CHAT_ID,
+                photo=chart,
+                caption=text
+            )
 
 # ================= WEBSOCKET =================
 
@@ -378,7 +321,7 @@ async def binance_engine():
                         price_memory[symbol] = [
                             (t, p)
                             for (t, p) in price_memory[symbol]
-                            if now - t <= timedelta(minutes=5)
+                            if now - t <= timedelta(hours=1)
                         ]
 
         except:
