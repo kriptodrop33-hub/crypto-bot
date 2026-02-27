@@ -5,6 +5,10 @@ import asyncio
 import websockets
 import sqlite3
 import logging
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from io import BytesIO
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -66,41 +70,34 @@ conn.commit()
 
 price_memory = defaultdict(list)
 cooldowns = {}
+user_cooldowns = {}
 
-# ================= MINI GRAPH =================
+# ================= GRAPH =================
 
-def generate_mini_chart(prices):
-    if len(prices) < 2:
-        return ""
-
-    blocks = "▁▂▃▄▅▆▇█"
-    min_p = min(prices)
-    max_p = max(prices)
-
-    if max_p - min_p == 0:
-        return "▁" * len(prices)
-
-    chart = ""
-    for p in prices:
-        level = int((p - min_p) / (max_p - min_p) * (len(blocks) - 1))
-        chart += blocks[level]
-
-    return chart
-
-
-async def get_mini_chart(symbol):
+async def generate_chart(symbol):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{BINANCE_KLINES}?symbol={symbol}&interval=1m&limit=20"
+                f"{BINANCE_KLINES}?symbol={symbol}&interval=1m&limit=30"
             ) as resp:
                 data = await resp.json()
 
         closes = [float(x[4]) for x in data]
-        return generate_mini_chart(closes)
 
+        fig = plt.figure()
+        plt.plot(closes)
+        plt.title(symbol)
+        plt.xticks([])
+        plt.tight_layout()
+
+        buffer = BytesIO()
+        plt.savefig(buffer, format="png")
+        plt.close(fig)
+        buffer.seek(0)
+
+        return buffer
     except:
-        return ""
+        return None
 
 # ================= RSI =================
 
@@ -176,14 +173,14 @@ async def reply_symbol(update: Update, context):
         price = float(data["lastPrice"])
         ch24 = float(data["priceChangePercent"])
 
-        chart = await get_mini_chart(symbol)
+        chart = await generate_chart(symbol)
 
-        await update.message.reply_text(
-            f"💎 {symbol}\n"
-            f"Fiyat: {price}\n"
-            f"24s: %{ch24:.2f}\n\n"
-            f"📊 {chart}"
-        )
+        caption = f"💎 {symbol}\nFiyat: {price}\n24s: %{ch24:.2f}"
+
+        if chart:
+            await update.message.reply_photo(photo=chart, caption=caption)
+        else:
+            await update.message.reply_text(caption)
 
     except:
         pass
@@ -220,7 +217,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         if abs(change5) >= threshold:
 
             if symbol in cooldowns:
-                if now - cooldowns[symbol] < timedelta(minutes=15):
+                if now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES):
                     continue
 
             cooldowns[symbol] = now
@@ -234,11 +231,10 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             rsi7 = await calculate_rsi(symbol, 7)
             rsi14 = await calculate_rsi(symbol, 14)
-            chart = await get_mini_chart(symbol)
 
             trend = "🚀 YÜKSELİŞ" if change5 > 0 else "🔻 DÜŞÜŞ"
 
-            text = (
+            caption = (
                 f"{trend} ALARMI\n\n"
                 f"💎 {symbol}\n"
                 f"💰 Fiyat: {price}\n\n"
@@ -246,11 +242,15 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 f"📊 24s: %{change24:.2f}\n\n"
                 f"📈 RSI(7): {rsi7}\n"
                 f"📉 RSI(14): {rsi14}\n\n"
-                f"📊 {chart}\n\n"
                 f"🎯 Eşik: %{threshold}"
             )
 
-            await context.bot.send_message(GROUP_CHAT_ID, text)
+            chart = await generate_chart(symbol)
+
+            if chart:
+                await context.bot.send_photo(GROUP_CHAT_ID, photo=chart, caption=caption)
+            else:
+                await context.bot.send_message(GROUP_CHAT_ID, caption)
 
 # ================= WEBSOCKET =================
 
@@ -300,6 +300,17 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("top24", top24))
+    app.add_handler(CommandHandler("top5", top5))
+    app.add_handler(CommandHandler("market", market))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("alarmon", alarm_on))
+    app.add_handler(CommandHandler("alarmoff", alarm_off))
+    app.add_handler(CommandHandler("set", set_threshold))
+    app.add_handler(CommandHandler("mode", set_mode))
+    app.add_handler(CommandHandler("myalarm", myalarm))
+
+    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
     print("🚀 BOT TAM AKTİF")
