@@ -270,11 +270,198 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
     except Exception as e:
         log.error(f"Gonderim hatasi ({symbol}): {e}")
 
+# ================= ADMIN KONTROL =================
+
+async def is_admin(update: Update, context) -> bool:
+    """Komutu gönderen kişi grup admini mi kontrol eder."""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        return member.status in ("administrator", "creator")
+    except Exception as e:
+        log.warning(f"Admin kontrol hatasi: {e}")
+        return False
+
+# ================= /set KOMUTU =================
+
+SET_THRESHOLD_PRESETS = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
+
+async def set_command(update: Update, context):
+    """Admin paneli: /set"""
+    if not await is_admin(update, context):
+        await update.message.reply_text(
+            "🚫 *Bu komut sadece grup adminlerine açıktır.*",
+            parse_mode="Markdown"
+        )
+        return
+
+    async with db_pool.acquire() as conn:
+        r = await conn.fetchrow(
+            "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=$1",
+            GROUP_CHAT_ID
+        )
+
+    threshold     = r["threshold"]
+    alarm_active  = r["alarm_active"]
+
+    # Hazır eşik butonları
+    threshold_buttons = []
+    row = []
+    for i, val in enumerate(SET_THRESHOLD_PRESETS):
+        label = f"{'✅' if threshold == val else ''} %{val:.0f}"
+        row.append(InlineKeyboardButton(label, callback_data=f"set_threshold_{val}"))
+        if len(row) == 4:
+            threshold_buttons.append(row)
+            row = []
+    if row:
+        threshold_buttons.append(row)
+
+    # Özel eşik + alarm toggle
+    threshold_buttons.append([
+        InlineKeyboardButton("✏️ Manuel Gir", callback_data="set_threshold_custom")
+    ])
+    threshold_buttons.append([
+        InlineKeyboardButton(
+            f"🔔 Alarm: {'AKTİF ✅' if alarm_active else 'KAPALI ❌'}",
+            callback_data="set_toggle_alarm"
+        )
+    ])
+    threshold_buttons.append([
+        InlineKeyboardButton("❌ Kapat", callback_data="set_close")
+    ])
+
+    text = (
+        "⚙️ *Grup Ayarları — Admin Paneli*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🔔 *Alarm Durumu:* `{'AKTİF' if alarm_active else 'KAPALI'}`\n"
+        f"🎯 *Mevcut Eşik:* `%{threshold}`\n\n"
+        "Aşağıdan yeni alarm eşiğini seçin veya manuel girin:"
+    )
+
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(threshold_buttons)
+    )
+
+
+async def set_callback(update: Update, context):
+    """set_ ile başlayan callback'leri işler."""
+    q = update.callback_query
+
+    # Sadece adminler kullanabilsin
+    try:
+        member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
+        if member.status not in ("administrator", "creator"):
+            await q.answer("🚫 Bu işlem sadece adminlere açıktır.", show_alert=True)
+            return
+    except:
+        await q.answer("Yetki kontrol edilemedi.", show_alert=True)
+        return
+
+    await q.answer()
+
+    # ── Alarm toggle ──
+    if q.data == "set_toggle_alarm":
+        async with db_pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT alarm_active FROM groups WHERE chat_id=$1", GROUP_CHAT_ID
+            )
+            new_val = 0 if r["alarm_active"] else 1
+            await conn.execute(
+                "UPDATE groups SET alarm_active=$1 WHERE chat_id=$2",
+                new_val, GROUP_CHAT_ID
+            )
+        durum = "AKTİF ✅" if new_val else "KAPALI ❌"
+        await q.message.reply_text(
+            f"🔔 Grup alarmı *{durum}* olarak ayarlandı.",
+            parse_mode="Markdown"
+        )
+        await q.message.delete()
+        return
+
+    # ── Paneli kapat ──
+    if q.data == "set_close":
+        await q.message.delete()
+        return
+
+    # ── Manuel eşik girişi ──
+    if q.data == "set_threshold_custom":
+        context.user_data["awaiting_threshold"] = True
+        await q.message.reply_text(
+            "✏️ Yeni alarm eşiğini yazın (örnek: `4.5`):",
+            parse_mode="Markdown"
+        )
+        await q.message.delete()
+        return
+
+    # ── Hazır eşik seçimi ──
+    if q.data.startswith("set_threshold_"):
+        try:
+            val = float(q.data.replace("set_threshold_", ""))
+        except ValueError:
+            return
+
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE groups SET threshold=$1 WHERE chat_id=$2",
+                val, GROUP_CHAT_ID
+            )
+
+        await q.message.reply_text(
+            f"✅ Alarm eşiği *%{val}* olarak güncellendi.\n"
+            f"Artık 5 dakikada bu oranı aşan coinlerde alarm tetiklenecek.",
+            parse_mode="Markdown"
+        )
+        await q.message.delete()
+
+
+async def handle_threshold_input(update: Update, context):
+    """Manuel eşik girişini yakalar."""
+    if not context.user_data.get("awaiting_threshold"):
+        return False  # Bu mesajı biz işlemedik
+
+    # Admin kontrolü
+    if not await is_admin(update, context):
+        context.user_data.pop("awaiting_threshold", None)
+        return True
+
+    text = update.message.text.strip().replace(",", ".")
+    try:
+        val = float(text)
+        if not (0.1 <= val <= 100):
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Geçersiz değer. 0.1 ile 100 arasında bir sayı girin.\nÖrnek: `4.5`",
+            parse_mode="Markdown"
+        )
+        return True
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE groups SET threshold=$1 WHERE chat_id=$2",
+            val, GROUP_CHAT_ID
+        )
+
+    context.user_data.pop("awaiting_threshold", None)
+    await update.message.reply_text(
+        f"✅ Alarm eşiği *%{val}* olarak güncellendi!",
+        parse_mode="Markdown"
+    )
+    return True
+
 # ================= SEMBOL TEPKI =================
 
 async def reply_symbol(update: Update, context):
     if not update.message or not update.message.text:
         return
+
+    # Once manuel esik girisini kontrol et
+    if await handle_threshold_input(update, context):
+        return
+
     raw    = update.message.text.upper().strip()
     symbol = raw.replace("#","").replace("/","")
     if symbol.endswith("USDT"):
@@ -387,7 +574,8 @@ async def start(update: Update, context):
         [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
          InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
         [InlineKeyboardButton("🔔 Kisisel Alarmim", callback_data="my_alarm")],
-        [InlineKeyboardButton("⚙️ Sistem Durumu",   callback_data="status")]
+        [InlineKeyboardButton("⚙️ Sistem Durumu",   callback_data="status")],
+        [InlineKeyboardButton("🛠 Admin Ayarları",  callback_data="set_open")]
     ])
     welcome_text = (
         "👋 *Kripto Analiz Asistanina Hos Geldin!*\n\n"
@@ -471,6 +659,12 @@ async def status(update: Update, context):
 
 async def button_handler(update: Update, context):
     q = update.callback_query
+
+    # set_ callbacklerini ayri handler'a yonlendir
+    if q.data.startswith("set_"):
+        await set_callback(update, context)
+        return
+
     await q.answer()
 
     if q.data == "market":
@@ -495,6 +689,20 @@ async def button_handler(update: Update, context):
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_alarms WHERE user_id=$1", uid)
             await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
+    elif q.data == "set_open":
+        # start menusunden admin paneli ac
+        class FakeUpdate:
+            message = q.message
+            effective_user = q.from_user
+            effective_chat = q.message.chat
+        try:
+            member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
+            if member.status not in ("administrator", "creator"):
+                await q.message.reply_text("🚫 *Bu panel sadece grup adminlerine açıktır.*", parse_mode="Markdown")
+                return
+        except:
+            return
+        await set_command(FakeUpdate(), context)
 
 # ================= ALARM JOB =================
 
@@ -600,6 +808,7 @@ def main():
     app.add_handler(CommandHandler("alarmim",    my_alarm))
     app.add_handler(CommandHandler("alarm_ekle", alarm_ekle))
     app.add_handler(CommandHandler("alarm_sil",  alarm_sil))
+    app.add_handler(CommandHandler("set",        set_command))
 
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
