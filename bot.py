@@ -69,6 +69,7 @@ cooldowns = {}
 # ================= YARDIMCI ANALİZ FONKSİYONLARI =================
 
 async def get_price_change(symbol, interval, limit=2):
+    """Belirlenen zaman dilimine göre fiyat değişim yüzdesini hesaplar."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}") as resp:
@@ -76,11 +77,13 @@ async def get_price_change(symbol, interval, limit=2):
                 if not data or len(data) < 2: return 0.0
                 first_close = float(data[0][4])
                 last_close = float(data[-1][4])
-                return round(((last_close - first_close) / first_close) * 100, 2)
+                change = ((last_close - first_close) / first_close) * 100
+                return round(change, 2)
     except:
         return 0.0
 
 async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
+    """RSI değerini hesaplar."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}") as resp:
@@ -102,7 +105,7 @@ async def calculate_rsi(symbol, period=14, interval="1h", limit=100):
 # ================= ANA GÖNDERİM MERKEZİ =================
 
 async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None):
-    """Fiyatlar, RSI, Grafik ve Butonu bir arada gönderir."""
+    """Fiyatlar, RSI, Grafik ve Butonu bir arada fotoğraf kartı olarak gönderir."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
@@ -116,14 +119,15 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         rsi7 = await calculate_rsi(symbol, 7)
         rsi14 = await calculate_rsi(symbol, 14)
 
-        # TradingView 4 Saatlik Snapshot PNG
+        # TradingView 4 Saatlik Snapshot PNG Fotoğraf Kartı
+        # Telegram bu linki fotoğraf olarak algılayıp mesajla birlikte gönderir.
         chart_url = f"https://s3.tradingview.com/snapshots/c/{symbol.lower()}.png"
 
         text = (
             f"🚨 *{extra_title}*\n\n"
             f"🔥 **Sembol:** `#{symbol}`\n"
-            f"💰 **Fiyat:** `{price}`\n\n"
-            f"📊 **Değişimler:**\n"
+            f"💰 **Anlık Fiyat:** `{price}`\n\n"
+            f"📊 **Zaman Bazlı Değişimler:**\n"
             f"• 5 Dak:   `% {ch5m}`\n"
             f"• 1 Saat:  `% {ch1h}`\n"
             f"• 4 Saat:  `% {ch4h}`\n"
@@ -131,13 +135,16 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             f"📉 **RSI (7/14):** `{rsi7}` / `{rsi14}`\n"
         )
         
+        # Eğer alarm tetiklendiyse eşik bilgisini ekle (İsteğin üzerine)
         if threshold_info:
             text += f"🎯 **Alarm Eşiği:** `% {threshold_info}`\n"
 
+        # Binance işlem sayfasına giden buton (İsteğin üzerine)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📊 Binance Grafiği", url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT', '_USDT')}")]
         ])
 
+        # Fotoğrafı ve metni birlikte gönderiyoruz
         await bot.send_photo(
             chat_id=chat_id,
             photo=chart_url,
@@ -146,30 +153,31 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             parse_mode="Markdown"
         )
     except Exception as e:
-        logging.error(f"Gönderim hatası: {e}")
+        logging.error(f"Sorgu/Gönderim hatası ({symbol}): {e}")
 
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context):
+    """Gelişmiş interaktif Start Menüsü"""
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Market", callback_data="market"), InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
-        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5"), InlineKeyboardButton("ℹ️ Durum", callback_data="status")],
-        [InlineKeyboardButton("🛠 Yardım / Admin", callback_data="admin_help")]
+        [InlineKeyboardButton("📊 Genel Market", callback_data="market"), InlineKeyboardButton("📈 Top 24s", callback_data="top24")],
+        [InlineKeyboardButton("⚡ Top 5dk", callback_data="top5"), InlineKeyboardButton("ℹ️ Sistem Durumu", callback_data="status")],
+        [InlineKeyboardButton("🛠 Ayarlar / Admin", callback_data="admin_help")]
     ])
     
     welcome_text = (
-        "👋 **Kripto Sinyal Botuna Hoş Geldiniz!**\n\n"
-        "Binance paritelerini anlık izliyorum. #BTCUSDT gibi sembol yazarak analiz alabilir veya otomatik alarmları bekleyebilirsiniz.\n\n"
+        "👋 **Kripto Analiz & Alarm Botuna Hoş Geldiniz!**\n\n"
+        "Binance üzerindeki pariteleri anlık izliyorum. #BTCUSDT gibi sembol yazarak analiz alabilir veya otomatik alarmları bekleyebilirsiniz.\n\n"
         "👇 Menüyü kullanın:"
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 async def admin_help(update: Update, context):
     text = (
-        "⚙️ **Admin Komutları**\n\n"
+        "⚙️ **Admin & Ayar Komutları**\n\n"
         "• `/alarmon` / `/alarmoff` - Alarmı Yönet\n"
-        "• `/set 5` - Eşiği Değiştir\n"
-        "• `/mode pump|dump|both` - Mod Seçimi"
+        "• `/set 5` - Alarm Eşiğini % Değiştir\n"
+        "• `/mode pump|dump|both` - Alarm Modu"
     )
     if update.callback_query:
         await update.callback_query.message.edit_text(text, parse_mode="Markdown")
@@ -183,7 +191,7 @@ async def market(update: Update, context):
             data = await resp.json()
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
-    msg = f"📊 Market Ortalama: %{avg:.2f}"
+    msg = f"📊 Market Ortalama Değişim: %{avg:.2f}"
     if update.callback_query: await update.callback_query.message.reply_text(msg)
     else: await update.effective_message.reply_text(msg)
 
@@ -219,6 +227,7 @@ async def top5(update: Update, context):
 async def status(update: Update, context):
     cursor.execute("SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?", (GROUP_CHAT_ID,))
     row = cursor.fetchone()
+    if not row: return
     text = f"📢 **Sistem Durumu**\n\nAlarm: `{'AÇIK' if row[0] else 'KAPALI'}`\nGüncel Eşik: `%{row[1]}`\nMod: `{row[2]}`"
     if update.callback_query: await update.callback_query.message.reply_text(text, parse_mode="Markdown")
     else: await update.effective_message.reply_text(text, parse_mode="Markdown")
@@ -258,10 +267,21 @@ async def myalarm(update: Update, context):
     except: await update.message.reply_text("Kullanım: /myalarm BTCUSDT 3")
 
 async def reply_symbol(update: Update, context):
+    """Kullanıcı bir coin sembolü yazdığında tepki verir ve detaylı analiz gönderir."""
     if not update.message: return
     symbol = update.message.text.upper().strip()
+    # Sadece USDT ile biten pariteleri kabul et
     if not symbol.endswith("USDT"): return
-    await send_full_analysis(context.bot, update.effective_chat.id, symbol, "🔍 ANALİZ SONUCU")
+    
+    # WebSocket verisini beklemeden doğrudan API üzerinden sorgula (Çözüm burası)
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Önce sembolün varlığını kontrol et
+            async with session.get(f"{BINANCE_24H}?symbol={symbol}") as resp:
+                if resp.status != 200: return # Geçersiz sembolse tepki verme
+
+        await send_full_analysis(context.bot, update.effective_chat.id, symbol, "🔍 ANALİZ SONUCU")
+    except: pass # Hata durumunda sessizce geç
 
 async def button_handler(update: Update, context):
     query = update.callback_query
@@ -290,7 +310,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if symbol in cooldowns and now - cooldowns[symbol] < timedelta(minutes=COOLDOWN_MINUTES): continue
             cooldowns[symbol] = now
             trend = "🚀 SERİ PUMP" if change5 > 0 else "🔻 SERİ DUMP"
-            # Alarm anında threshold bilgisini de geçiyoruz
+            # Alarm anında threshold bilgisini de geçiyoruz (İsteğin üzerine)
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, f"{trend} UYARISI", threshold_info=threshold)
 
 async def binance_engine():
@@ -306,6 +326,7 @@ async def binance_engine():
                         if not symbol.endswith("USDT"): continue
                         price = float(coin["c"])
                         price_memory[symbol].append((now, price))
+                        # Sadece son 5 dakikalık veriyi tut
                         price_memory[symbol] = [(t, p) for (t, p) in price_memory[symbol] if now - t <= timedelta(minutes=5)]
         except: await asyncio.sleep(5)
 
@@ -331,9 +352,10 @@ def main():
     app.add_handler(CommandHandler("myalarm", myalarm))
     
     app.add_handler(CallbackQueryHandler(button_handler))
+    # Burası sembol yazıldığında tepki veren kısımdır.
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
-    print("🚀 BOT GÜNCELLENDİ VE AKTİF")
+    print("🚀 BOT GÜNCELLENDİ, SORUN DÜZELTİLDİ VE AKTİF")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
