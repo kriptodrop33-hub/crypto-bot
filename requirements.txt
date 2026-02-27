@@ -1,6 +1,6 @@
-
 aiohttp
 websockets
+pandas
 matplotlib
 mplfinance
 python-telegram-bot[job-queue]
