@@ -12,7 +12,12 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputFile,
+)
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -104,7 +109,7 @@ async def calculate_rsi(symbol, period=14, interval="1h", limit=200):
     except:
         return 0
 
-# ================= CHANGE CALC =================
+# ================= CHANGE =================
 
 async def get_interval_change(symbol, interval):
     async with aiohttp.ClientSession() as session:
@@ -175,6 +180,130 @@ async def help_command(update: Update, context):
 
 async def start(update: Update, context):
     await help_command(update, context)
+
+# ================= MARKET =================
+
+async def market(update: Update, context):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            data = await resp.json()
+
+    usdt = [x for x in data if x["symbol"].endswith("USDT")]
+    avg = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
+
+    await update.effective_message.reply_text(
+        f"📊 Market Ortalama: %{avg:.2f}"
+    )
+
+# ================= TOP24 =================
+
+async def top24(update: Update, context):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(BINANCE_24H) as resp:
+            data = await resp.json()
+
+    usdt = [x for x in data if x["symbol"].endswith("USDT")]
+    top = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:10]
+
+    text = "📊 24 Saat Top 10\n\n"
+    for c in top:
+        text += f"{c['symbol']} → %{float(c['priceChangePercent']):.2f}\n"
+
+    await update.effective_message.reply_text(text)
+
+# ================= TOP5 =================
+
+async def top5(update: Update, context):
+    changes = []
+
+    for symbol, prices in price_memory.items():
+        if len(prices) >= 2:
+            old = prices[0][1]
+            new = prices[-1][1]
+            ch = ((new - old) / old) * 100
+            changes.append((symbol, ch))
+
+    top = sorted(changes, key=lambda x: x[1], reverse=True)[:10]
+
+    if not top:
+        await update.effective_message.reply_text("Henüz 5dk veri birikmedi.")
+        return
+
+    text = "⚡ 5 Dakika Top 10\n\n"
+    for sym, ch in top:
+        text += f"{sym} → %{ch:.2f}\n"
+
+    await update.effective_message.reply_text(text)
+
+# ================= STATUS =================
+
+async def status(update: Update, context):
+    cursor.execute(
+        "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=?",
+        (GROUP_CHAT_ID,)
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        await update.effective_message.reply_text("Grup kayıtlı değil.")
+        return
+
+    await update.effective_message.reply_text(
+        f"Alarm: {'Açık' if row[0] else 'Kapalı'}\n"
+        f"Eşik: %{row[1]}\n"
+        f"Mod: {row[2]}"
+    )
+
+# ================= ADMIN =================
+
+async def alarm_on(update: Update, context):
+    if update.effective_chat.id != GROUP_CHAT_ID:
+        return
+
+    cursor.execute("UPDATE groups SET alarm_active=1 WHERE chat_id=?", (GROUP_CHAT_ID,))
+    conn.commit()
+    await update.effective_message.reply_text("✅ Alarm Açıldı")
+
+async def alarm_off(update: Update, context):
+    if update.effective_chat.id != GROUP_CHAT_ID:
+        return
+
+    cursor.execute("UPDATE groups SET alarm_active=0 WHERE chat_id=?", (GROUP_CHAT_ID,))
+    conn.commit()
+    await update.effective_message.reply_text("❌ Alarm Kapandı")
+
+async def set_threshold(update: Update, context):
+    try:
+        value = float(context.args[0])
+        cursor.execute("UPDATE groups SET threshold=? WHERE chat_id=?", (value, GROUP_CHAT_ID))
+        conn.commit()
+        await update.effective_message.reply_text(f"Eşik %{value} yapıldı")
+    except:
+        await update.effective_message.reply_text("Kullanım: /set 7")
+
+async def set_mode(update: Update, context):
+    try:
+        mode = context.args[0].lower()
+        cursor.execute("UPDATE groups SET mode=? WHERE chat_id=?", (mode, GROUP_CHAT_ID))
+        conn.commit()
+        await update.effective_message.reply_text(f"Mod: {mode}")
+    except:
+        await update.effective_message.reply_text("Kullanım: /mode pump|dump|both")
+
+async def myalarm(update: Update, context):
+    try:
+        symbol = context.args[0].upper()
+        threshold = float(context.args[1])
+        cursor.execute("INSERT INTO user_alarms VALUES (?, ?, ?)",
+                       (update.effective_user.id, symbol, threshold))
+        conn.commit()
+        await update.effective_message.reply_text(
+            f"🎯 {symbol} %{threshold} alarm eklendi."
+        )
+    except:
+        await update.effective_message.reply_text(
+            "Kullanım: /myalarm BTCUSDT 3"
+        )
 
 # ================= SYMBOL DETAIL =================
 
@@ -256,7 +385,6 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
             rsi7 = await calculate_rsi(symbol, 7)
             rsi14 = await calculate_rsi(symbol, 14)
-
             chart = await generate_candle_png(symbol)
 
             text = (
@@ -322,6 +450,17 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("top24", top24))
+    app.add_handler(CommandHandler("top5", top5))
+    app.add_handler(CommandHandler("market", market))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("alarmon", alarm_on))
+    app.add_handler(CommandHandler("alarmoff", alarm_off))
+    app.add_handler(CommandHandler("set", set_threshold))
+    app.add_handler(CommandHandler("mode", set_mode))
+    app.add_handler(CommandHandler("myalarm", myalarm))
+
+    app.add_handler(CallbackQueryHandler(lambda u, c: None))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
 
     print("🚀 BOT TAM AKTİF")
