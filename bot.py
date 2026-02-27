@@ -388,8 +388,11 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 # ================== MAIN =============================
 # =====================================================
 
+async def post_init(application):
+    application.create_task(price_stream(application))
+
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -402,9 +405,4 @@ def main():
 
     app.job_queue.run_repeating(alarm_job, interval=60, first=30)
 
-    app.create_task(price_stream(app))
-
     app.run_polling()
-
-if __name__ == "__main__":
-    main()
