@@ -106,11 +106,11 @@ async def init_db():
                 user_id   BIGINT,
                 chat_id   BIGINT,
                 task_type TEXT,
-                symbol    TEXT,
+                symbol    TEXT    NOT NULL DEFAULT '',
                 hour      INTEGER,
                 minute    INTEGER,
                 active    INTEGER DEFAULT 1,
-                UNIQUE(chat_id, task_type, COALESCE(symbol,''))
+                UNIQUE(chat_id, task_type, symbol)
             )
         """)
         await conn.execute("""
@@ -1170,7 +1170,7 @@ async def zamanla_command(update: Update, context):
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
-                VALUES($1,$2,'rapor',NULL,$3,$4,1)
+                VALUES($1,$2,'rapor','',$3,$4,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$3,minute=$4,active=1
             """, user_id, chat_id, h, m)
         await update.message.reply_text(
