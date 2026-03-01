@@ -2200,7 +2200,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
             cooldowns[key] = now
-            yon = "🟢🟢 5dk YUKSELIS UYARISI 🟢🟢" if ch5 > 0 else "🔴🔴 5dk DUSUS UYARISI 🔴🔴"
+            yon = "🟢 5dk YUKSELIS UYARISI 🟢" if ch5 > 0 else "🔴 5dk DUSUS UYARISI 🔴"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2))
 
     # ── Kişisel alarmlar (gelişmiş) ──
