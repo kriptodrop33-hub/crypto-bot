@@ -282,152 +282,139 @@ def _score_label(score):
     if score >= 30: return "📉 Zayıf",      "🔴🔴➖➖➖"
     return              "🚨 Güçlü Sat",  "🔴🔴🔴🔴🔴"
 
-def _normalize(points, max_pts):
-    return max(0, min(100, round(((points + max_pts) / (max_pts * 2)) * 100)))
+def _clamp(val, lo=0.0, hi=100.0):
+    return max(lo, min(hi, val))
+
+def _rsi_score(rsi):
+    """RSI'yi 0-100 puana çevirir. 50 nötr, <30 güçlü al, >70 güçlü sat."""
+    if rsi <= 0:
+        return 50.0
+    if rsi <= 30:
+        # 0→100, 30→72
+        return _clamp(100 - rsi * 0.93)
+    elif rsi <= 50:
+        # 30→72, 50→50
+        return _clamp(72 - (rsi - 30) * 1.1)
+    elif rsi <= 70:
+        # 50→50, 70→28
+        return _clamp(50 - (rsi - 50) * 1.1)
+    else:
+        # 70→28, 100→0
+        return _clamp(28 - (rsi - 70) * 0.93)
+
+def _ch_score(ch, scale=5.0):
+    """Değişim yüzdesini 0-100 puana çevirir. 0%→50, +scale%→75, -scale%→25."""
+    raw = 50 + (ch / scale) * 25
+    return _clamp(raw)
+
+def _vol_bonus(vol24, ch, pos_bonus=4.0, neg_bonus=-4.0):
+    """Hacim yönü uyumuna göre küçük sürekli katkı."""
+    if vol24 <= 0:
+        return 0.0
+    import math
+    # log scale: 1M→0, 10M→1, 100M→2, 1B→3
+    vol_factor = max(0, math.log10(vol24 / 1_000_000)) / 3.0  # 0→1
+    vol_factor = min(vol_factor, 1.0)
+    if ch > 0:
+        return pos_bonus * vol_factor
+    elif ch < 0:
+        return neg_bonus * vol_factor
+    return 0.0
 
 def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
-    """
-    SAATLİK SKOR — kısa vadeli momentum odaklı
-    Kullanılan: RSI(1h,14), RSI(1h,7), 15dk değişim, 5dk değişim, 1h hacim trendi
-    """
-    p = 0
+    """SAATLİK SKOR — sürekli ağırlıklı ortalama."""
     rsi14 = calc_rsi(k1h_series, 14)
     rsi7  = calc_rsi(k1h_series, 7)
     ch15m = calc_change(k15m) if k15m and len(k15m) >= 2 else 0
     ch5m  = calc_change(k5m)  if k5m  and len(k5m)  >= 2 else 0
-
-    # RSI14 aşırı bölge
-    if   rsi14 <= 25: p += 2
-    elif rsi14 <= 40: p += 1
-    elif rsi14 >= 75: p -= 2
-    elif rsi14 >= 60: p -= 1
-
-    # RSI7 vs RSI14 momentum farkı
-    if   rsi7 > rsi14 + 8:  p += 2
-    elif rsi7 > rsi14:       p += 1
-    elif rsi7 < rsi14 - 8:  p -= 2
-    elif rsi7 < rsi14:       p -= 1
-
-    # 15dk + 5dk uyumu
-    if   ch5m > 1   and ch15m > 0.5: p += 2
-    elif ch5m > 0   or  ch15m > 0:   p += 1
-    elif ch5m < -1  and ch15m < -0.5: p -= 2
-    elif ch5m < 0   or  ch15m < 0:   p -= 1
-
-    # Son 1 saatlik fiyat hareketi
-    ch1h = calc_change(k1h_series[-2:]) if k1h_series and len(k1h_series) >= 2 else 0
-    if   ch1h > 2:  p += 2
-    elif ch1h > 0:  p += 1
-    elif ch1h < -2: p -= 2
-    elif ch1h < 0:  p -= 1
-
-    # Hacim uyumu (24s)
+    ch1h  = calc_change(k1h_series[-2:]) if k1h_series and len(k1h_series) >= 2 else 0
     vol24 = float(ticker.get("quoteVolume", 0))
-    ch24  = float(ticker.get("priceChangePercent", 0))
-    if   vol24 > 30_000_000 and ch5m > 0: p += 2
-    elif vol24 > 10_000_000 and ch5m > 0: p += 1
-    elif vol24 > 30_000_000 and ch5m < 0: p -= 2
-    elif vol24 > 10_000_000 and ch5m < 0: p -= 1
 
-    score = _normalize(p, 10)
+    # RSI katkısı: RSI7 momentum için, RSI14 trend için
+    s_rsi14 = _rsi_score(rsi14)                     # ağırlık 0.30
+    s_rsi7  = _rsi_score(rsi7)                      # ağırlık 0.20
+    # RSI7 > RSI14 → momentum pozitif → ekstra katkı
+    rsi_mom = _clamp(50 + (rsi7 - rsi14) * 1.5)    # ağırlık 0.10
+
+    s_5m  = _ch_score(ch5m,  scale=3.0)             # ağırlık 0.20
+    s_15m = _ch_score(ch15m, scale=4.0)             # ağırlık 0.10
+    s_1h  = _ch_score(ch1h,  scale=5.0)             # ağırlık 0.10
+
+    score = (
+        s_rsi14 * 0.30 +
+        s_rsi7  * 0.20 +
+        rsi_mom * 0.10 +
+        s_5m    * 0.20 +
+        s_15m   * 0.10 +
+        s_1h    * 0.10
+    )
+    # Hacim bonusu (±4 puan max)
+    score += _vol_bonus(vol24, ch5m)
+    score = _clamp(score)
+
     label, bar = _score_label(score)
-    return score, label, bar
+    return round(score), label, bar
 
 def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
-    """
-    GÜNLÜK SKOR — orta vadeli trend odaklı
-    Kullanılan: RSI(4h,14), 4h değişim, 1h×24 trend, 24s hacim/değişim, volatilite
-    """
-    p = 0
+    """GÜNLÜK SKOR — sürekli ağırlıklı ortalama."""
     rsi14_4h = calc_rsi(k4h_series, 14)
     rsi14_1h = calc_rsi(k1h_series, 14)
-    ch4h  = calc_change(k4h_series[-2:])  if k4h_series  and len(k4h_series)  >= 2 else 0
-    ch24h = calc_change(k1h_series)       if k1h_series  and len(k1h_series)  >= 2 else 0
-    ch14d = calc_change(k1d_series)       if k1d_series  and len(k1d_series)  >= 5 else 0
+    ch4h  = calc_change(k4h_series[-2:]) if k4h_series and len(k4h_series) >= 2 else 0
+    ch24h = calc_change(k1h_series)      if k1h_series and len(k1h_series) >= 2 else 0
+    ch24  = float(ticker.get("priceChangePercent", 0))
+    vol24 = float(ticker.get("quoteVolume", 0))
+    high  = float(ticker.get("highPrice", 1)) or 1
+    low   = float(ticker.get("lowPrice",  1)) or 1
+    volat = ((high - low) / low) * 100  # gün içi volatilite
 
-    # RSI(4h) aşırı bölge
-    if   rsi14_4h <= 25: p += 2
-    elif rsi14_4h <= 40: p += 1
-    elif rsi14_4h >= 75: p -= 2
-    elif rsi14_4h >= 60: p -= 1
+    s_rsi_4h = _rsi_score(rsi14_4h)                # ağırlık 0.30
+    s_rsi_1h = _rsi_score(rsi14_1h)                # ağırlık 0.15
+    s_4h     = _ch_score(ch4h,  scale=5.0)          # ağırlık 0.25
+    s_24h    = _ch_score(ch24h, scale=8.0)           # ağırlık 0.20
+    # Volatilite bonusu: yüksek volat + pozitif yön → ekstra puan
+    vol_dir  = _clamp(50 + (ch24 / max(volat, 0.5)) * 10)  # ağırlık 0.10
 
-    # RSI(1h) onay
-    if   rsi14_1h <= 35: p += 1
-    elif rsi14_1h >= 65: p -= 1
+    score = (
+        s_rsi_4h * 0.30 +
+        s_rsi_1h * 0.15 +
+        s_4h     * 0.25 +
+        s_24h    * 0.20 +
+        vol_dir  * 0.10
+    )
+    score += _vol_bonus(vol24, ch24, pos_bonus=5.0, neg_bonus=-5.0)
+    score = _clamp(score)
 
-    # 4sa fiyat trendi
-    if   ch4h > 3:  p += 2
-    elif ch4h > 1:  p += 1
-    elif ch4h < -3: p -= 2
-    elif ch4h < -1: p -= 1
-
-    # 24 saatlik trend (son 24 mum)
-    if   ch24h > 5:  p += 2
-    elif ch24h > 2:  p += 1
-    elif ch24h < -5: p -= 2
-    elif ch24h < -2: p -= 1
-
-    # Hacim + yön uyumu
-    vol24  = float(ticker.get("quoteVolume", 0))
-    ch24   = float(ticker.get("priceChangePercent", 0))
-    high   = float(ticker.get("highPrice", 1)) or 1
-    low    = float(ticker.get("lowPrice",  1)) or 1
-    volat  = ((high - low) / low) * 100
-    if   vol24 > 50_000_000 and ch24 > 3:  p += 2
-    elif vol24 > 20_000_000 and ch24 > 0:  p += 1
-    elif vol24 > 50_000_000 and ch24 < -3: p -= 2
-    elif vol24 > 20_000_000 and ch24 < 0:  p -= 1
-
-    score = _normalize(p, 10)
     label, bar = _score_label(score)
-    return score, label, bar
+    return round(score), label, bar
 
 def calc_score_weekly(ticker, k1d_series, k1w_series):
-    """
-    HAFTALIK SKOR — uzun vadeli yapısal trend
-    Kullanılan: RSI(1d,14), RSI(1w,14), 7g/30g değişim, haftalık hacim, 200-periyot SMA yönü
-    """
-    p = 0
+    """HAFTALIK SKOR — sürekli ağırlıklı ortalama."""
     rsi14_1d = calc_rsi(k1d_series, 14)
     rsi14_1w = calc_rsi(k1w_series, 14)
-    ch7d  = calc_change(k1d_series[-7:])  if k1d_series  and len(k1d_series)  >= 7  else 0
-    ch30d = calc_change(k1d_series)       if k1d_series  and len(k1d_series)  >= 5  else 0
-    ch4w  = calc_change(k1w_series[-4:])  if k1w_series  and len(k1w_series)  >= 4  else 0
-    ch12w = calc_change(k1w_series)       if k1w_series  and len(k1w_series)  >= 5  else 0
+    ch7d  = calc_change(k1d_series[-7:]) if k1d_series and len(k1d_series) >= 7  else 0
+    ch30d = calc_change(k1d_series)      if k1d_series and len(k1d_series) >= 5  else 0
+    ch4w  = calc_change(k1w_series[-4:]) if k1w_series and len(k1w_series) >= 4  else 0
+    vol24 = float(ticker.get("quoteVolume", 0))
+    ch24  = float(ticker.get("priceChangePercent", 0))
 
-    # RSI(1d) aşırı bölge
-    if   rsi14_1d <= 25: p += 2
-    elif rsi14_1d <= 40: p += 1
-    elif rsi14_1d >= 75: p -= 2
-    elif rsi14_1d >= 60: p -= 1
+    s_rsi_1d = _rsi_score(rsi14_1d)                # ağırlık 0.25
+    s_rsi_1w = _rsi_score(rsi14_1w)                # ağırlık 0.25
+    s_7d     = _ch_score(ch7d,  scale=12.0)         # ağırlık 0.25
+    s_4w     = _ch_score(ch4w,  scale=20.0)          # ağırlık 0.15
+    s_30d    = _ch_score(ch30d, scale=30.0)           # ağırlık 0.10
 
-    # RSI(1w) uzun vade onay
-    if   rsi14_1w <= 30: p += 2
-    elif rsi14_1w <= 45: p += 1
-    elif rsi14_1w >= 70: p -= 2
-    elif rsi14_1w >= 55: p -= 1
+    score = (
+        s_rsi_1d * 0.25 +
+        s_rsi_1w * 0.25 +
+        s_7d     * 0.25 +
+        s_4w     * 0.15 +
+        s_30d    * 0.10
+    )
+    score += _vol_bonus(vol24, ch24, pos_bonus=3.0, neg_bonus=-3.0)
+    score = _clamp(score)
 
-    # 7 günlük fiyat trendi
-    if   ch7d > 10: p += 2
-    elif ch7d > 3:  p += 1
-    elif ch7d < -10: p -= 2
-    elif ch7d < -3:  p -= 1
-
-    # 4 haftalık trend
-    if   ch4w > 15: p += 2
-    elif ch4w > 5:  p += 1
-    elif ch4w < -15: p -= 2
-    elif ch4w < -5:  p -= 1
-
-    # 30 günlük makro trend
-    if   ch30d > 20: p += 2
-    elif ch30d > 5:  p += 1
-    elif ch30d < -20: p -= 2
-    elif ch30d < -5:  p -= 1
-
-    score = _normalize(p, 10)
     label, bar = _score_label(score)
-    return score, label, bar
+    return round(score), label, bar
 
 async def fetch_all_analysis(symbol):
     async with aiohttp.ClientSession() as session:
@@ -493,31 +480,24 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         vol_usdt = float(ticker.get("quoteVolume", 0))
         vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
 
+        # Genel yön belirle
+        overall_icon = "🟢" if ch5m >= 0 else "🔴"
+
         text = (
-            f"📊 *{extra_title}*\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💎 *Parite:* `#{symbol}`\n"
-            f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
-            f"📦 *24s Hacim:* `{vol_str} USDT`\n\n"
-            f"*📈 Performans:*\n"
-            f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
-            f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
-            f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
-            f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
-            f"📉 *RSI:*\n"
-            f"• RSI 7  : `{rsi7}` — {rsi_label(rsi7)}\n"
-            f"• RSI 14 : `{rsi14}` — {rsi_label(rsi14)}\n\n"
-            f"🎯 *Piyasa Skoru*\n"
-            f"⏱ Saatlik : `{sh}/100` {bh}\n"
-            f"  _{lh}_\n"
-            f"📅 Günlük  : `{sd}/100` {bd}\n"
-            f"  _{ld}_\n"
-            f"📆 Haftalık: `{sw}/100` {bw}\n"
-            f"  _{lw}_\n"
-            f"──────────────────"
+            f"{overall_icon} *{extra_title}*\n"
+            f"━━━━━━━━━━━━━━━━━\n"
+            f"`{symbol}`  •  `{format_price(price)} USDT`  •  `{vol_str} Hacim`\n\n"
+            f"*Değişim*\n"
+            f"  5dk  {e5} `{s5}{ch5m:+.2f}%`\n"
+            f"  1sa  {e1} `{s1}{ch1h:+.2f}%`\n"
+            f"  4sa  {e4} `{s4}{ch4h:+.2f}%`\n"
+            f"  24sa {e24} `{s24}{ch24:+.2f}%`\n\n"
+            f"*RSI*   `7: {rsi7}` {rsi_label(rsi7)}   `14: {rsi14}`\n\n"
+            f"*Skor*  ⏱`{sh}`  📅`{sd}`  📆`{sw}`\n"
+            f"  _{lh} / {ld} / {lw}_"
         )
         if threshold_info:
-            text += f"\n🔔 *Alarm Esigi:* `%{threshold_info}`"
+            text += f"\n\n🔔 Eşik: `%{threshold_info}`"
 
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton(
@@ -1477,6 +1457,9 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         for symbol, prices in list(price_memory.items()):
             if len(prices) < 2:
                 continue
+            # prices[0] en az 4 dakika önce olmalı (gerçek 5dk değişimi ölç)
+            if now - prices[0][0] < timedelta(minutes=4):
+                continue
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
             if mode == "both":   triggered = abs(ch5) >= threshold
             elif mode == "up":   triggered = ch5 >= threshold
@@ -1508,6 +1491,9 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
         prices = price_memory.get(symbol)
         if not prices or len(prices) < 2:
+            continue
+        # prices[0] en az 4 dakika önce olmalı
+        if now - prices[0][0] < timedelta(minutes=4):
             continue
 
         ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
