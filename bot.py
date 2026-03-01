@@ -747,7 +747,7 @@ async def fetch_all_analysis(symbol):
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
 
-async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False):
+async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24, k1w,
@@ -761,6 +761,9 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         ch4h   = calc_change(k4h)
         ch1h   = calc_change(k1h_2)
         ch5m   = calc_change(k5m)
+        # Alarm'dan gelen gerçek 5dk değeri varsa onu kullan (API değeriyle tutarsızlığı önler)
+        if ch5_override is not None:
+            ch5m = ch5_override
 
         # ── RSI çok zaman dilimli ──
         rsi7_1h    = calc_rsi(k1h_100, 7)
@@ -864,13 +867,14 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         macd_1h_str = "🟢 Pozitif" if macd_hist_1h > 0 else "🔴 Negatif"
         macd_4h_str = "🟢 Pozitif" if macd_hist_4h > 0 else "🔴 Negatif"
 
-        # Bollinger pozisyonu
+        # Bollinger pozisyonu — 0-100 arasında göster
+        boll_display = max(0, min(100, boll_1h))
         if boll_1h > 80:
-            boll_str = f"🔴 Üst Bant (`{boll_1h:.0f}%`)"
+            boll_str = f"🔴 Üst Bant (`{boll_display:.0f}%`)"
         elif boll_1h < 20:
-            boll_str = f"🔵 Alt Bant (`{boll_1h:.0f}%`)"
+            boll_str = f"🔵 Alt Bant (`{boll_display:.0f}%`)"
         else:
-            boll_str = f"🟢 Orta Bölge (`{boll_1h:.0f}%`)"
+            boll_str = f"🟢 Orta Bölge (`{boll_display:.0f}%`)"
 
         # OBV trendi
         obv_str = "🟢 Yükselen" if obv_1h == 1 else ("🔴 Düşen" if obv_1h == -1 else "⚪ Nötr")
@@ -2167,7 +2171,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 continue
             cooldowns[key] = now
             yon = "📈🟢🟢 5dk YUKSELIS UYARISI 🟢🟢" if ch5 > 0 else "📉🔴🔴 5dk DUSUS UYARISI 🔴🔴"
-            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold)
+            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2))
 
     # ── Kişisel alarmlar (gelişmiş) ──
     for row in user_rows:
