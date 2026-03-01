@@ -928,7 +928,7 @@ async def is_admin(update: Update, context) -> bool:
         return False
 
 SET_THRESHOLD_PRESETS = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
-DELETE_DELAY_PRESETS  = [15, 30, 60, 120, 300]   # saniye
+DELETE_DELAY_PRESETS  = [30, 60, 300, 600, 1800, 3600]   # saniye
 
 async def build_set_panel(context):
     async with db_pool.acquire() as conn:
@@ -952,12 +952,18 @@ async def build_set_panel(context):
     threshold_buttons.append([InlineKeyboardButton("✏️ Manuel Eşik", callback_data="set_threshold_custom")])
 
     # Silme süresi butonları
-    delay_row = []
+    delay_rows = []
+    delay_row  = []
+    label_map  = {30: "30sn", 60: "1dk", 300: "5dk", 600: "10dk", 1800: "30dk", 3600: "1sa"}
     for val in DELETE_DELAY_PRESETS:
-        label_map = {15: "15sn", 30: "30sn", 60: "1dk", 120: "2dk", 300: "5dk"}
         label = f"{'✅ ' if del_delay == val else ''}{label_map.get(val, str(val)+'sn')}"
         delay_row.append(InlineKeyboardButton(label, callback_data=f"set_delay_{val}"))
-    threshold_buttons.append(delay_row)
+        if len(delay_row) == 3:
+            delay_rows.append(delay_row)
+            delay_row = []
+    if delay_row:
+        delay_rows.append(delay_row)
+    threshold_buttons.extend(delay_rows)
 
     threshold_buttons.append([
         InlineKeyboardButton(
