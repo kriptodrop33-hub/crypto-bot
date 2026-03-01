@@ -826,97 +826,54 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         vol_usdt = float(ticker.get("quoteVolume", 0))
         vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
 
-        # Piyasa Rozeti satırı
-        if mood and btc_dom:
-            badge_line = f"🌡 *Piyasa:* {mood}  •  BTC Dom: `%{btc_dom}`  •  Ort: `{mkt_avg:+.2f}%`\n"
-        else:
-            badge_line = ""
-
-        # Destek/Direnç satırları
-        sr_lines = ""
-        if destek:
-            sr_lines += f"🔵 *Destek:*  `{format_price(destek)} USDT`\n"
-        if direnc:
-            sr_lines += f"🔴 *Direnç:*  `{format_price(direnc)} USDT`\n"
-
-        # Hacim Anomali satırı
+        # Hacim Anomali — son 1 saati önceki 23 saatin ortalamasıyla kıyaslar
         if vol_ratio is not None:
             if vol_ratio >= 3.0:
-                vol_anom = f"⚡ *Hacim Anomali:* `{vol_ratio}x` — Çok Yüksek!\n"
+                vol_anom = f"⚡ *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Çok Yüksek!\n"
             elif vol_ratio >= 2.0:
-                vol_anom = f"🔶 *Hacim Anomali:* `{vol_ratio}x` — Yüksek\n"
+                vol_anom = f"🔶 *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Yüksek\n"
             elif vol_ratio >= 1.5:
-                vol_anom = f"🟡 *Hacim Anomali:* `{vol_ratio}x` — Normal Üstü\n"
+                vol_anom = f"🟡 *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Normal Üstü\n"
             else:
-                vol_anom = ""
+                vol_anom = f"📦 *Hacim:* `{vol_str} USDT`\n"
         else:
-            vol_anom = ""
+            vol_anom = f"📦 *Hacim:* `{vol_str} USDT`\n"
 
-        # EMA trend durumu
-        ema_line = ""
-        if ema9_1h > ema21_1h:
-            ema_line = "🟢▲ EMA9 > EMA21"
-        else:
-            ema_line = "🔴▼ EMA9 < EMA21"
-        if ema21_4h > ema55_4h:
-            ema_line += "  •  4h: 🟢 Yukselis"
-        else:
-            ema_line += "  •  4h: 🔴 Dusus"
-
-        # MACD durumu
-        macd_1h_str = "🟢 Pozitif" if macd_hist_1h > 0 else "🔴 Negatif"
-        macd_4h_str = "🟢 Pozitif" if macd_hist_4h > 0 else "🔴 Negatif"
-
-        # Bollinger pozisyonu — 0-100 arasında göster
-        boll_display = max(0, min(100, boll_1h))
-        if boll_1h > 80:
-            boll_str = f"🔴 Üst Bant (`{boll_display:.0f}%`)"
-        elif boll_1h < 20:
-            boll_str = f"🔵 Alt Bant (`{boll_display:.0f}%`)"
-        else:
-            boll_str = f"🟢 Orta Bölge (`{boll_display:.0f}%`)"
-
-        # OBV trendi
-        obv_str = "🟢 Yükselen" if obv_1h == 1 else ("🔴 Düşen" if obv_1h == -1 else "⚪ Nötr")
-
-        # Diverjans uyarısı
+        # Diverjans uyarısı (sadece varsa göster)
         div_line = ""
         if diverjans == "bearish":
-            div_line = "\n⚠️ *Bearish Diverjans:* Fiyat yükseliyor, RSI düşüyor!"
+            div_line = "⚠️ *Bearish Diverjans* — Fiyat yükseliyor, RSI düşüyor!\n"
         elif diverjans == "bullish":
-            div_line = "\n💡 *Bullish Diverjans:* Fiyat düşüyor, RSI yükseliyor!"
+            div_line = "💡 *Bullish Diverjans* — Fiyat düşüyor, RSI yükseliyor!\n"
 
-        text = (
-            f"📊 *{extra_title}*\n"
+        # Başlık — alarm mesajlarında renkli, analizde nötr
+        is_alarm = "UYARISI" in extra_title or "ALARM" in extra_title or "YUKSELIS" in extra_title or "DUSUS" in extra_title
+        if is_alarm:
+            header = f"🟢🟢 *{extra_title}* 🟢🟢\n" if ch5m >= 0 else f"🔴🔴 *{extra_title}* 🔴🔴\n"
+        else:
+            header = f"*{extra_title}*\n"
+
+        text = header + (
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"{badge_line}"
-            f"💎 *Parite:* `#{symbol}`\n"
+            f"💎 *{symbol}* 💎\n"
+            f"\n"
             f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
-            f"📦 *24s Hacim:* `{vol_str} USDT`\n"
             f"{vol_anom}"
-            f"\n📈 *Performans:*\n"
+            f"\n*Performans:*\n"
             f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
             f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
             f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
             f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
-            f"📉 *RSI:*\n"
-            f"• 1sa  RSI 7  : `{rsi7_1h}` — {rsi_label(rsi7_1h)}\n"
-            f"• 1sa  RSI 14 : `{rsi14_1h}` — {rsi_label(rsi14_1h)}\n"
+            f"*RSI:*\n"
             f"• 4sa  RSI 14 : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
             f"• 1gün RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
-            f"• StochRSI 1h : `{stoch_1h}` — {stoch_label(stoch_1h)}\n"
-            f"• StochRSI 4h : `{stoch_4h}` — {stoch_label(stoch_4h)}\n"
-            f"{div_line}\n\n"
-            f"⚙️ *İndikatörler:*\n"
-            f"• EMA    : {ema_line}\n"
-            f"• MACD   : 1h {macd_1h_str}  •  4h {macd_4h_str}\n"
-            f"• Boll.  : {boll_str}\n"
-            f"• OBV    : {obv_str}\n\n"
         )
-        if sr_lines:
-            text += f"📌 *Seviyeler:*\n{sr_lines}\n"
+        if div_line:
+            text += f"{div_line}\n"
+        else:
+            text += "\n"
         text += (
-            f"🎯 *Piyasa Skoru:*\n"
+            f"*Piyasa Skoru:*\n"
             f"⏱ Saatlik : `{sh}/100` — _{lh}_\n"
             f"📅 Günlük  : `{sd}/100` — _{ld}_\n"
             f"📆 Haftalık: `{sw}/100` — _{lw}_\n"
