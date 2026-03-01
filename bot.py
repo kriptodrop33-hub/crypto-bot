@@ -849,7 +849,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         # Başlık — alarm mesajlarında renkli, analizde nötr
         is_alarm = "UYARISI" in extra_title or "ALARM" in extra_title or "YUKSELIS" in extra_title or "DUSUS" in extra_title
         if is_alarm:
-            header = f"🟢🟢 *{extra_title}* 🟢🟢\n" if ch5m >= 0 else f"🔴🔴 *{extra_title}* 🔴🔴\n"
+            header = f"*{extra_title}*\n"
         else:
             header = f"*{extra_title}*\n"
 
@@ -2200,7 +2200,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
             cooldowns[key] = now
-            yon = "🟢 5dk YUKSELIS UYARISI 🟢" if ch5 > 0 else "🔴 5dk DUSUS UYARISI 🔴"
+            yon = "🟢🟢 5dk YUKSELIS UYARISI 🟢🟢" if ch5 > 0 else "🔴🔴 5dk DUSUS UYARISI 🔴🔴"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2))
 
     # ── Kişisel alarmlar (gelişmiş) ──
