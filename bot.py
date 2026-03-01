@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -1664,37 +1664,104 @@ async def mtf_command(update: Update, context):
     try:
         async with aiohttp.ClientSession() as session:
             k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
-                fetch_klines(session, symbol, "15m", limit=50),
-                fetch_klines(session, symbol, "1h",  limit=50),
-                fetch_klines(session, symbol, "4h",  limit=50),
-                fetch_klines(session, symbol, "1d",  limit=50),
-                fetch_klines(session, symbol, "1w",  limit=20),
+                fetch_klines(session, symbol, "15m", limit=100),
+                fetch_klines(session, symbol, "1h",  limit=100),
+                fetch_klines(session, symbol, "4h",  limit=100),
+                fetch_klines(session, symbol, "1d",  limit=100),
+                fetch_klines(session, symbol, "1w",  limit=52),
             )
 
-        def tf_row(data, label):
-            if not data or len(data) < 5:
-                return label, "❓", 0, 0
-            ch  = calc_change(data)
-            rsi = calc_rsi(data, 14)
-            if   rsi >= 70: emoji = "🔴"
-            elif rsi >= 55: emoji = "🟡"
-            elif rsi <= 30: emoji = "🔵"
-            elif rsi <= 45: emoji = "🟡"
-            else:           emoji = "🟢"
-            return label, emoji, rsi, ch
+        def rsi_emoji(r):
+            if r >= 70: return "🔴"
+            elif r >= 55: return "🟡"
+            elif r <= 30: return "🔵"
+            elif r <= 45: return "🟡"
+            else: return "🟢"
 
-        rows = [
-            tf_row(k15m, "15dk"),
-            tf_row(k1h,  " 1sa"),
-            tf_row(k4h,  " 4sa"),
-            tf_row(k1d,  " 1gn"),
-            tf_row(k1w,  " 1hf"),
-        ]
-        text = "📊 *" + symbol + " — Coklu Zaman Dilimi*\n━━━━━━━━━━━━━━━━━━\n"
-        for label, emoji, rsi, ch in rows:
-            yon = "📈" if ch > 0 else "📉" if ch < 0 else "↔️"
-            text += emoji + " `" + label + "` RSI:`" + str(round(rsi,1)) + "` " + yon + "`" + ("+%.2f" % ch) + "%`\n"
-        text += "\n_🔵 Asiri Satim  🟢 Normal  🔴 Asiri Alim_"
+        def macd_str(data):
+            _, hist = calc_macd(data)
+            if hist > 0:   return "🟢+"
+            elif hist < 0: return "🔴-"
+            else:          return "⚪"
+
+        def boll_str(data):
+            pos = calc_bollinger(data, period=20)
+            pos = max(0, min(100, pos))
+            if pos >= 80:   return f"🔴üst({pos:.0f}%)"
+            elif pos <= 20: return f"🔵alt({pos:.0f}%)"
+            else:           return f"🟢ort({pos:.0f}%)"
+
+        def ema_str(data):
+            e9  = calc_ema(data, 9)
+            e21 = calc_ema(data, 21)
+            return "🟢" if e9 > e21 else "🔴"
+
+        def obv_str(data):
+            o = calc_obv_trend(data, lookback=10)
+            return "🟢" if o == 1 else ("🔴" if o == -1 else "⚪")
+
+        def tf_section(data, label):
+            if not data or len(data) < 10:
+                return f"`{label}` — veri yetersiz\n"
+            ch   = calc_change(data)
+            rsi  = calc_rsi(data, 14)
+            yon  = "📈" if ch > 0 else "📉"
+            re   = rsi_emoji(rsi)
+            ms   = macd_str(data)
+            bs   = boll_str(data)
+            es   = ema_str(data)
+            os_  = obv_str(data)
+            return (
+                f"*{label}* {yon} `{ch:+.2f}%`\n"
+                f"  RSI `{rsi:.1f}` {re}  MACD {ms}  EMA {es}  OBV {os_}\n"
+                f"  Boll: {bs}\n"
+            )
+
+        # Fibonacci seviyeleri (4h mumlardan — son 50 mum)
+        def calc_fibo(data, lookback=50):
+            if not data or len(data) < lookback:
+                lookback = len(data)
+            window = data[-lookback:]
+            hi  = max(float(c[2]) for c in window)
+            lo  = min(float(c[3]) for c in window)
+            diff = hi - lo
+            levels = {
+                "0.0%":   hi,
+                "23.6%":  hi - diff * 0.236,
+                "38.2%":  hi - diff * 0.382,
+                "50.0%":  hi - diff * 0.500,
+                "61.8%":  hi - diff * 0.618,
+                "78.6%":  hi - diff * 0.786,
+                "100%":   lo,
+            }
+            cur = float(data[-1][4])
+            # Fiyatın hemen altındaki ve üstündeki seviyeyi bul
+            below = {k: v for k, v in levels.items() if v <= cur}
+            above = {k: v for k, v in levels.items() if v >  cur}
+            sup = max(below.items(), key=lambda x: x[1]) if below else None
+            res = min(above.items(), key=lambda x: x[1]) if above else None
+            return sup, res, hi, lo
+
+        fib_sup, fib_res, swing_hi, swing_lo = calc_fibo(k4h)
+
+        text = f"📊 *{symbol} — Çoklu Zaman Dilimi*\n━━━━━━━━━━━━━━━━━━\n\n"
+        text += tf_section(k15m, "15 Dakika")
+        text += "\n"
+        text += tf_section(k1h,  "1 Saat")
+        text += "\n"
+        text += tf_section(k4h,  "4 Saat")
+        text += "\n"
+        text += tf_section(k1d,  "1 Gün")
+        text += "\n"
+        text += tf_section(k1w,  "1 Hafta")
+        text += "\n━━━━━━━━━━━━━━━━━━\n"
+        text += f"📐 *Fibonacci (4h — Son 50 mum)*\n"
+        text += f"  Swing High: `{format_price(swing_hi)}`  Low: `{format_price(swing_lo)}`\n"
+        if fib_sup:
+            text += f"  🔵 Destek : `{format_price(fib_sup[1])}` _(Fib {fib_sup[0]})_\n"
+        if fib_res:
+            text += f"  🔴 Direnç : `{format_price(fib_res[1])}` _(Fib {fib_res[0]})_\n"
+        text += "\n_🔵 Aşırı Satım  🟢 Normal  🔴 Aşırı Alım_"
 
         await wait.delete()
         await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
@@ -2251,6 +2318,10 @@ async def binance_engine():
 async def post_init(app):
     await init_db()
     asyncio.create_task(binance_engine())
+    # Slash menüsünde sadece /start göster
+    await app.bot.set_my_commands([
+        BotCommand("start", "Botu başlat / Ana menü")
+    ])
 
 # ================= MAIN =================
 
