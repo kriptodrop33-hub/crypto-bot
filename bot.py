@@ -351,7 +351,160 @@ def calc_rsi(data, period=14):
     except:
         return 0.0
 
-# ================= SKORLAMA =================
+def calc_stoch_rsi(data, rsi_period=14, stoch_period=14):
+    """Stochastic RSI hesaplar. 0-100 arası döner."""
+    try:
+        closes = [float(x[4]) for x in data]
+        # Önce RSI serisi oluştur
+        rsi_vals = []
+        gains, losses = [], []
+        for i in range(1, len(closes)):
+            diff = closes[i] - closes[i-1]
+            gains.append(max(diff, 0))
+            losses.append(abs(min(diff, 0)))
+        for i in range(rsi_period - 1, len(gains)):
+            ag = sum(gains[i-rsi_period+1:i+1]) / rsi_period
+            al = sum(losses[i-rsi_period+1:i+1]) / rsi_period
+            if al == 0:
+                rsi_vals.append(100.0)
+            else:
+                rs = ag / al
+                rsi_vals.append(100 - (100 / (1 + rs)))
+        if len(rsi_vals) < stoch_period:
+            return 50.0
+        window = rsi_vals[-stoch_period:]
+        lo, hi = min(window), max(window)
+        if hi == lo:
+            return 50.0
+        return round((rsi_vals[-1] - lo) / (hi - lo) * 100, 2)
+    except:
+        return 50.0
+
+def calc_ema(data, period):
+    """EMA hesaplar, son değeri döner."""
+    try:
+        closes = [float(x[4]) for x in data]
+        if len(closes) < period:
+            return closes[-1] if closes else 0
+        k = 2 / (period + 1)
+        ema = sum(closes[:period]) / period
+        for c in closes[period:]:
+            ema = c * k + ema * (1 - k)
+        return ema
+    except:
+        return 0
+
+def calc_macd(data, fast=12, slow=26, signal=9):
+    """MACD ve sinyal farkını döner. Pozitif = bullish."""
+    try:
+        closes = [float(x[4]) for x in data]
+        if len(closes) < slow + signal:
+            return 0.0, 0.0
+        k_fast = 2 / (fast + 1)
+        k_slow = 2 / (slow + 1)
+        ema_fast = sum(closes[:fast]) / fast
+        ema_slow = sum(closes[:slow]) / slow
+        for c in closes[fast:]:
+            ema_fast = c * k_fast + ema_fast * (1 - k_fast)
+        for c in closes[slow:]:
+            ema_slow = c * k_slow + ema_slow * (1 - k_slow)
+        # MACD serisi için her noktada hesapla
+        macd_vals = []
+        ef = sum(closes[:fast]) / fast
+        es = sum(closes[:slow]) / slow
+        for i, c in enumerate(closes):
+            ef = c * k_fast + ef * (1 - k_fast)
+            es = c * k_slow + es * (1 - k_slow)
+            if i >= slow - 1:
+                macd_vals.append(ef - es)
+        if len(macd_vals) < signal:
+            return 0.0, 0.0
+        k_sig = 2 / (signal + 1)
+        sig_ema = sum(macd_vals[:signal]) / signal
+        for m in macd_vals[signal:]:
+            sig_ema = m * k_sig + sig_ema * (1 - k_sig)
+        histogram = macd_vals[-1] - sig_ema
+        return round(macd_vals[-1], 8), round(histogram, 8)
+    except:
+        return 0.0, 0.0
+
+def calc_bollinger(data, period=20, std_mult=2.0):
+    """Bollinger Band pozisyonu: 0=alt bant, 50=orta, 100=üst bant üstü."""
+    try:
+        closes = [float(x[4]) for x in data]
+        if len(closes) < period:
+            return 50.0
+        window = closes[-period:]
+        mean = sum(window) / period
+        std  = (sum((c - mean) ** 2 for c in window) / period) ** 0.5
+        upper = mean + std_mult * std
+        lower = mean - std_mult * std
+        cur   = closes[-1]
+        if upper == lower:
+            return 50.0
+        pos = (cur - lower) / (upper - lower) * 100
+        return round(_clamp(pos, -10, 110), 2)
+    except:
+        return 50.0
+
+def calc_obv_trend(data, lookback=10):
+    """OBV trendini hesaplar. +1 yükselen, -1 düşen, 0 nötr."""
+    try:
+        closes  = [float(x[4]) for x in data]
+        volumes = [float(x[5]) for x in data]
+        obv = 0
+        obv_series = [0]
+        for i in range(1, len(closes)):
+            if closes[i] > closes[i-1]:
+                obv += volumes[i]
+            elif closes[i] < closes[i-1]:
+                obv -= volumes[i]
+            obv_series.append(obv)
+        if len(obv_series) < lookback:
+            return 0
+        early = sum(obv_series[:lookback//2]) / (lookback//2)
+        late  = sum(obv_series[-lookback//2:]) / (lookback//2)
+        if late > early * 1.02:
+            return 1
+        elif late < early * 0.98:
+            return -1
+        return 0
+    except:
+        return 0
+
+def calc_rsi_divergence(data, period=14, lookback=20):
+    """Basit RSI diverjans tespiti. 'bullish'/'bearish'/None döner."""
+    try:
+        closes = [float(x[4]) for x in data[-lookback:]]
+        gains, losses = [], []
+        for i in range(1, len(closes)):
+            d = closes[i] - closes[i-1]
+            gains.append(max(d, 0))
+            losses.append(abs(min(d, 0)))
+        if len(gains) < period:
+            return None
+        rsi_series = []
+        for i in range(period - 1, len(gains)):
+            ag = sum(gains[i-period+1:i+1]) / period
+            al = sum(losses[i-period+1:i+1]) / period
+            if al == 0:
+                rsi_series.append(100.0)
+            else:
+                rsi_series.append(100 - 100 / (1 + ag/al))
+        if len(rsi_series) < 4:
+            return None
+        mid = len(closes) // 2
+        price_up   = closes[-1] > closes[mid]
+        rsi_up     = rsi_series[-1] > rsi_series[len(rsi_series)//2]
+        if price_up and not rsi_up and rsi_series[-1] > 60:
+            return "bearish"   # fiyat yükseliyor ama RSI düşüyor
+        if not price_up and rsi_up and rsi_series[-1] < 40:
+            return "bullish"   # fiyat düşüyor ama RSI yükseliyor
+        return None
+    except:
+        return None
+
+
 
 def _score_label(score):
     if score >= 75: return "🚀 Güçlü Al",  "🟢🟢🟢🟢🟢"
@@ -400,97 +553,171 @@ def _vol_bonus(vol24, ch, pos_bonus=4.0, neg_bonus=-4.0):
     return 0.0
 
 def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
-    """SAATLİK SKOR — sürekli ağırlıklı ortalama."""
-    rsi14 = calc_rsi(k1h_series, 14)
-    rsi7  = calc_rsi(k1h_series, 7)
+    """SAATLİK SKOR — RSI, StochRSI, EMA, MACD, OBV, momentum."""
+    rsi14     = calc_rsi(k1h_series, 14)
+    rsi7      = calc_rsi(k1h_series, 7)
+    stoch_rsi = calc_stoch_rsi(k1h_series)
+    macd_val, macd_hist = calc_macd(k1h_series, fast=12, slow=26, signal=9)
+    ema9      = calc_ema(k1h_series, 9)
+    ema21     = calc_ema(k1h_series, 21)
+    obv_trend = calc_obv_trend(k1h_series, lookback=12)
+    boll_pos  = calc_bollinger(k1h_series, period=20)
+
     ch15m = calc_change(k15m) if k15m and len(k15m) >= 2 else 0
     ch5m  = calc_change(k5m)  if k5m  and len(k5m)  >= 2 else 0
     ch1h  = calc_change(k1h_series[-2:]) if k1h_series and len(k1h_series) >= 2 else 0
     vol24 = float(ticker.get("quoteVolume", 0))
 
-    # RSI katkısı: RSI7 momentum için, RSI14 trend için
-    s_rsi14 = _rsi_score(rsi14)                     # ağırlık 0.30
-    s_rsi7  = _rsi_score(rsi7)                      # ağırlık 0.20
-    # RSI7 > RSI14 → momentum pozitif → ekstra katkı
-    rsi_mom = _clamp(50 + (rsi7 - rsi14) * 1.5)    # ağırlık 0.10
+    # RSI bileşenleri
+    s_rsi14   = _rsi_score(rsi14)                           # 0.20
+    s_rsi7    = _rsi_score(rsi7)                            # 0.12
+    rsi_mom   = _clamp(50 + (rsi7 - rsi14) * 1.5)          # 0.08
+    s_stoch   = _clamp(100 - stoch_rsi) if stoch_rsi > 50 else _clamp(50 + stoch_rsi)  # 0.10
 
-    s_5m  = _ch_score(ch5m,  scale=3.0)             # ağırlık 0.20
-    s_15m = _ch_score(ch15m, scale=4.0)             # ağırlık 0.10
-    s_1h  = _ch_score(ch1h,  scale=5.0)             # ağırlık 0.10
+    # Fiyat değişim bileşenleri
+    s_5m  = _ch_score(ch5m,  scale=3.0)                    # 0.12
+    s_15m = _ch_score(ch15m, scale=4.0)                    # 0.08
+    s_1h  = _ch_score(ch1h,  scale=5.0)                    # 0.08
+
+    # EMA trend: EMA9 > EMA21 bullish
+    ema_score = 65.0 if ema9 > ema21 else 35.0             # 0.10
+
+    # MACD histogram yönü
+    if macd_hist > 0:
+        macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 20)
+    else:
+        macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 20)
+    macd_score = _clamp(macd_score)                        # 0.08
+
+    # OBV trendi
+    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)  # 0.04
 
     score = (
-        s_rsi14 * 0.30 +
-        s_rsi7  * 0.20 +
-        rsi_mom * 0.10 +
-        s_5m    * 0.20 +
-        s_15m   * 0.10 +
-        s_1h    * 0.10
+        s_rsi14   * 0.20 +
+        s_rsi7    * 0.12 +
+        rsi_mom   * 0.08 +
+        s_stoch   * 0.10 +
+        s_5m      * 0.12 +
+        s_15m     * 0.08 +
+        s_1h      * 0.08 +
+        ema_score * 0.10 +
+        macd_score* 0.08 +
+        obv_score * 0.04
     )
-    # Hacim bonusu (±4 puan max)
     score += _vol_bonus(vol24, ch5m)
     score = _clamp(score)
-
     label, bar = _score_label(score)
     return round(score), label, bar
 
 def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
-    """GÜNLÜK SKOR — sürekli ağırlıklı ortalama."""
-    rsi14_4h = calc_rsi(k4h_series, 14)
-    rsi14_1h = calc_rsi(k1h_series, 14)
+    """GÜNLÜK SKOR — 4h RSI, EMA, Bollinger, MACD, OBV."""
+    rsi14_4h  = calc_rsi(k4h_series, 14)
+    rsi14_1h  = calc_rsi(k1h_series, 14)
+    stoch_4h  = calc_stoch_rsi(k4h_series)
+    macd_val, macd_hist = calc_macd(k4h_series)
+    ema21_4h  = calc_ema(k4h_series, 21)
+    ema55_4h  = calc_ema(k4h_series, 55)
+    boll_pos  = calc_bollinger(k4h_series, period=20)
+    obv_trend = calc_obv_trend(k4h_series, lookback=14)
+
     ch4h  = calc_change(k4h_series[-2:]) if k4h_series and len(k4h_series) >= 2 else 0
     ch24h = calc_change(k1h_series)      if k1h_series and len(k1h_series) >= 2 else 0
     ch24  = float(ticker.get("priceChangePercent", 0))
     vol24 = float(ticker.get("quoteVolume", 0))
     high  = float(ticker.get("highPrice", 1)) or 1
     low   = float(ticker.get("lowPrice",  1)) or 1
-    volat = ((high - low) / low) * 100  # gün içi volatilite
+    volat = ((high - low) / low) * 100
 
-    s_rsi_4h = _rsi_score(rsi14_4h)                # ağırlık 0.30
-    s_rsi_1h = _rsi_score(rsi14_1h)                # ağırlık 0.15
-    s_4h     = _ch_score(ch4h,  scale=5.0)          # ağırlık 0.25
-    s_24h    = _ch_score(ch24h, scale=8.0)           # ağırlık 0.20
-    # Volatilite bonusu: yüksek volat + pozitif yön → ekstra puan
-    vol_dir  = _clamp(50 + (ch24 / max(volat, 0.5)) * 10)  # ağırlık 0.10
+    s_rsi_4h  = _rsi_score(rsi14_4h)                       # 0.20
+    s_rsi_1h  = _rsi_score(rsi14_1h)                       # 0.10
+    s_stoch   = _clamp(100 - stoch_4h) if stoch_4h > 50 else _clamp(50 + stoch_4h)  # 0.08
+
+    s_4h      = _ch_score(ch4h,  scale=5.0)                 # 0.15
+    s_24h     = _ch_score(ch24h, scale=8.0)                 # 0.12
+
+    ema_score = 65.0 if ema21_4h > ema55_4h else 35.0      # 0.12
+
+    # Bollinger: fiyat alt bantta → alım fırsatı, üst bantta → satış baskısı
+    boll_score = _clamp(100 - boll_pos)                    # 0.08
+    # ama ortada (40-60) nötr olmalı:
+    if 35 < boll_pos < 65:
+        boll_score = 50.0
+
+    if macd_hist > 0:
+        macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 15)
+    else:
+        macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 15)
+    macd_score = _clamp(macd_score)                        # 0.08
+
+    obv_score  = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)  # 0.05
+    vol_dir    = _clamp(50 + (ch24 / max(volat, 0.5)) * 10)  # 0.02
 
     score = (
-        s_rsi_4h * 0.30 +
-        s_rsi_1h * 0.15 +
-        s_4h     * 0.25 +
-        s_24h    * 0.20 +
-        vol_dir  * 0.10
+        s_rsi_4h  * 0.20 +
+        s_rsi_1h  * 0.10 +
+        s_stoch   * 0.08 +
+        s_4h      * 0.15 +
+        s_24h     * 0.12 +
+        ema_score * 0.12 +
+        boll_score* 0.08 +
+        macd_score* 0.08 +
+        obv_score * 0.05 +
+        vol_dir   * 0.02
     )
     score += _vol_bonus(vol24, ch24, pos_bonus=5.0, neg_bonus=-5.0)
     score = _clamp(score)
-
     label, bar = _score_label(score)
     return round(score), label, bar
 
 def calc_score_weekly(ticker, k1d_series, k1w_series):
-    """HAFTALIK SKOR — sürekli ağırlıklı ortalama."""
-    rsi14_1d = calc_rsi(k1d_series, 14)
-    rsi14_1w = calc_rsi(k1w_series, 14)
-    ch7d  = calc_change(k1d_series[-7:]) if k1d_series and len(k1d_series) >= 7  else 0
-    ch30d = calc_change(k1d_series)      if k1d_series and len(k1d_series) >= 5  else 0
-    ch4w  = calc_change(k1w_series[-4:]) if k1w_series and len(k1w_series) >= 4  else 0
-    vol24 = float(ticker.get("quoteVolume", 0))
-    ch24  = float(ticker.get("priceChangePercent", 0))
+    """HAFTALIK SKOR — günlük/haftalık RSI, EMA200, MACD, OBV."""
+    rsi14_1d  = calc_rsi(k1d_series, 14)
+    rsi14_1w  = calc_rsi(k1w_series, 14)
+    stoch_1d  = calc_stoch_rsi(k1d_series)
+    macd_val, macd_hist = calc_macd(k1d_series)
+    ema50_1d  = calc_ema(k1d_series, 50)
+    ema200_1d = calc_ema(k1d_series, min(200, len(k1d_series)))
+    boll_pos  = calc_bollinger(k1d_series, period=20)
+    obv_trend = calc_obv_trend(k1d_series, lookback=20)
 
-    s_rsi_1d = _rsi_score(rsi14_1d)                # ağırlık 0.25
-    s_rsi_1w = _rsi_score(rsi14_1w)                # ağırlık 0.25
-    s_7d     = _ch_score(ch7d,  scale=12.0)         # ağırlık 0.25
-    s_4w     = _ch_score(ch4w,  scale=20.0)          # ağırlık 0.15
-    s_30d    = _ch_score(ch30d, scale=30.0)           # ağırlık 0.10
+    ch7d   = calc_change(k1d_series[-7:]) if k1d_series and len(k1d_series) >= 7  else 0
+    ch30d  = calc_change(k1d_series)      if k1d_series and len(k1d_series) >= 5  else 0
+    ch4w   = calc_change(k1w_series[-4:]) if k1w_series and len(k1w_series) >= 4  else 0
+    vol24  = float(ticker.get("quoteVolume", 0))
+    ch24   = float(ticker.get("priceChangePercent", 0))
+
+    s_rsi_1d  = _rsi_score(rsi14_1d)                       # 0.18
+    s_rsi_1w  = _rsi_score(rsi14_1w)                       # 0.18
+    s_stoch   = _clamp(100 - stoch_1d) if stoch_1d > 50 else _clamp(50 + stoch_1d)  # 0.06
+
+    s_7d      = _ch_score(ch7d,  scale=12.0)                # 0.15
+    s_4w      = _ch_score(ch4w,  scale=20.0)                 # 0.10
+    s_30d     = _ch_score(ch30d, scale=30.0)                  # 0.08
+
+    # EMA50 > EMA200 → güçlü uzun vade trend (golden cross)
+    ema_score = 70.0 if ema50_1d > ema200_1d else 30.0     # 0.12
+
+    if macd_hist > 0:
+        macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 12)
+    else:
+        macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 12)
+    macd_score = _clamp(macd_score)                        # 0.08
+
+    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)   # 0.05
 
     score = (
-        s_rsi_1d * 0.25 +
-        s_rsi_1w * 0.25 +
-        s_7d     * 0.25 +
-        s_4w     * 0.15 +
-        s_30d    * 0.10
+        s_rsi_1d  * 0.18 +
+        s_rsi_1w  * 0.18 +
+        s_stoch   * 0.06 +
+        s_7d      * 0.15 +
+        s_4w      * 0.10 +
+        s_30d     * 0.08 +
+        ema_score * 0.12 +
+        macd_score* 0.08 +
+        obv_score * 0.05
     )
     score += _vol_bonus(vol24, ch24, pos_bonus=3.0, neg_bonus=-3.0)
     score = _clamp(score)
-
     label, bar = _score_label(score)
     return round(score), label, bar
 
@@ -504,24 +731,27 @@ async def fetch_all_analysis(symbol):
 
         (k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24,
-         k1w) = await asyncio.gather(
+         k1w, k4h_100, k1d_100) = await asyncio.gather(
             fetch_klines(session, symbol, "4h",  limit=2),     # anlık 4sa
             fetch_klines(session, symbol, "1h",  limit=2),     # anlık 1sa
             fetch_klines(session, symbol, "5m",  limit=2),     # anlık 5dk
-            fetch_klines(session, symbol, "1h",  limit=100),   # RSI hesabı
+            fetch_klines(session, symbol, "1h",  limit=100),   # 1h RSI + indikatör
             fetch_klines(session, symbol, "1d",  limit=30),    # günlük 30 gün
             fetch_klines(session, symbol, "15m", limit=20),    # 15dk seri
             fetch_klines(session, symbol, "4h",  limit=50),    # 4sa seri (skor)
             fetch_klines(session, symbol, "1h",  limit=24),    # 24sa seri (skor)
             fetch_klines(session, symbol, "1w",  limit=12),    # haftalık 12 hafta
+            fetch_klines(session, symbol, "4h",  limit=100),   # 4h RSI + indikatör
+            fetch_klines(session, symbol, "1d",  limit=100),   # 1d RSI + indikatör
         )
 
-    return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w
+    return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
 
 async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
-         k1d, k15m, k4h_42, k1h_24, k1w) = await fetch_all_analysis(symbol)
+         k1d, k15m, k4h_42, k1h_24, k1w,
+         k4h_100, k1d_100) = await fetch_all_analysis(symbol)
 
         if "lastPrice" not in ticker:
             return
@@ -531,8 +761,25 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         ch4h   = calc_change(k4h)
         ch1h   = calc_change(k1h_2)
         ch5m   = calc_change(k5m)
-        rsi7   = calc_rsi(k1h_100, 7)
-        rsi14  = calc_rsi(k1h_100, 14)
+
+        # ── RSI çok zaman dilimli ──
+        rsi7_1h    = calc_rsi(k1h_100, 7)
+        rsi14_1h   = calc_rsi(k1h_100, 14)
+        rsi14_4h   = calc_rsi(k4h_100, 14)
+        rsi14_1d   = calc_rsi(k1d_100, 14)
+        stoch_1h   = calc_stoch_rsi(k1h_100)
+        stoch_4h   = calc_stoch_rsi(k4h_100)
+
+        # ── Teknik indikatörler ──
+        ema9_1h    = calc_ema(k1h_100, 9)
+        ema21_1h   = calc_ema(k1h_100, 21)
+        ema21_4h   = calc_ema(k4h_100, 21)
+        ema55_4h   = calc_ema(k4h_100, 55)
+        _, macd_hist_1h = calc_macd(k1h_100)
+        _, macd_hist_4h = calc_macd(k4h_100)
+        boll_1h    = calc_bollinger(k1h_100)
+        obv_1h     = calc_obv_trend(k1h_100, lookback=12)
+        diverjans  = calc_rsi_divergence(k1h_100)
 
         # Destek / Direnç
         destek, direnc = calc_support_resistance(k4h_42)
@@ -540,7 +787,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         # Hacim Anomali
         vol_ratio = calc_volume_anomaly(k1h_24)
 
-        # Piyasa Rozeti (paralel çek)
+        # Piyasa Rozeti
         mood, btc_dom, mkt_avg = await fetch_market_badge()
 
         def get_ui(val):
@@ -554,13 +801,22 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         e24,s24 = get_ui(ch24)
 
         def rsi_label(r):
-            if r >= 70:   return "🔴 Asiri Alim"
-            elif r >= 55: return "🟡 Yukselis"
-            elif r <= 30: return "🔵 Asiri Satim"
-            elif r <= 45: return "🟡 Dusus"
+            if r >= 80:   return "🔴 Aşırı Alım"
+            elif r >= 70: return "🟠 Alım Bölgesi"
+            elif r >= 55: return "🟡 Yükseliş"
+            elif r <= 20: return "🔵 Aşırı Satım"
+            elif r <= 30: return "🟣 Satım Bölgesi"
+            elif r <= 45: return "🟡 Düşüş"
             else:         return "🟢 Normal"
 
-        sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14)
+        def stoch_label(s):
+            if s >= 80:   return "🔴 Aşırı"
+            elif s >= 60: return "🟡 Yüksek"
+            elif s <= 20: return "🔵 Aşırı"
+            elif s <= 40: return "🟡 Düşük"
+            else:         return "🟢 Nötr"
+
+        sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14_1h)
         sd, ld, bd = calc_score_daily(ticker, k4h_42, k1h_24, k1d)
         sw, lw, bw = calc_score_weekly(ticker, k1d, k1w)
 
@@ -593,6 +849,39 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         else:
             vol_anom = ""
 
+        # EMA trend durumu
+        ema_line = ""
+        if ema9_1h > ema21_1h:
+            ema_line = "🟢▲ EMA9 > EMA21"
+        else:
+            ema_line = "🔴▼ EMA9 < EMA21"
+        if ema21_4h > ema55_4h:
+            ema_line += "  •  4h: 🟢 Yukselis"
+        else:
+            ema_line += "  •  4h: 🔴 Dusus"
+
+        # MACD durumu
+        macd_1h_str = "🟢 Pozitif" if macd_hist_1h > 0 else "🔴 Negatif"
+        macd_4h_str = "🟢 Pozitif" if macd_hist_4h > 0 else "🔴 Negatif"
+
+        # Bollinger pozisyonu
+        if boll_1h > 80:
+            boll_str = f"🔴 Üst Bant (`{boll_1h:.0f}%`)"
+        elif boll_1h < 20:
+            boll_str = f"🔵 Alt Bant (`{boll_1h:.0f}%`)"
+        else:
+            boll_str = f"🟢 Orta Bölge (`{boll_1h:.0f}%`)"
+
+        # OBV trendi
+        obv_str = "🟢 Yükselen" if obv_1h == 1 else ("🔴 Düşen" if obv_1h == -1 else "⚪ Nötr")
+
+        # Diverjans uyarısı
+        div_line = ""
+        if diverjans == "bearish":
+            div_line = "\n⚠️ *Bearish Diverjans:* Fiyat yükseliyor, RSI düşüyor!"
+        elif diverjans == "bullish":
+            div_line = "\n💡 *Bullish Diverjans:* Fiyat düşüyor, RSI yükseliyor!"
+
         text = (
             f"📊 *{extra_title}*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -607,8 +896,18 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
             f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
             f"📉 *RSI:*\n"
-            f"• RSI 7  : `{rsi7}` — {rsi_label(rsi7)}\n"
-            f"• RSI 14 : `{rsi14}` — {rsi_label(rsi14)}\n\n"
+            f"• 1sa  RSI 7  : `{rsi7_1h}` — {rsi_label(rsi7_1h)}\n"
+            f"• 1sa  RSI 14 : `{rsi14_1h}` — {rsi_label(rsi14_1h)}\n"
+            f"• 4sa  RSI 14 : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
+            f"• 1gün RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
+            f"• StochRSI 1h : `{stoch_1h}` — {stoch_label(stoch_1h)}\n"
+            f"• StochRSI 4h : `{stoch_4h}` — {stoch_label(stoch_4h)}\n"
+            f"{div_line}\n\n"
+            f"⚙️ *İndikatörler:*\n"
+            f"• EMA    : {ema_line}\n"
+            f"• MACD   : 1h {macd_1h_str}  •  4h {macd_4h_str}\n"
+            f"• Boll.  : {boll_str}\n"
+            f"• OBV    : {obv_str}\n\n"
         )
         if sr_lines:
             text += f"📌 *Seviyeler:*\n{sr_lines}\n"
@@ -1867,7 +2166,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
             cooldowns[key] = now
-            yon = "📈 5dk YUKSELIS UYARISI" if ch5 > 0 else "📉 5dk DUSUS UYARISI"
+            yon = "📈🟢🟢 5dk YUKSELIS UYARISI 🟢🟢" if ch5 > 0 else "📉🔴🔴 5dk DUSUS UYARISI 🔴🔴"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold)
 
     # ── Kişisel alarmlar (gelişmiş) ──
@@ -1949,7 +2248,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             log.warning(f"Alarm DB guncelleme: {e}")
             suggest_msg = ""
 
-        yon = "📈" if direction == "up" else "📉"
+        yon = "📈🟢🟢" if direction == "up" else "📉🔴🔴"
         try:
             await send_full_analysis(
                 context.bot, user_id, symbol,
