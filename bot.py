@@ -28,7 +28,7 @@ from telegram.ext import (
 
 TOKEN         = os.getenv("TELEGRAM_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
-DATABASE_URL  = os.getenv("DATABASE_URL")          # Railway PostgreSQL URL
+DATABASE_URL  = os.getenv("DATABASE_URL")
 
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -36,7 +36,7 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 COOLDOWN_MINUTES  = 15
 DEFAULT_THRESHOLD = 5.0
 DEFAULT_MODE      = "both"
-MAX_SYMBOLS       = 500          # price_memory bellek limiti
+MAX_SYMBOLS       = 500
 
 logging.basicConfig(
     level=logging.INFO,
@@ -152,11 +152,12 @@ async def init_db():
 
 # ================= MEMORY =================
 
-price_memory:      dict = {}
-cooldowns:         dict = {}
-chart_cache:       dict = {}
-whale_vol_mem:     dict = {}
-scheduled_last_run:dict = {}
+price_memory:       dict = {}
+cooldowns:          dict = {}
+chart_cache:        dict = {}
+whale_vol_mem:      dict = {}
+scheduled_last_run: dict = {}
+rank_cache:         dict = {}   # symbol -> (cached_at, rank, total)
 
 # ================= YARDIMCI =================
 
@@ -168,16 +169,62 @@ def get_number_emoji(n):
 def format_price(price):
     return f"{price:,.2f}" if price >= 1 else f"{price:.8g}"
 
+# ================= RANK (Hacim Bazlı) =================
+
+async def get_coin_rank(symbol: str):
+    """
+    Binance 24h quoteVolume'a göre USDT çiftleri arasında coinin sıralamasını döner.
+    Sonucu 5 dakika önbellekler. (rank, total) tuple döner.
+    """
+    now = datetime.utcnow()
+    cached = rank_cache.get(symbol)
+    if cached:
+        cached_at, rank, total = cached
+        if now - cached_at < timedelta(minutes=5):
+            return rank, total
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                data = await resp.json()
+
+        usdt_pairs = [x for x in data if x["symbol"].endswith("USDT")]
+        usdt_pairs.sort(key=lambda x: float(x.get("quoteVolume", 0)), reverse=True)
+
+        total = len(usdt_pairs)
+        rank  = None
+        for i, c in enumerate(usdt_pairs, 1):
+            if c["symbol"] == symbol:
+                rank = i
+                break
+
+        if rank is None:
+            return None, total
+
+        rank_cache[symbol] = (now, rank, total)
+        return rank, total
+
+    except Exception as e:
+        log.warning(f"get_coin_rank hatasi ({symbol}): {e}")
+        return None, 0
+
+def rank_emoji(rank):
+    if rank is None:
+        return ""
+    if rank <= 10:  return "🥇"
+    if rank <= 30:  return "🥈"
+    if rank <= 100: return "🥉"
+    return "🏅"
+
+# ================= DİĞER YARDIMCILAR =================
+
 def calc_support_resistance(k4h_data):
-    """4h mumlardan yakın destek ve direnç hesaplar."""
     if not k4h_data or len(k4h_data) < 10:
         return None, None
     highs  = [float(c[2]) for c in k4h_data]
     lows   = [float(c[3]) for c in k4h_data]
     closes = [float(c[4]) for c in k4h_data]
     cur    = closes[-1]
-
-    # Swing high/low tespiti (komşularından büyük/küçük olanlar)
     swing_highs = []
     swing_lows  = []
     for i in range(2, len(highs) - 2):
@@ -185,14 +232,11 @@ def calc_support_resistance(k4h_data):
             swing_highs.append(highs[i])
         if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
             swing_lows.append(lows[i])
-
-    # Mevcut fiyatın altındaki en yakın destek, üstündeki en yakın direnç
-    destek   = max((v for v in swing_lows  if v < cur), default=None)
-    direnc   = min((v for v in swing_highs if v > cur), default=None)
+    destek = max((v for v in swing_lows  if v < cur), default=None)
+    direnc = min((v for v in swing_highs if v > cur), default=None)
     return destek, direnc
 
 def calc_volume_anomaly(k1h_data):
-    """Son mumdaki hacmi geçmiş ortalamayla karşılaştırır. (oran döner)"""
     if not k1h_data or len(k1h_data) < 5:
         return None
     vols = [float(c[5]) for c in k1h_data]
@@ -202,7 +246,6 @@ def calc_volume_anomaly(k1h_data):
     return round(vols[-1] / avg, 2)
 
 async def fetch_market_badge():
-    """BTC dominansı ve piyasa geneli yönünü döner."""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=5)) as resp:
@@ -210,20 +253,16 @@ async def fetch_market_badge():
         usdt = [x for x in data if x["symbol"].endswith("USDT")]
         changes = [float(x["priceChangePercent"]) for x in usdt]
         avg = sum(changes) / len(changes) if changes else 0
-
-        # BTC fiyatı ve hacminden basit dominans tahmini
         btc = next((x for x in usdt if x["symbol"] == "BTCUSDT"), None)
         btc_vol = float(btc["quoteVolume"]) if btc else 0
         total_vol = sum(float(x["quoteVolume"]) for x in usdt)
         btc_dom = round((btc_vol / total_vol) * 100, 1) if total_vol > 0 else 0
-
         mood = "🐂 Boğa" if avg > 1 else "🐻 Ayı" if avg < -1 else "😐 Yatay"
         return mood, btc_dom, round(avg, 2)
     except Exception:
         return None, None, None
 
 async def auto_delete(bot, chat_id, message_id, delay=30):
-    """Mesajı delay saniye sonra siler. Sadece grup mesajları için kullanılır."""
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -231,7 +270,6 @@ async def auto_delete(bot, chat_id, message_id, delay=30):
         pass
 
 async def get_delete_delay() -> int:
-    """DB'den grup silme gecikmesini okur."""
     try:
         async with db_pool.acquire() as conn:
             r = await conn.fetchrow(
@@ -242,7 +280,6 @@ async def get_delete_delay() -> int:
         return 30
 
 async def send_temp(bot, chat_id, text, delay=None, **kwargs):
-    """Grupta geçici mesaj gönderir, delay sn sonra siler. DM'de silmez."""
     msg = await bot.send_message(chat_id=chat_id, text=text, **kwargs)
     try:
         chat = await bot.get_chat(chat_id)
@@ -253,7 +290,7 @@ async def send_temp(bot, chat_id, text, delay=None, **kwargs):
         pass
     return msg
 
-# ================= MUM GRAFIGI (onbellekli) =================
+# ================= MUM GRAFİĞİ =================
 
 async def generate_candlestick_chart(symbol: str):
     if symbol in chart_cache:
@@ -310,7 +347,7 @@ async def generate_candlestick_chart(symbol: str):
         log.error(f"Grafik hatasi ({symbol}): {e}")
         return None
 
-# ================= ANALIZ (paralel istekler) =================
+# ================= ANALİZ =================
 
 async def fetch_klines(session, symbol, interval, limit=2):
     try:
@@ -352,10 +389,8 @@ def calc_rsi(data, period=14):
         return 0.0
 
 def calc_stoch_rsi(data, rsi_period=14, stoch_period=14):
-    """Stochastic RSI hesaplar. 0-100 arası döner."""
     try:
         closes = [float(x[4]) for x in data]
-        # Önce RSI serisi oluştur
         rsi_vals = []
         gains, losses = [], []
         for i in range(1, len(closes)):
@@ -381,7 +416,6 @@ def calc_stoch_rsi(data, rsi_period=14, stoch_period=14):
         return 50.0
 
 def calc_ema(data, period):
-    """EMA hesaplar, son değeri döner."""
     try:
         closes = [float(x[4]) for x in data]
         if len(closes) < period:
@@ -395,20 +429,12 @@ def calc_ema(data, period):
         return 0
 
 def calc_macd(data, fast=12, slow=26, signal=9):
-    """MACD ve sinyal farkını döner. Pozitif = bullish."""
     try:
         closes = [float(x[4]) for x in data]
         if len(closes) < slow + signal:
             return 0.0, 0.0
         k_fast = 2 / (fast + 1)
         k_slow = 2 / (slow + 1)
-        ema_fast = sum(closes[:fast]) / fast
-        ema_slow = sum(closes[:slow]) / slow
-        for c in closes[fast:]:
-            ema_fast = c * k_fast + ema_fast * (1 - k_fast)
-        for c in closes[slow:]:
-            ema_slow = c * k_slow + ema_slow * (1 - k_slow)
-        # MACD serisi için her noktada hesapla
         macd_vals = []
         ef = sum(closes[:fast]) / fast
         es = sum(closes[:slow]) / slow
@@ -429,7 +455,6 @@ def calc_macd(data, fast=12, slow=26, signal=9):
         return 0.0, 0.0
 
 def calc_bollinger(data, period=20, std_mult=2.0):
-    """Bollinger Band pozisyonu: 0=alt bant, 50=orta, 100=üst bant üstü."""
     try:
         closes = [float(x[4]) for x in data]
         if len(closes) < period:
@@ -448,7 +473,6 @@ def calc_bollinger(data, period=20, std_mult=2.0):
         return 50.0
 
 def calc_obv_trend(data, lookback=10):
-    """OBV trendini hesaplar. +1 yükselen, -1 düşen, 0 nötr."""
     try:
         closes  = [float(x[4]) for x in data]
         volumes = [float(x[5]) for x in data]
@@ -473,7 +497,6 @@ def calc_obv_trend(data, lookback=10):
         return 0
 
 def calc_rsi_divergence(data, period=14, lookback=20):
-    """Basit RSI diverjans tespiti. 'bullish'/'bearish'/None döner."""
     try:
         closes = [float(x[4]) for x in data[-lookback:]]
         gains, losses = [], []
@@ -494,17 +517,15 @@ def calc_rsi_divergence(data, period=14, lookback=20):
         if len(rsi_series) < 4:
             return None
         mid = len(closes) // 2
-        price_up   = closes[-1] > closes[mid]
-        rsi_up     = rsi_series[-1] > rsi_series[len(rsi_series)//2]
+        price_up = closes[-1] > closes[mid]
+        rsi_up   = rsi_series[-1] > rsi_series[len(rsi_series)//2]
         if price_up and not rsi_up and rsi_series[-1] > 60:
-            return "bearish"   # fiyat yükseliyor ama RSI düşüyor
+            return "bearish"
         if not price_up and rsi_up and rsi_series[-1] < 40:
-            return "bullish"   # fiyat düşüyor ama RSI yükseliyor
+            return "bullish"
         return None
     except:
         return None
-
-
 
 def _score_label(score):
     if score >= 75: return "🚀 Güçlü Al",  "🟢🟢🟢🟢🟢"
@@ -517,43 +538,27 @@ def _clamp(val, lo=0.0, hi=100.0):
     return max(lo, min(hi, val))
 
 def _rsi_score(rsi):
-    """RSI'yi 0-100 puana çevirir. 50 nötr, <30 güçlü al, >70 güçlü sat."""
-    if rsi <= 0:
-        return 50.0
-    if rsi <= 30:
-        # 0→100, 30→72
-        return _clamp(100 - rsi * 0.93)
-    elif rsi <= 50:
-        # 30→72, 50→50
-        return _clamp(72 - (rsi - 30) * 1.1)
-    elif rsi <= 70:
-        # 50→50, 70→28
-        return _clamp(50 - (rsi - 50) * 1.1)
-    else:
-        # 70→28, 100→0
-        return _clamp(28 - (rsi - 70) * 0.93)
+    if rsi <= 0:   return 50.0
+    if rsi <= 30:  return _clamp(100 - rsi * 0.93)
+    elif rsi <= 50: return _clamp(72 - (rsi - 30) * 1.1)
+    elif rsi <= 70: return _clamp(50 - (rsi - 50) * 1.1)
+    else:           return _clamp(28 - (rsi - 70) * 0.93)
 
 def _ch_score(ch, scale=5.0):
-    """Değişim yüzdesini 0-100 puana çevirir. 0%→50, +scale%→75, -scale%→25."""
     raw = 50 + (ch / scale) * 25
     return _clamp(raw)
 
 def _vol_bonus(vol24, ch, pos_bonus=4.0, neg_bonus=-4.0):
-    """Hacim yönü uyumuna göre küçük sürekli katkı."""
     if vol24 <= 0:
         return 0.0
     import math
-    # log scale: 1M→0, 10M→1, 100M→2, 1B→3
-    vol_factor = max(0, math.log10(vol24 / 1_000_000)) / 3.0  # 0→1
+    vol_factor = max(0, math.log10(vol24 / 1_000_000)) / 3.0
     vol_factor = min(vol_factor, 1.0)
-    if ch > 0:
-        return pos_bonus * vol_factor
-    elif ch < 0:
-        return neg_bonus * vol_factor
+    if ch > 0:   return pos_bonus * vol_factor
+    elif ch < 0: return neg_bonus * vol_factor
     return 0.0
 
 def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
-    """SAATLİK SKOR — RSI, StochRSI, EMA, MACD, OBV, momentum."""
     rsi14     = calc_rsi(k1h_series, 14)
     rsi7      = calc_rsi(k1h_series, 7)
     stoch_rsi = calc_stoch_rsi(k1h_series)
@@ -568,40 +573,25 @@ def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
     ch1h  = calc_change(k1h_series[-2:]) if k1h_series and len(k1h_series) >= 2 else 0
     vol24 = float(ticker.get("quoteVolume", 0))
 
-    # RSI bileşenleri
-    s_rsi14   = _rsi_score(rsi14)                           # 0.20
-    s_rsi7    = _rsi_score(rsi7)                            # 0.12
-    rsi_mom   = _clamp(50 + (rsi7 - rsi14) * 1.5)          # 0.08
-    s_stoch   = _clamp(100 - stoch_rsi) if stoch_rsi > 50 else _clamp(50 + stoch_rsi)  # 0.10
-
-    # Fiyat değişim bileşenleri
-    s_5m  = _ch_score(ch5m,  scale=3.0)                    # 0.12
-    s_15m = _ch_score(ch15m, scale=4.0)                    # 0.08
-    s_1h  = _ch_score(ch1h,  scale=5.0)                    # 0.08
-
-    # EMA trend: EMA9 > EMA21 bullish
-    ema_score = 65.0 if ema9 > ema21 else 35.0             # 0.10
-
-    # MACD histogram yönü
+    s_rsi14  = _rsi_score(rsi14)
+    s_rsi7   = _rsi_score(rsi7)
+    rsi_mom  = _clamp(50 + (rsi7 - rsi14) * 1.5)
+    s_stoch  = _clamp(100 - stoch_rsi) if stoch_rsi > 50 else _clamp(50 + stoch_rsi)
+    s_5m     = _ch_score(ch5m,  scale=3.0)
+    s_15m    = _ch_score(ch15m, scale=4.0)
+    s_1h     = _ch_score(ch1h,  scale=5.0)
+    ema_score = 65.0 if ema9 > ema21 else 35.0
     if macd_hist > 0:
         macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 20)
     else:
         macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 20)
-    macd_score = _clamp(macd_score)                        # 0.08
-
-    # OBV trendi
-    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)  # 0.04
+    macd_score = _clamp(macd_score)
+    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)
 
     score = (
-        s_rsi14   * 0.20 +
-        s_rsi7    * 0.12 +
-        rsi_mom   * 0.08 +
-        s_stoch   * 0.10 +
-        s_5m      * 0.12 +
-        s_15m     * 0.08 +
-        s_1h      * 0.08 +
-        ema_score * 0.10 +
-        macd_score* 0.08 +
+        s_rsi14   * 0.20 + s_rsi7    * 0.12 + rsi_mom   * 0.08 +
+        s_stoch   * 0.10 + s_5m      * 0.12 + s_15m     * 0.08 +
+        s_1h      * 0.08 + ema_score * 0.10 + macd_score* 0.08 +
         obv_score * 0.04
     )
     score += _vol_bonus(vol24, ch5m)
@@ -610,7 +600,6 @@ def calc_score_hourly(ticker, k1h_series, k15m, k5m, rsi_1h):
     return round(score), label, bar
 
 def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
-    """GÜNLÜK SKOR — 4h RSI, EMA, Bollinger, MACD, OBV."""
     rsi14_4h  = calc_rsi(k4h_series, 14)
     rsi14_1h  = calc_rsi(k1h_series, 14)
     stoch_4h  = calc_stoch_rsi(k4h_series)
@@ -628,40 +617,27 @@ def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
     low   = float(ticker.get("lowPrice",  1)) or 1
     volat = ((high - low) / low) * 100
 
-    s_rsi_4h  = _rsi_score(rsi14_4h)                       # 0.20
-    s_rsi_1h  = _rsi_score(rsi14_1h)                       # 0.10
-    s_stoch   = _clamp(100 - stoch_4h) if stoch_4h > 50 else _clamp(50 + stoch_4h)  # 0.08
-
-    s_4h      = _ch_score(ch4h,  scale=5.0)                 # 0.15
-    s_24h     = _ch_score(ch24h, scale=8.0)                 # 0.12
-
-    ema_score = 65.0 if ema21_4h > ema55_4h else 35.0      # 0.12
-
-    # Bollinger: fiyat alt bantta → alım fırsatı, üst bantta → satış baskısı
-    boll_score = _clamp(100 - boll_pos)                    # 0.08
-    # ama ortada (40-60) nötr olmalı:
+    s_rsi_4h  = _rsi_score(rsi14_4h)
+    s_rsi_1h  = _rsi_score(rsi14_1h)
+    s_stoch   = _clamp(100 - stoch_4h) if stoch_4h > 50 else _clamp(50 + stoch_4h)
+    s_4h      = _ch_score(ch4h,  scale=5.0)
+    s_24h     = _ch_score(ch24h, scale=8.0)
+    ema_score = 65.0 if ema21_4h > ema55_4h else 35.0
+    boll_score = _clamp(100 - boll_pos)
     if 35 < boll_pos < 65:
         boll_score = 50.0
-
     if macd_hist > 0:
         macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 15)
     else:
         macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 15)
-    macd_score = _clamp(macd_score)                        # 0.08
-
-    obv_score  = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)  # 0.05
-    vol_dir    = _clamp(50 + (ch24 / max(volat, 0.5)) * 10)  # 0.02
+    macd_score = _clamp(macd_score)
+    obv_score  = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)
+    vol_dir    = _clamp(50 + (ch24 / max(volat, 0.5)) * 10)
 
     score = (
-        s_rsi_4h  * 0.20 +
-        s_rsi_1h  * 0.10 +
-        s_stoch   * 0.08 +
-        s_4h      * 0.15 +
-        s_24h     * 0.12 +
-        ema_score * 0.12 +
-        boll_score* 0.08 +
-        macd_score* 0.08 +
-        obv_score * 0.05 +
+        s_rsi_4h  * 0.20 + s_rsi_1h  * 0.10 + s_stoch   * 0.08 +
+        s_4h      * 0.15 + s_24h     * 0.12 + ema_score * 0.12 +
+        boll_score* 0.08 + macd_score* 0.08 + obv_score * 0.05 +
         vol_dir   * 0.02
     )
     score += _vol_bonus(vol24, ch24, pos_bonus=5.0, neg_bonus=-5.0)
@@ -670,7 +646,6 @@ def calc_score_daily(ticker, k4h_series, k1h_series, k1d_series):
     return round(score), label, bar
 
 def calc_score_weekly(ticker, k1d_series, k1w_series):
-    """HAFTALIK SKOR — günlük/haftalık RSI, EMA200, MACD, OBV."""
     rsi14_1d  = calc_rsi(k1d_series, 14)
     rsi14_1w  = calc_rsi(k1w_series, 14)
     stoch_1d  = calc_stoch_rsi(k1d_series)
@@ -680,41 +655,30 @@ def calc_score_weekly(ticker, k1d_series, k1w_series):
     boll_pos  = calc_bollinger(k1d_series, period=20)
     obv_trend = calc_obv_trend(k1d_series, lookback=20)
 
-    ch7d   = calc_change(k1d_series[-7:]) if k1d_series and len(k1d_series) >= 7  else 0
-    ch30d  = calc_change(k1d_series)      if k1d_series and len(k1d_series) >= 5  else 0
-    ch4w   = calc_change(k1w_series[-4:]) if k1w_series and len(k1w_series) >= 4  else 0
-    vol24  = float(ticker.get("quoteVolume", 0))
-    ch24   = float(ticker.get("priceChangePercent", 0))
+    ch7d  = calc_change(k1d_series[-7:]) if k1d_series and len(k1d_series) >= 7  else 0
+    ch30d = calc_change(k1d_series)      if k1d_series and len(k1d_series) >= 5  else 0
+    ch4w  = calc_change(k1w_series[-4:]) if k1w_series and len(k1w_series) >= 4  else 0
+    vol24 = float(ticker.get("quoteVolume", 0))
+    ch24  = float(ticker.get("priceChangePercent", 0))
 
-    s_rsi_1d  = _rsi_score(rsi14_1d)                       # 0.18
-    s_rsi_1w  = _rsi_score(rsi14_1w)                       # 0.18
-    s_stoch   = _clamp(100 - stoch_1d) if stoch_1d > 50 else _clamp(50 + stoch_1d)  # 0.06
-
-    s_7d      = _ch_score(ch7d,  scale=12.0)                # 0.15
-    s_4w      = _ch_score(ch4w,  scale=20.0)                 # 0.10
-    s_30d     = _ch_score(ch30d, scale=30.0)                  # 0.08
-
-    # EMA50 > EMA200 → güçlü uzun vade trend (golden cross)
-    ema_score = 70.0 if ema50_1d > ema200_1d else 30.0     # 0.12
-
+    s_rsi_1d  = _rsi_score(rsi14_1d)
+    s_rsi_1w  = _rsi_score(rsi14_1w)
+    s_stoch   = _clamp(100 - stoch_1d) if stoch_1d > 50 else _clamp(50 + stoch_1d)
+    s_7d      = _ch_score(ch7d,  scale=12.0)
+    s_4w      = _ch_score(ch4w,  scale=20.0)
+    s_30d     = _ch_score(ch30d, scale=30.0)
+    ema_score = 70.0 if ema50_1d > ema200_1d else 30.0
     if macd_hist > 0:
         macd_score = _clamp(55 + abs(macd_hist) / (abs(macd_val) + 1e-10) * 12)
     else:
         macd_score = _clamp(45 - abs(macd_hist) / (abs(macd_val) + 1e-10) * 12)
-    macd_score = _clamp(macd_score)                        # 0.08
-
-    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)   # 0.05
+    macd_score = _clamp(macd_score)
+    obv_score = 65.0 if obv_trend == 1 else (35.0 if obv_trend == -1 else 50.0)
 
     score = (
-        s_rsi_1d  * 0.18 +
-        s_rsi_1w  * 0.18 +
-        s_stoch   * 0.06 +
-        s_7d      * 0.15 +
-        s_4w      * 0.10 +
-        s_30d     * 0.08 +
-        ema_score * 0.12 +
-        macd_score* 0.08 +
-        obv_score * 0.05
+        s_rsi_1d  * 0.18 + s_rsi_1w  * 0.18 + s_stoch   * 0.06 +
+        s_7d      * 0.15 + s_4w      * 0.10 + s_30d     * 0.08 +
+        ema_score * 0.12 + macd_score* 0.08 + obv_score * 0.05
     )
     score += _vol_bonus(vol24, ch24, pos_bonus=3.0, neg_bonus=-3.0)
     score = _clamp(score)
@@ -732,17 +696,17 @@ async def fetch_all_analysis(symbol):
         (k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24,
          k1w, k4h_100, k1d_100) = await asyncio.gather(
-            fetch_klines(session, symbol, "4h",  limit=2),     # anlık 4sa
-            fetch_klines(session, symbol, "1h",  limit=2),     # anlık 1sa
-            fetch_klines(session, symbol, "5m",  limit=2),     # anlık 5dk
-            fetch_klines(session, symbol, "1h",  limit=100),   # 1h RSI + indikatör
-            fetch_klines(session, symbol, "1d",  limit=30),    # günlük 30 gün
-            fetch_klines(session, symbol, "15m", limit=20),    # 15dk seri
-            fetch_klines(session, symbol, "4h",  limit=50),    # 4sa seri (skor)
-            fetch_klines(session, symbol, "1h",  limit=24),    # 24sa seri (skor)
-            fetch_klines(session, symbol, "1w",  limit=12),    # haftalık 12 hafta
-            fetch_klines(session, symbol, "4h",  limit=100),   # 4h RSI + indikatör
-            fetch_klines(session, symbol, "1d",  limit=100),   # 1d RSI + indikatör
+            fetch_klines(session, symbol, "4h",  limit=2),
+            fetch_klines(session, symbol, "1h",  limit=2),
+            fetch_klines(session, symbol, "5m",  limit=2),
+            fetch_klines(session, symbol, "1h",  limit=100),
+            fetch_klines(session, symbol, "1d",  limit=30),
+            fetch_klines(session, symbol, "15m", limit=20),
+            fetch_klines(session, symbol, "4h",  limit=50),
+            fetch_klines(session, symbol, "1h",  limit=24),
+            fetch_klines(session, symbol, "1w",  limit=12),
+            fetch_klines(session, symbol, "4h",  limit=100),
+            fetch_klines(session, symbol, "1d",  limit=100),
         )
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
@@ -761,17 +725,24 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         ch4h   = calc_change(k4h)
         ch1h   = calc_change(k1h_2)
         ch5m   = calc_change(k5m)
-        # Alarm'dan gelen gerçek 5dk değeri varsa onu kullan (API değeriyle tutarsızlığı önler)
         if ch5_override is not None:
             ch5m = ch5_override
 
+        # ── Rank (hacim bazlı) ──
+        rank, total = await get_coin_rank(symbol)
+        re = rank_emoji(rank)
+        if rank:
+            rank_line = f"{re} *Hacim Sırası:* `#{rank}` _/ {total} coin_\n"
+        else:
+            rank_line = ""
+
         # ── RSI çok zaman dilimli ──
-        rsi7_1h    = calc_rsi(k1h_100, 7)
-        rsi14_1h   = calc_rsi(k1h_100, 14)
-        rsi14_4h   = calc_rsi(k4h_100, 14)
-        rsi14_1d   = calc_rsi(k1d_100, 14)
-        stoch_1h   = calc_stoch_rsi(k1h_100)
-        stoch_4h   = calc_stoch_rsi(k4h_100)
+        rsi7_1h   = calc_rsi(k1h_100, 7)
+        rsi14_1h  = calc_rsi(k1h_100, 14)
+        rsi14_4h  = calc_rsi(k4h_100, 14)
+        rsi14_1d  = calc_rsi(k1d_100, 14)
+        stoch_1h  = calc_stoch_rsi(k1h_100)
+        stoch_4h  = calc_stoch_rsi(k4h_100)
 
         # ── Teknik indikatörler ──
         ema9_1h    = calc_ema(k1h_100, 9)
@@ -784,13 +755,8 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         obv_1h     = calc_obv_trend(k1h_100, lookback=12)
         diverjans  = calc_rsi_divergence(k1h_100)
 
-        # Destek / Direnç
         destek, direnc = calc_support_resistance(k4h_42)
-
-        # Hacim Anomali
         vol_ratio = calc_volume_anomaly(k1h_24)
-
-        # Piyasa Rozeti
         mood, btc_dom, mkt_avg = await fetch_market_badge()
 
         def get_ui(val):
@@ -812,13 +778,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             elif r <= 45: return "🟡 Düşüş"
             else:         return "🟢 Normal"
 
-        def stoch_label(s):
-            if s >= 80:   return "🔴 Aşırı"
-            elif s >= 60: return "🟡 Yüksek"
-            elif s <= 20: return "🔵 Aşırı"
-            elif s <= 40: return "🟡 Düşük"
-            else:         return "🟢 Nötr"
-
         sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14_1h)
         sd, ld, bd = calc_score_daily(ticker, k4h_42, k1h_24, k1d)
         sw, lw, bw = calc_score_weekly(ticker, k1d, k1w)
@@ -826,7 +785,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         vol_usdt = float(ticker.get("quoteVolume", 0))
         vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
 
-        # Hacim Anomali — son 1 saati önceki 23 saatin ortalamasıyla kıyaslar
         if vol_ratio is not None:
             if vol_ratio >= 3.0:
                 vol_anom = f"⚡ *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Çok Yüksek!\n"
@@ -839,25 +797,20 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         else:
             vol_anom = f"📦 *Hacim:* `{vol_str} USDT`\n"
 
-        # Diverjans uyarısı (sadece varsa göster)
         div_line = ""
         if diverjans == "bearish":
             div_line = "⚠️ *Bearish Diverjans* — Fiyat yükseliyor, RSI düşüyor!\n"
         elif diverjans == "bullish":
             div_line = "💡 *Bullish Diverjans* — Fiyat düşüyor, RSI yükseliyor!\n"
 
-        # Başlık — alarm mesajlarında renkli, analizde nötr
-        is_alarm = "UYARISI" in extra_title or "ALARM" in extra_title or "YUKSELIS" in extra_title or "DUSUS" in extra_title
-        if is_alarm:
-            header = f"*{extra_title}*\n"
-        else:
-            header = f"*{extra_title}*\n"
+        header = f"*{extra_title}*\n"
 
         text = header + (
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💎 `{symbol}` 💎\n"
             f"\n"
             f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
+            f"{rank_line}"
             f"{vol_anom}"
             f"\n*Performans:*\n"
             f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
@@ -908,7 +861,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
     except Exception as e:
         err = str(e)
-        # Forbidden = kullanıcı bota DM açmamış → çağırana fırlat
         if any(x in err for x in ("Forbidden", "bot was blocked", "chat not found", "user is deactivated")):
             raise
         log.error(f"Gonderim hatasi ({symbol}): {e}")
@@ -928,7 +880,7 @@ async def is_admin(update: Update, context) -> bool:
         return False
 
 SET_THRESHOLD_PRESETS = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
-DELETE_DELAY_PRESETS  = [30, 60, 300, 600, 1800, 3600]   # saniye
+DELETE_DELAY_PRESETS  = [30, 60, 300, 600, 1800, 3600]
 
 async def build_set_panel(context):
     async with db_pool.acquire() as conn:
@@ -940,7 +892,6 @@ async def build_set_panel(context):
     alarm_active = r["alarm_active"]
     del_delay    = r["delete_delay"] or 30
 
-    # Eşik butonları
     threshold_buttons = []
     row = []
     for val in SET_THRESHOLD_PRESETS:
@@ -951,7 +902,6 @@ async def build_set_panel(context):
     if row: threshold_buttons.append(row)
     threshold_buttons.append([InlineKeyboardButton("✏️ Manuel Eşik", callback_data="set_threshold_custom")])
 
-    # Silme süresi butonları
     delay_rows = []
     delay_row  = []
     label_map  = {30: "30sn", 60: "1dk", 300: "5dk", 600: "10dk", 1800: "30dk", 3600: "1sa"}
@@ -1097,7 +1047,6 @@ async def reply_symbol(update: Update, context):
     chat = update.effective_chat
     is_group = chat.type in ("group", "supergroup")
 
-    # Kullanıcı mesajını sil (grupta)
     if is_group:
         try:
             await update.message.delete()
@@ -1175,7 +1124,7 @@ async def alarm_ekle_v2(update: Update, context):
     args     = context.args or []
 
     if len(args) < 2:
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "📌 *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
             "• `%`  : `/alarm_ekle BTCUSDT 3.5`\n"
             "• RSI  : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
@@ -1187,10 +1136,9 @@ async def alarm_ekle_v2(update: Update, context):
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
-    # RSI alarmı
     if args[1].lower() == "rsi":
         if len(args) < 3:
-            await send_temp(context.bot, update.effective_chat.id, 
+            await send_temp(context.bot, update.effective_chat.id,
                 "Kullanim: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
         try:    rsi_lvl = float(args[2])
         except:
@@ -1204,16 +1152,15 @@ async def alarm_ekle_v2(update: Update, context):
             """, user_id, username, symbol, rsi_lvl)
         direction_str = "asagi" if len(args) < 4 or args[3].lower() in ("asagi","aşağı") else "yukari"
         yon_str = "altina dusunce" if direction_str == "asagi" else "ustune cikinca"
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!",
             parse_mode="Markdown"
         )
         return
 
-    # Bant alarmı
     if args[1].lower() == "bant":
         if len(args) < 4:
-            await send_temp(context.bot, update.effective_chat.id, 
+            await send_temp(context.bot, update.effective_chat.id,
                 "Kullanim: `/alarm_ekle BTCUSDT bant 60000 70000`", parse_mode="Markdown"); return
         try:
             band_low  = float(args[2].replace(",","."))
@@ -1227,14 +1174,13 @@ async def alarm_ekle_v2(update: Update, context):
                 ON CONFLICT(user_id,symbol) DO UPDATE
                 SET alarm_type='band', band_low=$4, band_high=$5, threshold=0, active=1
             """, user_id, username, symbol, band_low, band_high)
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "✅ *" + symbol + "* `" + format_price(band_low) + " - " + format_price(band_high) +
             " USDT` bandından cikinca alarm verilecek!",
             parse_mode="Markdown"
         )
         return
 
-    # % alarmı
     try:    threshold = float(args[1])
     except:
         await send_temp(context.bot, update.effective_chat.id, "Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
@@ -1245,7 +1191,7 @@ async def alarm_ekle_v2(update: Update, context):
             ON CONFLICT(user_id,symbol) DO UPDATE
             SET threshold=$4, alarm_type='percent', active=1
         """, user_id, username, symbol, threshold)
-    await send_temp(context.bot, update.effective_chat.id, 
+    await send_temp(context.bot, update.effective_chat.id,
         "✅ *" + symbol + "* icin `%" + str(threshold) + "` alarmi eklendi!",
         parse_mode="Markdown"
     )
@@ -1300,7 +1246,6 @@ async def my_alarm(update: Update, context):
 async def favori_command(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
-    msg     = update.callback_query.message if update.callback_query else update.message
 
     if not args or args[0].lower() == "liste":
         async with db_pool.acquire() as conn:
@@ -1396,7 +1341,7 @@ async def alarm_gecmis(update: Update, context):
             ORDER BY triggered_at DESC LIMIT 15
         """, user_id)
     if not rows:
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "📋 *Alarm Gecmisi*\n━━━━━━━━━━━━━━━━━━\nHenuz tetiklenen alarm yok.",
             parse_mode="Markdown"
         )
@@ -1421,7 +1366,6 @@ async def hedef_command(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
 
-    # Liste göster
     if not args or args[0].lower() == "liste":
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -1443,7 +1387,6 @@ async def hedef_command(update: Update, context):
         await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
         return
 
-    # Sil
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
@@ -1456,7 +1399,6 @@ async def hedef_command(update: Update, context):
             f"🗑 `{symbol}` hedefleri silindi.", parse_mode="Markdown")
         return
 
-    # Ekle: /hedef BTCUSDT 70000
     if len(args) < 2:
         await send_temp(context.bot, update.effective_chat.id,
             "Kullanim: `/hedef BTCUSDT 70000`", parse_mode="Markdown"); return
@@ -1468,7 +1410,6 @@ async def hedef_command(update: Update, context):
         await send_temp(context.bot, update.effective_chat.id,
             "Hedef fiyat sayi olmali. Ornek: `70000`", parse_mode="Markdown"); return
 
-    # Mevcut fiyatı çek, yön belirle
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{BINANCE_24H}?symbol={symbol}",
@@ -1495,7 +1436,6 @@ async def hedef_command(update: Update, context):
 
 
 async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
-    """Fiyat hedeflerini kontrol eder, tetiklenenleri bildirir."""
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -1509,8 +1449,8 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
             if not prices:
                 continue
             cur = prices[-1][1]
-            hit = (row["direction"] == "up"   and cur >= row["target"]) or \
-                  (row["direction"] == "down"  and cur <= row["target"])
+            hit = (row["direction"] == "up"  and cur >= row["target"]) or \
+                  (row["direction"] == "down" and cur <= row["target"])
             if not hit:
                 continue
 
@@ -1540,7 +1480,6 @@ async def kar_command(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
 
-    # Kayıtlı pozisyonları göster
     if not args or args[0].lower() == "liste":
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -1585,7 +1524,6 @@ async def kar_command(update: Update, context):
         await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
         return
 
-    # Sil
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
@@ -1598,7 +1536,6 @@ async def kar_command(update: Update, context):
             f"🗑 `{symbol}` pozisyonu silindi.", parse_mode="Markdown")
         return
 
-    # Hızlı hesap: /kar BTCUSDT 0.5 60000 (kaydetmeden)
     if len(args) == 3:
         symbol = args[0].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
@@ -1656,7 +1593,7 @@ async def kar_command(update: Update, context):
         parse_mode="Markdown")
 
 
-# ================= ÇOKLU ZAMAN DİLİMİ =================
+# ================= GELİŞMİŞ MTF ANALİZ =================
 
 async def mtf_command(update: Update, context):
     msg  = update.callback_query.message if update.callback_query else update.message
@@ -1666,120 +1603,221 @@ async def mtf_command(update: Update, context):
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
-    wait = await send_temp(context.bot, update.effective_chat.id, "⏳ Analiz yapiliyor...", parse_mode="Markdown")
+    wait = await send_temp(context.bot, update.effective_chat.id, "⏳ Derin analiz yapiliyor...", parse_mode="Markdown")
     try:
         async with aiohttp.ClientSession() as session:
-            k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
-                fetch_klines(session, symbol, "15m", limit=100),
-                fetch_klines(session, symbol, "1h",  limit=100),
-                fetch_klines(session, symbol, "4h",  limit=100),
-                fetch_klines(session, symbol, "1d",  limit=100),
-                fetch_klines(session, symbol, "1w",  limit=52),
+            # Ticker + tüm zaman dilimleri paralel çek
+            ticker_resp, k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
+                session.get(f"{BINANCE_24H}?symbol={symbol}", timeout=aiohttp.ClientTimeout(total=5)),
+                fetch_klines(session, symbol, "15m", limit=200),
+                fetch_klines(session, symbol, "1h",  limit=200),
+                fetch_klines(session, symbol, "4h",  limit=200),
+                fetch_klines(session, symbol, "1d",  limit=200),
+                fetch_klines(session, symbol, "1w",  limit=100),
             )
+            ticker = await ticker_resp.json()
 
-        def rsi_emoji(r):
-            if r >= 70: return "🔴"
-            elif r >= 55: return "🟡"
-            elif r <= 30: return "🔵"
-            elif r <= 45: return "🟡"
-            else: return "🟢"
+        price   = float(ticker.get("lastPrice", 0))
+        ch24    = float(ticker.get("priceChangePercent", 0))
+        high24  = float(ticker.get("highPrice", 0))
+        low24   = float(ticker.get("lowPrice", 0))
+        vol24   = float(ticker.get("quoteVolume", 0))
+        vol_str = f"{vol24/1_000_000:.1f}M" if vol24 >= 1_000_000 else f"{vol24/1_000:.0f}K"
 
-        def macd_str(data):
+        # Rank
+        rank, total = await get_coin_rank(symbol)
+        re = rank_emoji(rank)
+        rank_str = f"{re} #{rank}/{total}" if rank else "—"
+
+        # ── Yardımcı formatlayıcılar ──
+        def rsi_bar(r):
+            if r >= 70:   return f"`{r:.1f}` 🔴"
+            elif r >= 55: return f"`{r:.1f}` 🟡"
+            elif r <= 30: return f"`{r:.1f}` 🔵"
+            elif r <= 45: return f"`{r:.1f}` 🟡"
+            else:         return f"`{r:.1f}` 🟢"
+
+        def macd_icon(data):
             _, hist = calc_macd(data)
-            if hist > 0:   return "🟢+"
-            elif hist < 0: return "🔴-"
-            else:          return "⚪"
+            return ("🟢 +" if hist > 0 else "🔴 -") + f"`{abs(hist):.6f}`"
 
-        def boll_str(data):
+        def boll_label(data):
             pos = calc_bollinger(data, period=20)
             pos = max(0, min(100, pos))
-            if pos >= 80:   return f"🔴üst({pos:.0f}%)"
-            elif pos <= 20: return f"🔵alt({pos:.0f}%)"
-            else:           return f"🟢ort({pos:.0f}%)"
+            if pos >= 80:   return f"🔴 Üst Bant `{pos:.0f}%`"
+            elif pos <= 20: return f"🔵 Alt Bant `{pos:.0f}%`"
+            else:           return f"🟢 Orta `{pos:.0f}%`"
 
-        def ema_str(data):
-            e9  = calc_ema(data, 9)
-            e21 = calc_ema(data, 21)
-            return "🟢" if e9 > e21 else "🔴"
+        def ema_label(data, fast, slow):
+            ef = calc_ema(data, fast)
+            es = calc_ema(data, slow)
+            diff_pct = ((ef - es) / es * 100) if es else 0
+            icon = "🟢" if ef > es else "🔴"
+            return f"{icon} EMA{fast}/EMA{slow} `{diff_pct:+.2f}%`"
 
-        def obv_str(data):
-            o = calc_obv_trend(data, lookback=10)
-            return "🟢" if o == 1 else ("🔴" if o == -1 else "⚪")
+        def obv_label(data, lb=14):
+            o = calc_obv_trend(data, lookback=lb)
+            return "🟢 Yükseliyor" if o == 1 else ("🔴 Düşüyor" if o == -1 else "⚪ Yatay")
 
-        def tf_section(data, label):
-            if not data or len(data) < 10:
-                return f"`{label}` — veri yetersiz\n"
-            ch   = calc_change(data)
+        def stoch_label(data):
+            s = calc_stoch_rsi(data)
+            if s >= 80:   icon = "🔴"
+            elif s >= 60: icon = "🟡"
+            elif s <= 20: icon = "🔵"
+            elif s <= 40: icon = "🟡"
+            else:         icon = "🟢"
+            return f"{icon} `{s:.1f}`"
+
+        def tf_block(data, label, ema_fast, ema_slow):
+            if not data or len(data) < 20:
+                return f"*{label}* — veri yetersiz\n"
+            ch   = calc_change(data[-2:])
+            ch7  = calc_change(data[-7:])  if len(data) >= 7 else 0
             rsi  = calc_rsi(data, 14)
+            cur_p = float(data[-1][4])
             yon  = "📈" if ch > 0 else "📉"
-            re   = rsi_emoji(rsi)
-            ms   = macd_str(data)
-            bs   = boll_str(data)
-            es   = ema_str(data)
-            os_  = obv_str(data)
             return (
-                f"*{label}* {yon} `{ch:+.2f}%`\n"
-                f"  RSI `{rsi:.1f}` {re}  MACD {ms}  EMA {es}  OBV {os_}\n"
-                f"  Boll: {bs}\n"
+                f"*{label}* {yon} `{ch:+.2f}%`  _(7 mum: `{ch7:+.2f}%`)_\n"
+                f"  Fiyat: `{format_price(cur_p)} USDT`\n"
+                f"  RSI 14: {rsi_bar(rsi)}   StochRSI: {stoch_label(data)}\n"
+                f"  MACD: {macd_icon(data)}\n"
+                f"  {ema_label(data, ema_fast, ema_slow)}\n"
+                f"  Bollinger: {boll_label(data)}\n"
+                f"  OBV: {obv_label(data)}\n"
             )
 
-        # Fibonacci seviyeleri (4h mumlardan — son 50 mum)
-        def calc_fibo(data, lookback=50):
-            if not data or len(data) < lookback:
-                lookback = len(data)
-            window = data[-lookback:]
+        # ── Fibonacci (son 200 mum, 4h) ──
+        def calc_fibo_full(data, lookback=200):
+            if not data:
+                return None, None, None, None, None
+            window = data[-min(lookback, len(data)):]
             hi  = max(float(c[2]) for c in window)
             lo  = min(float(c[3]) for c in window)
             diff = hi - lo
-            levels = {
-                "0.0%":   hi,
-                "23.6%":  hi - diff * 0.236,
-                "38.2%":  hi - diff * 0.382,
-                "50.0%":  hi - diff * 0.500,
-                "61.8%":  hi - diff * 0.618,
-                "78.6%":  hi - diff * 0.786,
-                "100%":   lo,
-            }
+            levels = [
+                ("0.0%",   hi),
+                ("23.6%",  hi - diff * 0.236),
+                ("38.2%",  hi - diff * 0.382),
+                ("50.0%",  hi - diff * 0.500),
+                ("61.8%",  hi - diff * 0.618),
+                ("78.6%",  hi - diff * 0.786),
+                ("100%",   lo),
+            ]
             cur = float(data[-1][4])
-            # Fiyatın hemen altındaki ve üstündeki seviyeyi bul
-            below = {k: v for k, v in levels.items() if v <= cur}
-            above = {k: v for k, v in levels.items() if v >  cur}
-            sup = max(below.items(), key=lambda x: x[1]) if below else None
-            res = min(above.items(), key=lambda x: x[1]) if above else None
-            return sup, res, hi, lo
+            below = [(k, v) for k, v in levels if v <= cur]
+            above = [(k, v) for k, v in levels if v >  cur]
+            sup = max(below, key=lambda x: x[1]) if below else None
+            res = min(above, key=lambda x: x[1]) if above else None
+            # Fiyatın hangi Fib bölgesinde olduğu
+            pct_in_range = ((cur - lo) / diff * 100) if diff > 0 else 50
+            return sup, res, hi, lo, pct_in_range
 
-        fib_sup, fib_res, swing_hi, swing_lo = calc_fibo(k4h)
+        fib_sup, fib_res, swing_hi, swing_lo, fib_pct = calc_fibo_full(k4h, lookback=200)
 
-        text = f"📊 *{symbol} — Çoklu Zaman Dilimi*\n━━━━━━━━━━━━━━━━━━\n\n"
-        text += tf_section(k15m, "15 Dakika")
+        # Tüm Fibonacci seviyeleri listesi (görsel)
+        def fib_all_levels(hi, lo):
+            diff = hi - lo
+            cur  = float(k4h[-1][4]) if k4h else 0
+            rows_f = [
+                ("0.0%",   hi),
+                ("23.6%",  hi - diff * 0.236),
+                ("38.2%",  hi - diff * 0.382),
+                ("50.0%",  hi - diff * 0.500),
+                ("61.8%",  hi - diff * 0.618),
+                ("78.6%",  hi - diff * 0.786),
+                ("100%",   lo),
+            ]
+            lines = []
+            for k, v in rows_f:
+                marker = " ◄ _şu an_" if fib_sup and k == fib_sup[0] else (
+                         " ◄ _direnç_" if fib_res and k == fib_res[0] else "")
+                dist = ((cur - v) / v * 100) if v else 0
+                lines.append(f"  `{k:<6}` `{format_price(v)}` `{dist:+.1f}%`{marker}")
+            return "\n".join(lines)
+
+        # ── Destek/Direnç (swing bazlı 4h) ──
+        destek, direnc = calc_support_resistance(k4h)
+
+        # ── Piyasa Skoru (4 zaman dilimi özet) ──
+        sh, lh, _ = calc_score_hourly(ticker, k1h, k15m, k15m, calc_rsi(k1h, 14))
+        sd, ld, _ = calc_score_daily(ticker, k4h, k1h, k1d)
+        sw, lw, _ = calc_score_weekly(ticker, k1d, k1w)
+
+        # ── RSI Diverjans ──
+        div_1h = calc_rsi_divergence(k1h)
+        div_4h = calc_rsi_divergence(k4h)
+        div_lines = ""
+        if div_1h == "bearish": div_lines += "⚠️ 1s *Bearish Div* — RSI düşüyor fiyat çıkıyor\n"
+        if div_1h == "bullish": div_lines += "💡 1s *Bullish Div* — RSI yükseliyor fiyat düşüyor\n"
+        if div_4h == "bearish": div_lines += "⚠️ 4s *Bearish Div* — RSI düşüyor fiyat çıkıyor\n"
+        if div_4h == "bullish": div_lines += "💡 4s *Bullish Div* — RSI yükseliyor fiyat düşüyor\n"
+
+        # ── Mesajı oluştur ──
+        text  = f"📊 *{symbol} — Gelişmiş MTF Analiz*\n"
+        text += f"━━━━━━━━━━━━━━━━━━\n"
+        text += f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
+        text += f"🏅 *Hacim Sırası:* `{rank_str}`   📦 `{vol_str} USDT`\n"
+        text += f"📊 *24s:* `{ch24:+.2f}%`   H:`{format_price(high24)}`  L:`{format_price(low24)}`\n"
+        text += f"\n"
+
+        # Piyasa skoru özet
+        text += f"*🎯 Piyasa Skoru Özeti*\n"
+        text += f"  ⏱ Saatlik : `{sh}/100` — _{lh}_\n"
+        text += f"  📅 Günlük  : `{sd}/100` — _{ld}_\n"
+        text += f"  📆 Haftalık: `{sw}/100` — _{lw}_\n"
+        text += f"\n"
+
+        if div_lines:
+            text += f"*⚡ Diverjans Uyarıları*\n{div_lines}\n"
+
+        text += f"━━━━━━━━━━━━━━━━━━\n"
+        text += tf_block(k15m, "⏱ 15 Dakika",  9, 21)
         text += "\n"
-        text += tf_section(k1h,  "1 Saat")
+        text += tf_block(k1h,  "🕐 1 Saat",    9, 21)
         text += "\n"
-        text += tf_section(k4h,  "4 Saat")
+        text += tf_block(k4h,  "🕓 4 Saat",   21, 55)
         text += "\n"
-        text += tf_section(k1d,  "1 Gün")
+        text += tf_block(k1d,  "📅 1 Gün",    50, 200)
         text += "\n"
-        text += tf_section(k1w,  "1 Hafta")
-        text += "\n━━━━━━━━━━━━━━━━━━\n"
-        text += f"📐 *Fibonacci (4h — Son 50 mum)*\n"
-        text += f"  Swing High: `{format_price(swing_hi)}`  Low: `{format_price(swing_lo)}`\n"
-        if fib_sup:
-            text += f"  🔵 Destek : `{format_price(fib_sup[1])}` _(Fib {fib_sup[0]})_\n"
-        if fib_res:
-            text += f"  🔴 Direnç : `{format_price(fib_res[1])}` _(Fib {fib_res[0]})_\n"
-        text += "\n_🔵 Aşırı Satım  🟢 Normal  🔴 Aşırı Alım_"
+        text += tf_block(k1w,  "📆 1 Hafta",  10, 30)
+        text += "\n"
+
+        # Fibonacci bölümü
+        text += f"━━━━━━━━━━━━━━━━━━\n"
+        text += f"📐 *Fibonacci — 4h (Son 200 Mum)*\n"
+        text += f"  Swing High: `{format_price(swing_hi)}`   Low: `{format_price(swing_lo)}`\n"
+        text += f"  Fiyat pozisyonu: `{fib_pct:.1f}%` _(alt→üst)_\n\n"
+        if swing_hi and swing_lo:
+            text += fib_all_levels(swing_hi, swing_lo) + "\n"
+        text += "\n"
+
+        # Destek / Direnç
+        text += f"━━━━━━━━━━━━━━━━━━\n"
+        text += f"🔵 *Destek/Direnç (4h Swing)*\n"
+        if destek:
+            dist_d = ((price - destek) / destek * 100)
+            text += f"  🔵 Destek: `{format_price(destek)}` _({dist_d:+.2f}% uzakta)_\n"
+        else:
+            text += f"  🔵 Destek: —\n"
+        if direnc:
+            dist_r = ((direnc - price) / price * 100)
+            text += f"  🔴 Direnç: `{format_price(direnc)}` _({dist_r:+.2f}% uzakta)_\n"
+        else:
+            text += f"  🔴 Direnç: —\n"
+
+        text += f"\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
 
         await wait.delete()
         await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+
     except Exception as e:
-        await wait.delete()
+        try: await wait.delete()
+        except: pass
         log.error("MTF hatasi: " + str(e))
         await send_temp(context.bot, update.effective_chat.id, "⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
 
 
 # ================= WHALE ALARMI =================
-
-whale_vol_mem: dict = {}
 
 async def whale_job(context):
     now = datetime.utcnow()
@@ -1824,8 +1862,6 @@ async def whale_job(context):
 
 # ================= HAFTALIK RAPOR + ZAMANLANMIŞ =================
 
-scheduled_last_run: dict = {}
-
 async def send_weekly_report(bot, chat_id):
     try:
         async with aiohttp.ClientSession() as session:
@@ -1866,7 +1902,7 @@ async def zamanla_command(update: Update, context):
                 "SELECT task_type, symbol, hour, minute FROM scheduled_tasks WHERE chat_id=$1 AND active=1",
                 chat_id)
         if not rows:
-            await send_temp(context.bot, update.effective_chat.id, 
+            await send_temp(context.bot, update.effective_chat.id,
                 "⏰ *Zamanlanmis Gorevler*\n━━━━━━━━━━━━━━━━━━\nGorev yok.\n\n"
                 "Eklemek icin:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`",
                 parse_mode="Markdown")
@@ -1895,7 +1931,7 @@ async def zamanla_command(update: Update, context):
                 VALUES($1,$2,'analiz',$3,$4,$5,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$4,minute=$5,active=1
             """, user_id, chat_id, symbol, h, m)
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "⏰ Her gun `" + ("%02d:%02d" % (h,m)) + "` UTC'de *" + symbol + "* analizi gonderilecek!",
             parse_mode="Markdown"); return
 
@@ -1909,11 +1945,11 @@ async def zamanla_command(update: Update, context):
                 VALUES($1,$2,'rapor','',$3,$4,1)
                 ON CONFLICT(chat_id,task_type,symbol) DO UPDATE SET hour=$3,minute=$4,active=1
             """, user_id, chat_id, h, m)
-        await send_temp(context.bot, update.effective_chat.id, 
+        await send_temp(context.bot, update.effective_chat.id,
             "⏰ Her Pazartesi `" + ("%02d:%02d" % (h,m)) + "` UTC'de haftalik rapor gonderilecek!",
             parse_mode="Markdown"); return
 
-    await send_temp(context.bot, update.effective_chat.id, 
+    await send_temp(context.bot, update.effective_chat.id,
         "Kullanim:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
         "`/zamanla liste`\n`/zamanla sil`",
         parse_mode="Markdown")
@@ -2051,7 +2087,6 @@ async def status(update: Update, context):
 async def button_handler(update: Update, context):
     q = update.callback_query
 
-    # set_ callbacklerini ayri handler'a yonlendir
     if q.data.startswith("set_"):
         await set_callback(update, context)
         return
@@ -2101,10 +2136,19 @@ async def button_handler(update: Update, context):
             await q.message.reply_text("🗑 Tum favorileriniz silindi.")
     elif q.data == "mtf_help":
         await q.message.reply_text(
-            "📊 *Coklu Zaman Dilimi Analizi*\n━━━━━━━━━━━━━━━━━━\n"
+            "📊 *Gelişmiş MTF Analiz*\n━━━━━━━━━━━━━━━━━━\n"
             "Kullanim: `/mtf BTCUSDT`\n\n"
             "15dk · 1sa · 4sa · 1gn · 1hf\n"
-            "RSI ve trend yonunu gosterir.",
+            "Her zaman diliminde:\n"
+            "• Fiyat & değişim\n"
+            "• RSI 14 + StochRSI\n"
+            "• MACD histogram\n"
+            "• EMA çaprazlaması\n"
+            "• Bollinger Bandı\n"
+            "• OBV trendi\n"
+            "• Fibonacci (200 mum)\n"
+            "• Destek/Direnç\n"
+            "• Diverjans uyarıları",
             parse_mode="Markdown"
         )
     elif q.data == "hedef_help":
@@ -2128,9 +2172,7 @@ async def button_handler(update: Update, context):
     elif q.data == "alarm_history":
         await alarm_gecmis(update, context)
     elif q.data.startswith("kar_kaydet_"):
-        # /kar BTCUSDT 0.5 60000 → kaydet butonu
         parts = q.data.split("_")
-        # format: kar_kaydet_SYMBOL_AMOUNT_BUYPRICE
         try:
             symbol    = parts[2]
             amount    = float(parts[3])
@@ -2148,7 +2190,6 @@ async def button_handler(update: Update, context):
             log.warning(f"kar_kaydet callback: {e}")
             await q.answer("Kayıt sırasında hata oluştu.", show_alert=True)
     elif q.data == "set_open":
-        # Grup ise admin kontrolü yap
         if q.message.chat.type != "private":
             try:
                 member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
@@ -2161,7 +2202,6 @@ async def button_handler(update: Update, context):
             except Exception as e:
                 log.warning(f"set_open admin kontrol: {e}")
                 return
-        # Paneli doğrudan gönder — FakeUpdate yok
         text, keyboard = await build_set_panel(context)
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -2176,17 +2216,15 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             GROUP_CHAT_ID
         )
         user_rows = await conn.fetch(
-            "SELECT user_id, symbol, threshold FROM user_alarms WHERE active=1"
+            "SELECT user_id, symbol, threshold, alarm_type, rsi_level, band_low, band_high, paused_until, trigger_count FROM user_alarms WHERE active=1"
         )
 
-    # ── Grup alarmları ──
     if group_row and group_row["alarm_active"]:
         threshold = group_row["threshold"]
         mode      = group_row["mode"]
         for symbol, prices in list(price_memory.items()):
             if len(prices) < 2:
                 continue
-            # prices[0] en az 4 dakika önce olmalı (gerçek 5dk değişimi ölç)
             if now - prices[0][0] < timedelta(minutes=4):
                 continue
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
@@ -2203,7 +2241,6 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             yon = "⚡🟢 5dk YUKSELIS UYARISI 🟢⚡" if ch5 > 0 else "⚡🔴 5dk DUSUS UYARISI 🔴⚡"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2))
 
-    # ── Kişisel alarmlar (gelişmiş) ──
     for row in user_rows:
         symbol     = row["symbol"]
         user_id    = row["user_id"]
@@ -2214,14 +2251,12 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         band_high  = row.get("band_high")
         paused     = row.get("paused_until")
 
-        # Duraklatma kontrolü
         if paused and paused.replace(tzinfo=None) > now:
             continue
 
         prices = price_memory.get(symbol)
         if not prices or len(prices) < 2:
             continue
-        # prices[0] en az 4 dakika önce olmalı
         if now - prices[0][0] < timedelta(minutes=4):
             continue
 
@@ -2253,7 +2288,6 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             continue
         cooldowns[key] = now
 
-        # DB: trigger sayacını artır + geçmişe kaydet
         trigger_val = ch5 if alarm_type == "percent" else (rsi_level or 0)
         try:
             async with db_pool.acquire() as conn:
@@ -2265,7 +2299,6 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                     "INSERT INTO alarm_history(user_id,symbol,alarm_type,trigger_val,direction) VALUES($1,$2,$3,$4,$5)",
                     user_id, symbol, alarm_type, trigger_val, direction
                 )
-                # Akıllı tekrar önerisi: 5+ kez tetiklendiyse
                 count_row = await conn.fetchrow(
                     "SELECT trigger_count, threshold FROM user_alarms WHERE user_id=$1 AND symbol=$2",
                     user_id, symbol
@@ -2324,7 +2357,6 @@ async def binance_engine():
 async def post_init(app):
     await init_db()
     asyncio.create_task(binance_engine())
-    # Slash menüsünde sadece /start göster
     await app.bot.set_my_commands([
         BotCommand("start", "Botu başlat / Ana menü")
     ])
@@ -2339,7 +2371,6 @@ def main():
     app.job_queue.run_repeating(scheduled_job,   interval=60,   first=10)
     app.job_queue.run_repeating(hedef_job,       interval=30,   first=45)
 
-    # Grup komutları → doğrudan
     app.add_handler(CommandHandler("start",  start))
     app.add_handler(CommandHandler("top24",  top24))
     app.add_handler(CommandHandler("top5",   top5))
