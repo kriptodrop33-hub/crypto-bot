@@ -157,7 +157,7 @@ cooldowns:          dict = {}
 chart_cache:        dict = {}
 whale_vol_mem:      dict = {}
 scheduled_last_run: dict = {}
-rank_cache:         dict = {}   # symbol -> (cached_at, rank, total)
+rank_cache:         dict = {}
 
 # ================= YARDIMCI =================
 
@@ -169,51 +169,40 @@ def get_number_emoji(n):
 def format_price(price):
     return f"{price:,.2f}" if price >= 1 else f"{price:.8g}"
 
-# ================= RANK (Hacim Bazlı) =================
+# ================= RANK =================
 
 async def get_coin_rank(symbol: str):
-    """
-    Binance 24h quoteVolume'a göre USDT çiftleri arasında coinin sıralamasını döner.
-    Sonucu 5 dakika önbellekler. (rank, total) tuple döner.
-    """
     now = datetime.utcnow()
     cached = rank_cache.get(symbol)
     if cached:
         cached_at, rank, total = cached
         if now - cached_at < timedelta(minutes=5):
             return rank, total
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 data = await resp.json()
-
         usdt_pairs = [x for x in data if x["symbol"].endswith("USDT")]
         usdt_pairs.sort(key=lambda x: float(x.get("quoteVolume", 0)), reverse=True)
-
         total = len(usdt_pairs)
         rank  = None
         for i, c in enumerate(usdt_pairs, 1):
             if c["symbol"] == symbol:
                 rank = i
                 break
-
         if rank is None:
             return None, total
-
         rank_cache[symbol] = (now, rank, total)
         return rank, total
-
     except Exception as e:
         log.warning(f"get_coin_rank hatasi ({symbol}): {e}")
         return None, 0
 
 def rank_emoji(rank):
-    if rank is None:
-        return ""
-    if rank <= 10:  return "🥇"
-    if rank <= 30:  return "🥈"
-    if rank <= 100: return "🥉"
+    if rank is None:   return ""
+    if rank <= 10:     return "🥇"
+    if rank <= 30:     return "🥈"
+    if rank <= 100:    return "🥉"
     return "🏅"
 
 # ================= DİĞER YARDIMCILAR =================
@@ -298,7 +287,6 @@ async def generate_candlestick_chart(symbol: str):
         if datetime.utcnow() - cached_at < timedelta(minutes=5):
             buf.seek(0)
             return buf
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -306,10 +294,8 @@ async def generate_candlestick_chart(symbol: str):
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 data = await resp.json()
-
         if not data or isinstance(data, dict):
             return None
-
         df = pd.DataFrame(data, columns=[
             "open_time","open","high","low","close","volume",
             "close_time","quote_volume","trades",
@@ -318,7 +304,6 @@ async def generate_candlestick_chart(symbol: str):
         df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
         df.set_index("open_time", inplace=True)
         df = df[["open","high","low","close","volume"]].astype(float)
-
         mc = mpf.make_marketcolors(
             up="#00e676", down="#ff1744",
             edge="inherit", wick="inherit",
@@ -331,7 +316,6 @@ async def generate_candlestick_chart(symbol: str):
             rc={"axes.labelcolor":"#8b949e","xtick.color":"#8b949e",
                 "ytick.color":"#8b949e","font.size":9}
         )
-
         buf = io.BytesIO()
         mpf.plot(
             df, type="candle", style=style,
@@ -342,7 +326,6 @@ async def generate_candlestick_chart(symbol: str):
         buf.seek(0)
         chart_cache[symbol] = (datetime.utcnow(), buf)
         return buf
-
     except Exception as e:
         log.error(f"Grafik hatasi ({symbol}): {e}")
         return None
@@ -538,8 +521,8 @@ def _clamp(val, lo=0.0, hi=100.0):
     return max(lo, min(hi, val))
 
 def _rsi_score(rsi):
-    if rsi <= 0:   return 50.0
-    if rsi <= 30:  return _clamp(100 - rsi * 0.93)
+    if rsi <= 0:    return 50.0
+    if rsi <= 30:   return _clamp(100 - rsi * 0.93)
     elif rsi <= 50: return _clamp(72 - (rsi - 30) * 1.1)
     elif rsi <= 70: return _clamp(50 - (rsi - 50) * 1.1)
     else:           return _clamp(28 - (rsi - 70) * 0.93)
@@ -728,7 +711,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         if ch5_override is not None:
             ch5m = ch5_override
 
-        # ── Rank (hacim bazlı) ──
         rank, total = await get_coin_rank(symbol)
         re = rank_emoji(rank)
         if rank:
@@ -736,7 +718,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         else:
             rank_line = ""
 
-        # ── RSI çok zaman dilimli ──
         rsi7_1h   = calc_rsi(k1h_100, 7)
         rsi14_1h  = calc_rsi(k1h_100, 14)
         rsi14_4h  = calc_rsi(k4h_100, 14)
@@ -744,7 +725,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         stoch_1h  = calc_stoch_rsi(k1h_100)
         stoch_4h  = calc_stoch_rsi(k4h_100)
 
-        # ── Teknik indikatörler ──
         ema9_1h    = calc_ema(k1h_100, 9)
         ema21_1h   = calc_ema(k1h_100, 21)
         ema21_4h   = calc_ema(k4h_100, 21)
@@ -934,7 +914,6 @@ async def build_set_panel(context):
     )
     return text, InlineKeyboardMarkup(threshold_buttons)
 
-
 async def set_command(update: Update, context):
     chat = update.effective_chat
     if chat.type != "private":
@@ -949,7 +928,6 @@ async def set_command(update: Update, context):
             return
     text, keyboard = await build_set_panel(context)
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
-
 
 async def set_callback(update: Update, context):
     q = update.callback_query
@@ -1009,7 +987,6 @@ async def set_callback(update: Update, context):
     if q.data == "set_open":
         text, keyboard = await build_set_panel(context)
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
-
 
 async def handle_threshold_input(update: Update, context):
     if not context.user_data.get("awaiting_threshold"):
@@ -1117,7 +1094,6 @@ async def my_alarm_v2(update: Update, context):
     ])
     await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
 
-
 async def alarm_ekle_v2(update: Update, context):
     user_id  = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
@@ -1196,7 +1172,6 @@ async def alarm_ekle_v2(update: Update, context):
         parse_mode="Markdown"
     )
 
-
 async def alarm_sil(update: Update, context):
     user_id = update.effective_user.id
     if not context.args:
@@ -1215,7 +1190,6 @@ async def alarm_sil(update: Update, context):
     else:
         await send_temp(context.bot, update.effective_chat.id,
             f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
-
 
 async def my_alarm(update: Update, context):
     user_id = update.effective_user.id
@@ -1241,7 +1215,6 @@ async def my_alarm(update: Update, context):
     ]])
     msg = update.callback_query.message if update.callback_query else update.message
     await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
-
 
 async def favori_command(update: Update, context):
     user_id = update.effective_user.id
@@ -1303,7 +1276,6 @@ async def favori_command(update: Update, context):
         parse_mode="Markdown"
     )
 
-
 async def alarm_duraklat(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
@@ -1330,7 +1302,6 @@ async def alarm_duraklat(update: Update, context):
             f"Tekrar aktif: `{until.strftime('%H:%M')} UTC`",
             parse_mode="Markdown"
         )
-
 
 async def alarm_gecmis(update: Update, context):
     user_id = update.effective_user.id
@@ -1360,79 +1331,233 @@ async def alarm_gecmis(update: Update, context):
     await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
 
 
-# ================= FİYAT HEDEFİ =================
+# ================= FİYAT HEDEFİ (GELİŞTİRİLMİŞ) =================
+
+async def _hedef_canli_fiyat(semboller: list) -> dict:
+    """Verilen sembol listesi için anlık fiyat sözlüğü döner (price_memory + API fallback)."""
+    canli = {}
+    # Önce price_memory'den al
+    for sym in semboller:
+        pm = price_memory.get(sym)
+        if pm:
+            canli[sym] = pm[-1][1]
+    # Eksikler için Binance API
+    eksik = [s for s in semboller if s not in canli]
+    if eksik:
+        try:
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    session.get(f"{BINANCE_24H}?symbol={sym}",
+                                timeout=aiohttp.ClientTimeout(total=5))
+                    for sym in eksik
+                ]
+                resps = await asyncio.gather(*tasks, return_exceptions=True)
+                for sym, resp in zip(eksik, resps):
+                    if not isinstance(resp, Exception):
+                        try:
+                            data = await resp.json()
+                            canli[sym] = float(data.get("lastPrice", 0))
+                        except:
+                            pass
+        except Exception as e:
+            log.warning(f"_hedef_canli_fiyat: {e}")
+    return canli
+
+
+async def hedef_liste_goster(bot, chat_id, user_id, show_all=False):
+    """Hedefleri anlık fiyat ve uzaklık bilgisiyle göster."""
+    async with db_pool.acquire() as conn:
+        if show_all:
+            rows = await conn.fetch(
+                """SELECT id, symbol, target, direction, triggered, created_at
+                   FROM price_targets WHERE user_id=$1
+                   ORDER BY triggered ASC, symbol, target""",
+                user_id
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT id, symbol, target, direction, triggered, created_at
+                   FROM price_targets WHERE user_id=$1 AND triggered=0
+                   ORDER BY symbol, target""",
+                user_id
+            )
+
+    if not rows:
+        msg = (
+            "🎯 *Fiyat Hedeflerim*\n━━━━━━━━━━━━━━━━━━\n"
+            "Aktif hedef yok.\n\n"
+            "➕ *Nasıl Eklenir?*\n"
+            "`/hedef BTCUSDT 70000`\n"
+            "`/hedef ETHUSDT 3000 4000 5000` _(çoklu)_\n\n"
+            "📋 Geçmiş: `/hedef gecmis`\n"
+            "🗑 Sil: `/hedef sil BTCUSDT`"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("➕ Hedef Ekle",  callback_data="hedef_add_help"),
+            InlineKeyboardButton("📋 Geçmiş",      callback_data="hedef_gecmis"),
+        ]])
+        await bot.send_message(chat_id, msg, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
+    # Anlık fiyatları toplu çek
+    semboller = list({r["symbol"] for r in rows})
+    canli = await _hedef_canli_fiyat(semboller)
+
+    baslik = "🎯 *Tüm Hedeflerim*" if show_all else "🎯 *Aktif Fiyat Hedeflerim*"
+    text   = baslik + f" `({len(rows)} adet)`\n━━━━━━━━━━━━━━━━━━\n"
+
+    # Sembole göre grupla
+    from collections import defaultdict as _dd
+    gruplar = _dd(list)
+    for r in rows:
+        gruplar[r["symbol"]].append(r)
+
+    sil_buttons = []
+    for sym, hedefler in sorted(gruplar.items()):
+        cur = canli.get(sym)
+        cur_str = f"`{format_price(cur)} USDT`" if cur else "—"
+        text += f"\n💎 *{sym}* — Anlık: {cur_str}\n"
+
+        for r in hedefler:
+            target    = r["target"]
+            yon_icon  = "📈" if r["direction"] == "up" else "📉"
+            triggered = r["triggered"]
+
+            if triggered:
+                durum = "✅"
+                uzak  = ""
+            else:
+                durum = "🟡"
+                if cur and cur > 0:
+                    pct  = ((target - cur) / cur) * 100
+                    uzak = f" `({pct:+.2f}%)`"
+                else:
+                    uzak = ""
+
+            text += f"  {durum} {yon_icon} `{format_price(target)} USDT`{uzak}\n"
+
+            if not triggered:
+                sil_buttons.append([
+                    InlineKeyboardButton(
+                        f"🗑 {sym} @ {format_price(target)}",
+                        callback_data=f"hedef_sil_id_{r['id']}"
+                    )
+                ])
+
+    if canli:
+        text += "\n_↕️ Yüzde = anlık fiyattan uzaklık_"
+
+    # Butonlar
+    alt_buttons = [
+        InlineKeyboardButton("➕ Ekle",      callback_data="hedef_add_help"),
+        InlineKeyboardButton("🔄 Yenile",    callback_data="hedef_liste"),
+    ]
+    if not show_all:
+        alt_buttons.append(InlineKeyboardButton("📋 Geçmiş", callback_data="hedef_gecmis"))
+    else:
+        alt_buttons.append(InlineKeyboardButton("🟡 Aktifler", callback_data="hedef_liste"))
+
+    if sil_buttons:
+        sil_buttons.append(alt_buttons)
+        keyboard = InlineKeyboardMarkup(sil_buttons)
+    else:
+        keyboard = InlineKeyboardMarkup([alt_buttons])
+
+    await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=keyboard)
+
 
 async def hedef_command(update: Update, context):
     user_id = update.effective_user.id
     args    = context.args or []
 
+    # /hedef  veya  /hedef liste
     if not args or args[0].lower() == "liste":
-        async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT symbol, target, direction FROM price_targets WHERE user_id=$1 AND triggered=0 ORDER BY symbol",
-                user_id
-            )
-        if not rows:
-            await send_temp(context.bot, update.effective_chat.id,
-                "🎯 *Fiyat Hedefleri*\n━━━━━━━━━━━━━━━━━━\n"
-                "Henuz hedef yok.\n\n"
-                "Eklemek icin:\n`/hedef BTCUSDT 70000` — fiyata ulaşınca bildir\n"
-                "`/hedef sil BTCUSDT` — hedefi sil",
-                parse_mode="Markdown")
-            return
-        text = "🎯 *Aktif Fiyat Hedefleriniz*\n━━━━━━━━━━━━━━━━━━\n"
-        for r in rows:
-            yon = "📈 Yukari" if r["direction"] == "up" else "📉 Asagi"
-            text += f"• `{r['symbol']}` → `{format_price(r['target'])} USDT` {yon}\n"
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await hedef_liste_goster(context.bot, update.effective_chat.id, user_id)
         return
 
+    # /hedef gecmis  →  tüm hedefler (tetiklenmiş dahil)
+    if args[0].lower() in ("gecmis", "geçmiş", "hepsi", "tumu", "tümü"):
+        await hedef_liste_goster(context.bot, update.effective_chat.id, user_id, show_all=True)
+        return
+
+    # /hedef sil BTCUSDT  →  sembol için tüm hedefleri sil
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/hedef sil BTCUSDT`", parse_mode="Markdown"); return
+                "Kullanim:\n`/hedef sil BTCUSDT` — sembol sil\n`/hedef sil hepsi` — tümünü sil",
+                parse_mode="Markdown"); return
+        if args[1].lower() in ("hepsi", "tumu", "tümü"):
+            async with db_pool.acquire() as conn:
+                await conn.execute("DELETE FROM price_targets WHERE user_id=$1", user_id)
+            await send_temp(context.bot, update.effective_chat.id,
+                "🗑 Tüm hedefleriniz silindi.", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
-            await conn.execute("DELETE FROM price_targets WHERE user_id=$1 AND symbol=$2", user_id, symbol)
+            await conn.execute(
+                "DELETE FROM price_targets WHERE user_id=$1 AND symbol=$2", user_id, symbol
+            )
         await send_temp(context.bot, update.effective_chat.id,
-            f"🗑 `{symbol}` hedefleri silindi.", parse_mode="Markdown")
-        return
+            f"🗑 `{symbol}` için tüm hedefler silindi.", parse_mode="Markdown"); return
 
-    if len(args) < 2:
-        await send_temp(context.bot, update.effective_chat.id,
-            "Kullanim: `/hedef BTCUSDT 70000`", parse_mode="Markdown"); return
+    # /hedef BTCUSDT 70000  veya  /hedef BTCUSDT 60000 70000 80000
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
-    try:
-        target = float(args[1].replace(",","."))
-    except:
+
+    hedef_fiyatlar = []
+    for a in args[1:]:
+        try:
+            hedef_fiyatlar.append(float(a.replace(",",".")))
+        except:
+            pass
+
+    if not hedef_fiyatlar:
         await send_temp(context.bot, update.effective_chat.id,
-            "Hedef fiyat sayi olmali. Ornek: `70000`", parse_mode="Markdown"); return
+            "Kullanim: `/hedef BTCUSDT 70000`\n"
+            "Çoklu: `/hedef BTCUSDT 60000 70000 80000`",
+            parse_mode="Markdown"); return
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{BINANCE_24H}?symbol={symbol}",
-                                   timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                ticker = await resp.json()
-        cur_price = float(ticker["lastPrice"])
-        direction = "up" if target > cur_price else "down"
-    except:
-        direction = "up"
-        cur_price = 0
+    # Anlık fiyat al
+    fiyat_map = await _hedef_canli_fiyat([symbol])
+    cur_price = fiyat_map.get(symbol, 0)
 
+    # DB'ye ekle
     async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO price_targets(user_id, symbol, target, direction)
-            VALUES($1,$2,$3,$4)
-            ON CONFLICT(user_id,symbol,target) DO UPDATE SET triggered=0, direction=$4
-        """, user_id, symbol, target, direction)
+        eklenenler = []
+        for target in hedef_fiyatlar:
+            direction = "up" if target > cur_price else "down"
+            await conn.execute("""
+                INSERT INTO price_targets(user_id, symbol, target, direction)
+                VALUES($1,$2,$3,$4)
+                ON CONFLICT(user_id,symbol,target) DO UPDATE SET triggered=0, direction=$4
+            """, user_id, symbol, target, direction)
+            eklenenler.append((target, direction))
 
-    yon_str = "ulaşınca" if direction == "up" else "düşünce"
-    await send_temp(context.bot, update.effective_chat.id,
-        f"🎯 *{symbol}* `{format_price(target)} USDT` fiyatına {yon_str} bildirim alacaksınız!\n"
-        f"_Şu an: `{format_price(cur_price)} USDT`_",
-        parse_mode="Markdown")
+    # Yanıt oluştur
+    lines = []
+    for target, direction in eklenenler:
+        yon_str = "ulaşınca 📈" if direction == "up" else "düşünce 📉"
+        if cur_price > 0:
+            pct  = ((target - cur_price) / cur_price) * 100
+            uzak = f" _(şu andan `{pct:+.2f}%`)_"
+        else:
+            uzak = ""
+        lines.append(f"• `{format_price(target)} USDT` {yon_str}{uzak}")
+
+    text = (
+        f"🎯 *{symbol}* — {len(eklenenler)} hedef kaydedildi!\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+    )
+    text += "\n".join(lines)
+    if cur_price > 0:
+        text += f"\n\n💵 _Anlık: `{format_price(cur_price)} USDT`_"
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📋 Tüm Hedeflerim", callback_data="hedef_liste"),
+        InlineKeyboardButton("➕ Daha Fazla Ekle", callback_data="hedef_add_help"),
+    ]])
+    await send_temp(context.bot, update.effective_chat.id, text,
+                    parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
@@ -1444,30 +1569,49 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
         if not rows:
             return
 
+        # Tüm sembollerin fiyatını toplu çek
+        semboller = list({r["symbol"] for r in rows})
+        canli     = await _hedef_canli_fiyat(semboller)
+
         for row in rows:
-            prices = price_memory.get(row["symbol"])
-            if not prices:
+            cur = canli.get(row["symbol"])
+            if not cur:
                 continue
-            cur = prices[-1][1]
-            hit = (row["direction"] == "up"  and cur >= row["target"]) or \
-                  (row["direction"] == "down" and cur <= row["target"])
+
+            hit = (row["direction"] == "up"   and cur >= row["target"]) or \
+                  (row["direction"] == "down"  and cur <= row["target"])
             if not hit:
                 continue
 
             async with db_pool.acquire() as conn:
-                await conn.execute("UPDATE price_targets SET triggered=1 WHERE id=$1", row["id"])
+                await conn.execute(
+                    "UPDATE price_targets SET triggered=1 WHERE id=$1", row["id"]
+                )
 
-            yon = "📈 YUKSELDİ" if row["direction"] == "up" else "📉 DÜŞTÜ"
+            yon  = "📈 YÜKSELDİ" if row["direction"] == "up" else "📉 DÜŞTÜ"
+            pct  = ((cur - row["target"]) / row["target"]) * 100
             text = (
                 f"🎯 *FİYAT HEDEFİ ULAŞTI!*\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"💎 *{row['symbol']}*\n"
-                f"🏁 Hedef: `{format_price(row['target'])} USDT`\n"
-                f"💵 Şu an: `{format_price(cur)} USDT`\n"
-                f"{yon}"
+                f"🏁 Hedef : `{format_price(row['target'])} USDT`\n"
+                f"💵 Şu an : `{format_price(cur)} USDT` `({pct:+.2f}%)`\n"
+                f"{yon}\n\n"
+                f"_Yeni hedef eklemek için:_\n"
+                f"`/hedef {row['symbol']} <fiyat>`"
             )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 Hedeflerim", callback_data="hedef_liste"),
+                InlineKeyboardButton(
+                    "📈 Binance",
+                    url=f"https://www.binance.com/tr/trade/{row['symbol'].replace('USDT','_USDT')}"
+                )
+            ]])
             try:
-                await context.bot.send_message(row["user_id"], text, parse_mode="Markdown")
+                await context.bot.send_message(
+                    row["user_id"], text,
+                    parse_mode="Markdown", reply_markup=keyboard
+                )
             except Exception as e:
                 log.warning(f"Hedef bildirimi gönderilemedi ({row['user_id']}): {e}")
     except Exception as e:
@@ -1496,25 +1640,16 @@ async def kar_command(update: Update, context):
             return
 
         text = "💰 *Pozisyonlarınız*\n━━━━━━━━━━━━━━━━━━\n"
-        for r in rows:
-            prices = price_memory.get(r["symbol"])
-            if prices:
-                cur = prices[-1][1]
-            else:
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(f"{BINANCE_24H}?symbol={r['symbol']}",
-                                               timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                            t = await resp.json()
-                    cur = float(t["lastPrice"])
-                except:
-                    cur = r["buy_price"]
+        semboller = [r["symbol"] for r in rows]
+        canli = await _hedef_canli_fiyat(semboller)
 
-            invested = r["amount"] * r["buy_price"]
+        for r in rows:
+            cur = canli.get(r["symbol"], r["buy_price"])
+            invested    = r["amount"] * r["buy_price"]
             current_val = r["amount"] * cur
-            pnl = current_val - invested
-            pnl_pct = ((cur - r["buy_price"]) / r["buy_price"]) * 100
-            icon = "🟢" if pnl >= 0 else "🔴"
+            pnl         = current_val - invested
+            pnl_pct     = ((cur - r["buy_price"]) / r["buy_price"]) * 100
+            icon        = "🟢" if pnl >= 0 else "🔴"
             text += (
                 f"{icon} `{r['symbol']}`\n"
                 f"  Alış: `{format_price(r['buy_price'])}` × `{r['amount']}`\n"
@@ -1546,19 +1681,11 @@ async def kar_command(update: Update, context):
             await send_temp(context.bot, update.effective_chat.id,
                 "Kullanim: `/kar BTCUSDT 0.5 60000`", parse_mode="Markdown"); return
 
-        prices = price_memory.get(symbol)
-        if prices:
-            cur = prices[-1][1]
-        else:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"{BINANCE_24H}?symbol={symbol}",
-                                           timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                        t = await resp.json()
-                cur = float(t["lastPrice"])
-            except:
-                await send_temp(context.bot, update.effective_chat.id,
-                    f"⚠️ `{symbol}` fiyatı alınamadı.", parse_mode="Markdown"); return
+        canli = await _hedef_canli_fiyat([symbol])
+        cur   = canli.get(symbol)
+        if not cur:
+            await send_temp(context.bot, update.effective_chat.id,
+                f"⚠️ `{symbol}` fiyatı alınamadı.", parse_mode="Markdown"); return
 
         invested    = amount * buy_price
         current_val = amount * cur
@@ -1606,7 +1733,6 @@ async def mtf_command(update: Update, context):
     wait = await send_temp(context.bot, update.effective_chat.id, "⏳ Derin analiz yapiliyor...", parse_mode="Markdown")
     try:
         async with aiohttp.ClientSession() as session:
-            # Ticker + tüm zaman dilimleri paralel çek
             ticker_resp, k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
                 session.get(f"{BINANCE_24H}?symbol={symbol}", timeout=aiohttp.ClientTimeout(total=5)),
                 fetch_klines(session, symbol, "15m", limit=200),
@@ -1624,12 +1750,10 @@ async def mtf_command(update: Update, context):
         vol24   = float(ticker.get("quoteVolume", 0))
         vol_str = f"{vol24/1_000_000:.1f}M" if vol24 >= 1_000_000 else f"{vol24/1_000:.0f}K"
 
-        # Rank
         rank, total = await get_coin_rank(symbol)
         re = rank_emoji(rank)
         rank_str = f"{re} #{rank}/{total}" if rank else "—"
 
-        # ── Yardımcı formatlayıcılar ──
         def rsi_bar(r):
             if r >= 70:   return f"`{r:.1f}` 🔴"
             elif r >= 55: return f"`{r:.1f}` 🟡"
@@ -1686,7 +1810,6 @@ async def mtf_command(update: Update, context):
                 f"  OBV: {obv_label(data)}\n"
             )
 
-        # ── Fibonacci (son 200 mum, 4h) ──
         def calc_fibo_full(data, lookback=200):
             if not data:
                 return None, None, None, None, None
@@ -1708,13 +1831,11 @@ async def mtf_command(update: Update, context):
             above = [(k, v) for k, v in levels if v >  cur]
             sup = max(below, key=lambda x: x[1]) if below else None
             res = min(above, key=lambda x: x[1]) if above else None
-            # Fiyatın hangi Fib bölgesinde olduğu
             pct_in_range = ((cur - lo) / diff * 100) if diff > 0 else 50
             return sup, res, hi, lo, pct_in_range
 
         fib_sup, fib_res, swing_hi, swing_lo, fib_pct = calc_fibo_full(k4h, lookback=200)
 
-        # Tüm Fibonacci seviyeleri listesi (görsel)
         def fib_all_levels(hi, lo):
             diff = hi - lo
             cur  = float(k4h[-1][4]) if k4h else 0
@@ -1735,15 +1856,12 @@ async def mtf_command(update: Update, context):
                 lines.append(f"  `{k:<6}` `{format_price(v)}` `{dist:+.1f}%`{marker}")
             return "\n".join(lines)
 
-        # ── Destek/Direnç (swing bazlı 4h) ──
         destek, direnc = calc_support_resistance(k4h)
 
-        # ── Piyasa Skoru (4 zaman dilimi özet) ──
         sh, lh, _ = calc_score_hourly(ticker, k1h, k15m, k15m, calc_rsi(k1h, 14))
         sd, ld, _ = calc_score_daily(ticker, k4h, k1h, k1d)
         sw, lw, _ = calc_score_weekly(ticker, k1d, k1w)
 
-        # ── RSI Diverjans ──
         div_1h = calc_rsi_divergence(k1h)
         div_4h = calc_rsi_divergence(k4h)
         div_lines = ""
@@ -1752,37 +1870,26 @@ async def mtf_command(update: Update, context):
         if div_4h == "bearish": div_lines += "⚠️ 4s *Bearish Div* — RSI düşüyor fiyat çıkıyor\n"
         if div_4h == "bullish": div_lines += "💡 4s *Bullish Div* — RSI yükseliyor fiyat düşüyor\n"
 
-        # ── Mesajı oluştur ──
         text  = f"📊 *{symbol} — Gelişmiş MTF Analiz*\n"
         text += f"━━━━━━━━━━━━━━━━━━\n"
         text += f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
         text += f"🏅 *Hacim Sırası:* `{rank_str}`   📦 `{vol_str} USDT`\n"
-        text += f"📊 *24s:* `{ch24:+.2f}%`   H:`{format_price(high24)}`  L:`{format_price(low24)}`\n"
-        text += f"\n"
-
-        # Piyasa skoru özet
+        text += f"📊 *24s:* `{ch24:+.2f}%`   H:`{format_price(high24)}`  L:`{format_price(low24)}`\n\n"
         text += f"*🎯 Piyasa Skoru Özeti*\n"
         text += f"  ⏱ Saatlik : `{sh}/100` — _{lh}_\n"
         text += f"  📅 Günlük  : `{sd}/100` — _{ld}_\n"
-        text += f"  📆 Haftalık: `{sw}/100` — _{lw}_\n"
-        text += f"\n"
+        text += f"  📆 Haftalık: `{sw}/100` — _{lw}_\n\n"
 
         if div_lines:
             text += f"*⚡ Diverjans Uyarıları*\n{div_lines}\n"
 
         text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += tf_block(k15m, "⏱ 15 Dakika",  9, 21)
-        text += "\n"
-        text += tf_block(k1h,  "🕐 1 Saat",    9, 21)
-        text += "\n"
-        text += tf_block(k4h,  "🕓 4 Saat",   21, 55)
-        text += "\n"
-        text += tf_block(k1d,  "📅 1 Gün",    50, 200)
-        text += "\n"
-        text += tf_block(k1w,  "📆 1 Hafta",  10, 30)
-        text += "\n"
+        text += tf_block(k15m, "⏱ 15 Dakika",  9, 21) + "\n"
+        text += tf_block(k1h,  "🕐 1 Saat",    9, 21) + "\n"
+        text += tf_block(k4h,  "🕓 4 Saat",   21, 55) + "\n"
+        text += tf_block(k1d,  "📅 1 Gün",    50, 200) + "\n"
+        text += tf_block(k1w,  "📆 1 Hafta",  10, 30) + "\n"
 
-        # Fibonacci bölümü
         text += f"━━━━━━━━━━━━━━━━━━\n"
         text += f"📐 *Fibonacci — 4h (Son 200 Mum)*\n"
         text += f"  Swing High: `{format_price(swing_hi)}`   Low: `{format_price(swing_lo)}`\n"
@@ -1791,7 +1898,6 @@ async def mtf_command(update: Update, context):
             text += fib_all_levels(swing_hi, swing_lo) + "\n"
         text += "\n"
 
-        # Destek / Direnç
         text += f"━━━━━━━━━━━━━━━━━━\n"
         text += f"🔵 *Destek/Direnç (4h Swing)*\n"
         if destek:
@@ -1981,7 +2087,7 @@ async def start(update: Update, context):
          InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
         [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
          InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
-        [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_help"),
+        [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
          InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
         [InlineKeyboardButton("🛠 Admin Ayarlari",  callback_data="set_open")]
     ])
@@ -1991,6 +2097,7 @@ async def start(update: Update, context):
         "💡 Analiz: `BTCUSDT` yaz\n"
         "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
         "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
+        "   Çoklu hedef: `/hedef BTCUSDT 60k 70k 80k`\n"
         "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
         "⭐ Favori: `/favori ekle BTCUSDT`\n"
         "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
@@ -2093,6 +2200,7 @@ async def button_handler(update: Update, context):
 
     await q.answer()
 
+    # ── Market & genel ──
     if q.data == "market":
         await market(update, context)
     elif q.data == "top24":
@@ -2101,6 +2209,8 @@ async def button_handler(update: Update, context):
         await top5(update, context)
     elif q.data == "status":
         await status(update, context)
+
+    # ── Alarm ──
     elif q.data == "my_alarm":
         await my_alarm(update, context)
     elif q.data == "alarm_guide":
@@ -2115,6 +2225,10 @@ async def button_handler(update: Update, context):
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_alarms WHERE user_id=$1", uid)
             await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
+    elif q.data == "alarm_history":
+        await alarm_gecmis(update, context)
+
+    # ── Favori ──
     elif q.data == "fav_liste":
         await favori_command(update, context)
     elif q.data == "fav_analiz":
@@ -2134,6 +2248,8 @@ async def button_handler(update: Update, context):
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM favorites WHERE user_id=$1", uid)
             await q.message.reply_text("🗑 Tum favorileriniz silindi.")
+
+    # ── MTF ──
     elif q.data == "mtf_help":
         await q.message.reply_text(
             "📊 *Gelişmiş MTF Analiz*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2151,15 +2267,63 @@ async def button_handler(update: Update, context):
             "• Diverjans uyarıları",
             parse_mode="Markdown"
         )
-    elif q.data == "hedef_help":
+
+    # ── Zamanla ──
+    elif q.data == "zamanla_help":
         await q.message.reply_text(
-            "🎯 *Fiyat Hedefi Bildirimi*\n━━━━━━━━━━━━━━━━━━\n"
-            "Hedef fiyata ulaşınca DM bildirim alırsınız.\n\n"
-            "Ekle: `/hedef BTCUSDT 70000`\n"
-            "Liste: `/hedef liste`\n"
-            "Sil: `/hedef sil BTCUSDT`",
+            "⏰ *Zamanlanmış Görevler*\n━━━━━━━━━━━━━━━━━━\n"
+            "Coin analizi: `/zamanla analiz BTCUSDT 09:00`\n"
+            "Haftalık rapor: `/zamanla rapor 08:00`\n"
+            "Liste: `/zamanla liste`\n"
+            "Sil: `/zamanla sil`",
             parse_mode="Markdown"
         )
+
+    # ── Fiyat Hedefi (GELİŞTİRİLMİŞ) ──
+    elif q.data == "hedef_liste":
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id)
+    elif q.data == "hedef_gecmis":
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True)
+    elif q.data == "hedef_add_help":
+        await q.message.reply_text(
+            "🎯 *Fiyat Hedefi Ekle*\n━━━━━━━━━━━━━━━━━━\n"
+            "Tek hedef:\n`/hedef BTCUSDT 70000`\n\n"
+            "Çoklu hedef (aynı coin, birden fazla fiyat):\n"
+            "`/hedef BTCUSDT 65000 70000 80000`\n\n"
+            "Hedef listeye ulaşınca DM bildirim alırsınız.\n\n"
+            "Sil: `/hedef sil BTCUSDT`\n"
+            "Geçmiş: `/hedef gecmis`",
+            parse_mode="Markdown"
+        )
+    elif q.data.startswith("hedef_sil_id_"):
+        hedef_id = int(q.data.replace("hedef_sil_id_", ""))
+        user_id  = q.from_user.id
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT symbol, target FROM price_targets WHERE id=$1 AND user_id=$2",
+                hedef_id, user_id
+            )
+            if row:
+                await conn.execute(
+                    "DELETE FROM price_targets WHERE id=$1 AND user_id=$2",
+                    hedef_id, user_id
+                )
+                await q.answer(f"✅ {row['symbol']} @ {format_price(row['target'])} silindi", show_alert=False)
+                # Listeyi yenile
+                await hedef_liste_goster(context.bot, q.message.chat.id, user_id)
+            else:
+                await q.answer("❌ Hedef bulunamadı.", show_alert=True)
+    elif q.data.startswith("hedef_sil_hepsi_"):
+        uid = int(q.data.split("_")[-1])
+        if q.from_user.id == uid:
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM price_targets WHERE user_id=$1 AND triggered=0", uid
+                )
+            await q.answer("🗑 Aktif hedefler silindi.", show_alert=False)
+            await hedef_liste_goster(context.bot, q.message.chat.id, uid)
+
+    # ── Kar/Zarar ──
     elif q.data == "kar_help":
         await q.message.reply_text(
             "💰 *Kar/Zarar Hesabı*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2169,8 +2333,6 @@ async def button_handler(update: Update, context):
             "Sil: `/kar sil BTCUSDT`",
             parse_mode="Markdown"
         )
-    elif q.data == "alarm_history":
-        await alarm_gecmis(update, context)
     elif q.data.startswith("kar_kaydet_"):
         parts = q.data.split("_")
         try:
@@ -2189,6 +2351,8 @@ async def button_handler(update: Update, context):
         except Exception as e:
             log.warning(f"kar_kaydet callback: {e}")
             await q.answer("Kayıt sırasında hata oluştu.", show_alert=True)
+
+    # ── Admin ──
     elif q.data == "set_open":
         if q.message.chat.type != "private":
             try:
@@ -2358,7 +2522,22 @@ async def post_init(app):
     await init_db()
     asyncio.create_task(binance_engine())
     await app.bot.set_my_commands([
-        BotCommand("start", "Botu başlat / Ana menü")
+        BotCommand("start",          "Botu başlat / Ana menü"),
+        BotCommand("hedef",          "Fiyat hedefi ekle / listele"),
+        BotCommand("alarmim",        "Kişisel alarmlarım"),
+        BotCommand("alarm_ekle",     "Yeni alarm ekle"),
+        BotCommand("alarm_sil",      "Alarm sil"),
+        BotCommand("alarm_duraklat", "Alarmı duraklat"),
+        BotCommand("alarm_gecmis",   "Alarm geçmişi"),
+        BotCommand("favori",         "Favori coinler"),
+        BotCommand("mtf",            "Gelişmiş MTF analiz"),
+        BotCommand("zamanla",        "Zamanlanmış görev"),
+        BotCommand("kar",            "Kar/zarar hesabı"),
+        BotCommand("top24",          "24s liderleri"),
+        BotCommand("top5",           "5dk hareketliler"),
+        BotCommand("market",         "Piyasa duyarlılığı"),
+        BotCommand("status",         "Bot durumu"),
+        BotCommand("set",            "Admin ayarları"),
     ])
 
 # ================= MAIN =================
@@ -2366,18 +2545,17 @@ async def post_init(app):
 def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    app.job_queue.run_repeating(alarm_job,       interval=10,   first=30)
-    app.job_queue.run_repeating(whale_job,       interval=120,  first=60)
-    app.job_queue.run_repeating(scheduled_job,   interval=60,   first=10)
-    app.job_queue.run_repeating(hedef_job,       interval=30,   first=45)
+    app.job_queue.run_repeating(alarm_job,     interval=10,  first=30)
+    app.job_queue.run_repeating(whale_job,     interval=120, first=60)
+    app.job_queue.run_repeating(scheduled_job, interval=60,  first=10)
+    app.job_queue.run_repeating(hedef_job,     interval=30,  first=45)
 
-    app.add_handler(CommandHandler("start",  start))
-    app.add_handler(CommandHandler("top24",  top24))
-    app.add_handler(CommandHandler("top5",   top5))
-    app.add_handler(CommandHandler("market", market))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("set",    set_command))
-
+    app.add_handler(CommandHandler("start",          start))
+    app.add_handler(CommandHandler("top24",          top24))
+    app.add_handler(CommandHandler("top5",           top5))
+    app.add_handler(CommandHandler("market",         market))
+    app.add_handler(CommandHandler("status",         status))
+    app.add_handler(CommandHandler("set",            set_command))
     app.add_handler(CommandHandler("alarmim",        my_alarm_v2))
     app.add_handler(CommandHandler("alarm_ekle",     alarm_ekle_v2))
     app.add_handler(CommandHandler("alarm_sil",      alarm_sil))
