@@ -1683,7 +1683,16 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
                 )
     except Exception as e:
         log.error(f"hedef_liste_goster DB: {e}")
-        await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:200]}`", parse_mode="Markdown")
+        # Gerçek kolon adlarını logla
+        try:
+            async with db_pool.acquire() as conn:
+                cols = await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='price_targets' ORDER BY ordinal_position"
+                )
+            col_names = [r['column_name'] for r in cols]
+            await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:150]}`\nKolonlar: `{col_names}`", parse_mode="Markdown")
+        except Exception as e2:
+            await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:200]}`", parse_mode="Markdown")
         return
 
     async def _send(text, keyboard):
