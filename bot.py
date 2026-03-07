@@ -119,6 +119,10 @@ async def init_db():
             ADD COLUMN IF NOT EXISTS delete_delay INTEGER DEFAULT 30
         """)
         await conn.execute("""
+            ALTER TABLE groups
+            ADD COLUMN IF NOT EXISTS member_delete_delay INTEGER DEFAULT 3600
+        """)
+        await conn.execute("""
             INSERT INTO groups (chat_id, threshold, mode, delete_delay)
             VALUES ($1, $2, $3, 30)
             ON CONFLICT (chat_id) DO NOTHING
@@ -174,45 +178,76 @@ COINGECKO_API = "https://api.coingecko.com/api/v3"
 marketcap_rank_cache: dict = {}  # symbol -> (cached_at, rank)
 
 async def _refresh_marketcap_cache():
-    """CoinGecko'dan ilk 500 coinin marketcap sıralamasını çeker ve önbelleğe alır."""
+    """
+    CoinGecko marketcap sıralaması çeker.
+    Rate-limit / erişim sorunu olursa Binance quoteVolume fallback kullanılır.
+    """
     global marketcap_rank_cache
     now = datetime.utcnow()
+    new_cache = {}
+
+    # 1) CoinGecko — tek sayfa (100 coin), hızlı ve rate-limit güvenli
     try:
-        new_cache = {}
         async with aiohttp.ClientSession() as session:
-            for page in (1, 2, 3, 4, 5):
+            for page in range(1, 6):
                 url = (
                     f"{COINGECKO_API}/coins/markets"
                     f"?vs_currency=usd&order=market_cap_desc"
                     f"&per_page=100&page={page}&sparkline=false"
                 )
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        break
-                    coins = await resp.json()
-                for coin in coins:
-                    # CoinGecko sembolü küçük harf; USDT çiftini eşleştir
-                    cg_sym = (coin.get("symbol") or "").upper() + "USDT"
-                    mc_rank = coin.get("market_cap_rank")
-                    if mc_rank:
-                        new_cache[cg_sym] = mc_rank
-                await asyncio.sleep(0.3)  # rate-limit
-        if new_cache:
-            marketcap_rank_cache = {"_updated": now, **new_cache}
-            log.info(f"MarketCap önbelleği güncellendi: {len(new_cache)} coin")
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                        if resp.status == 429:
+                            log.warning("CoinGecko rate-limit (429) — fallback devrede")
+                            break
+                        if resp.status != 200:
+                            log.warning(f"CoinGecko HTTP {resp.status} — durduruluyor")
+                            break
+                        coins = await resp.json()
+                        if not isinstance(coins, list) or not coins:
+                            break
+                        for coin in coins:
+                            cg_sym  = (coin.get("symbol") or "").upper() + "USDT"
+                            mc_rank = coin.get("market_cap_rank")
+                            if mc_rank and cg_sym not in new_cache:
+                                new_cache[cg_sym] = int(mc_rank)
+                except asyncio.TimeoutError:
+                    log.warning(f"CoinGecko sayfa {page} timeout — durduruluyor")
+                    break
+                await asyncio.sleep(1.2)
     except Exception as e:
-        log.warning(f"MarketCap önbellek güncelleme hatasi: {e}")
+        log.warning(f"CoinGecko baglanti hatasi: {e}")
+
+    if len(new_cache) >= 50:
+        marketcap_rank_cache = {"_updated": now, **new_cache}
+        log.info(f"MarketCap onbellegi guncellendi (CoinGecko): {len(new_cache)} coin")
+        return
+
+    # 2) Fallback: Binance quoteVolume sirasi
+    log.info("MarketCap icin Binance fallback kullaniliyor")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json()
+        usdt_pairs = [x for x in data if x["symbol"].endswith("USDT")]
+        usdt_pairs.sort(key=lambda x: float(x.get("quoteVolume", 0)), reverse=True)
+        for i, c in enumerate(usdt_pairs, 1):
+            new_cache[c["symbol"]] = i
+        marketcap_rank_cache = {"_updated": now, "_fallback": True, **new_cache}
+        log.info(f"MarketCap onbellegi guncellendi (Binance fallback): {len(new_cache)} coin")
+    except Exception as e:
+        log.warning(f"Binance fallback hatasi: {e}")
+
 
 async def get_coin_rank(symbol: str):
-    """Coinin CoinGecko marketcap sırasını döndürür."""
-    now = datetime.utcnow()
+    """Coinin marketcap sirasini dondurur (CoinGecko oncelikli, Binance fallback)."""
+    now     = datetime.utcnow()
     updated = marketcap_rank_cache.get("_updated")
-    # 10 dakikada bir yenile
     if not updated or now - updated > timedelta(minutes=10):
         await _refresh_marketcap_cache()
 
-    rank = marketcap_rank_cache.get(symbol)
-    total = len(marketcap_rank_cache) - (1 if "_updated" in marketcap_rank_cache else 0)
+    rank  = marketcap_rank_cache.get(symbol)
+    total = sum(1 for k in marketcap_rank_cache if not k.startswith("_"))
     if rank is None:
         return None, total
     return rank, total
@@ -712,7 +747,7 @@ async def fetch_all_analysis(symbol):
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
 
-async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None, alarm_mode=False):
+async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None, alarm_mode=False, member_delay=None):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24, k1w,
@@ -731,8 +766,10 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
         rank, total = await get_coin_rank(symbol)
         re = rank_emoji(rank)
+        is_fallback = marketcap_rank_cache.get("_fallback", False)
+        rank_label  = "Hacim Sırası" if is_fallback else "MarketCap Sırası"
         if rank:
-            rank_line = f"{re} *MarketCap Sırası:* `#{rank}` _/ {total} coin_\n"
+            rank_line = f"{re} *{rank_label}:* `#{rank}` _/ {total} coin_\n"
         else:
             rank_line = ""
 
@@ -844,6 +881,8 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
                                      reply_markup=keyboard, parse_mode="Markdown")
         if alarm_mode:
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, 86400))
+        elif member_delay is not None:
+            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, member_delay))
         elif auto_del:
             delay = await get_delete_delay()
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, delay))
@@ -858,6 +897,8 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             )
             if alarm_mode:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, 86400))
+            elif member_delay is not None:
+                asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, member_delay))
             elif auto_del:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, delay))
 
@@ -866,6 +907,53 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         if any(x in err for x in ("Forbidden", "bot was blocked", "chat not found", "user is deactivated")):
             raise
         log.error(f"Gonderim hatasi ({symbol}): {e}")
+
+# ================= GRUP ERİŞİM KONTROLÜ =================
+
+# Grup üyelerinin kullanabileceği komutlar
+GROUP_ALLOWED_CMDS = {"start", "top5", "top24", "mtf"}
+
+async def check_group_access(update: Update, context, feature_name: str = None) -> bool:
+    """
+    Grupta çalıştırılan bir komutun üye tarafından kullanılıp kullanılamayacağını kontrol eder.
+    - Admin/creator → her zaman True
+    - Private chat  → her zaman True
+    - Grup üyesi + izin verilen komut → True
+    - Grup üyesi + yasak komut → DM yönlendirme mesajı gönderir, False döner
+    """
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        return True
+
+    user_id = update.effective_user.id if update.effective_user else None
+    if not user_id:
+        return True
+
+    # Admin kontrolü
+    if await is_group_admin(context.bot, chat.id, user_id):
+        return True
+
+    # Üye → yasak → yönlendir
+    fname = feature_name or "Bu özellik"
+    msg_id = update.message.message_id if update.message else None
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat.id, message_id=msg_id)
+        except Exception:
+            pass
+    try:
+        redir = await context.bot.send_message(
+            chat_id=chat.id,
+            text=(
+                f"🔒 *{fname}* grupta yalnızca adminler tarafından kullanılabilir.\n"
+                f"Lütfen botu özel mesaj (DM) üzerinden kullanın. 👇"
+            ),
+            parse_mode="Markdown"
+        )
+        asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 15))
+    except Exception:
+        pass
+    return False
 
 # ================= ADMIN KONTROL =================
 
@@ -881,18 +969,63 @@ async def is_admin(update: Update, context) -> bool:
         log.warning(f"Admin kontrol hatasi: {e}")
         return False
 
-SET_THRESHOLD_PRESETS = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
-DELETE_DELAY_PRESETS  = [30, 60, 300, 600, 1800, 3600]
+async def is_group_admin(bot, chat_id, user_id) -> bool:
+    """Verilen chat_id/user_id için admin mi diye kontrol eder."""
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+
+async def get_member_delete_delay() -> int:
+    """Grup üyesi komutları için silme süresini döndürür (saniye)."""
+    try:
+        async with db_pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT member_delete_delay FROM groups WHERE chat_id=$1", GROUP_CHAT_ID
+            )
+        return int(r["member_delete_delay"]) if r and r["member_delete_delay"] else 3600
+    except Exception:
+        return 3600
+
+async def group_dm_redirect(bot, chat_id, message_id, feature_name: str):
+    """Grup üyesine kullanılamaz özellik için DM yönlendirme mesajı gönderir ve orijinal mesajı siler."""
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+    try:
+        msg = await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"🔒 *{feature_name}* özelliği grupta kullanılamaz.\n"
+                f"Lütfen botu DM üzerinden kullanın. 👇"
+            ),
+            parse_mode="Markdown"
+        )
+        asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, 15))
+    except Exception:
+        pass
+
+SET_THRESHOLD_PRESETS    = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0]
+DELETE_DELAY_PRESETS     = [30, 60, 300, 600, 1800, 3600]
+MBR_DELETE_DELAY_PRESETS = [300, 600, 1800, 3600, 7200, 86400]
+
+DELAY_LABEL_MAP = {
+    30: "30sn", 60: "1dk", 300: "5dk", 600: "10dk",
+    1800: "30dk", 3600: "1sa", 7200: "2sa", 86400: "24sa"
+}
 
 async def build_set_panel(context):
     async with db_pool.acquire() as conn:
         r = await conn.fetchrow(
-            "SELECT alarm_active, threshold, delete_delay FROM groups WHERE chat_id=$1",
+            "SELECT alarm_active, threshold, delete_delay, member_delete_delay FROM groups WHERE chat_id=$1",
             GROUP_CHAT_ID
         )
     threshold    = r["threshold"]
     alarm_active = r["alarm_active"]
     del_delay    = r["delete_delay"] or 30
+    mbr_delay    = r["member_delete_delay"] or 3600
 
     threshold_buttons = []
     row = []
@@ -904,11 +1037,12 @@ async def build_set_panel(context):
     if row: threshold_buttons.append(row)
     threshold_buttons.append([InlineKeyboardButton("✏️ Manuel Eşik", callback_data="set_threshold_custom")])
 
+    # Alarm silme süresi (admin mesajları)
+    threshold_buttons.append([InlineKeyboardButton("── 🗑 Alarm Mesajı Silme Süresi ──", callback_data="noop")])
     delay_rows = []
     delay_row  = []
-    label_map  = {30: "30sn", 60: "1dk", 300: "5dk", 600: "10dk", 1800: "30dk", 3600: "1sa"}
     for val in DELETE_DELAY_PRESETS:
-        label = f"{'✅ ' if del_delay == val else ''}{label_map.get(val, str(val)+'sn')}"
+        label = f"{'✅ ' if del_delay == val else ''}{DELAY_LABEL_MAP.get(val, str(val)+'sn')}"
         delay_row.append(InlineKeyboardButton(label, callback_data=f"set_delay_{val}"))
         if len(delay_row) == 3:
             delay_rows.append(delay_row)
@@ -916,6 +1050,20 @@ async def build_set_panel(context):
     if delay_row:
         delay_rows.append(delay_row)
     threshold_buttons.extend(delay_rows)
+
+    # Üye komut silme süresi
+    threshold_buttons.append([InlineKeyboardButton("── 👥 Üye Komut Silme Süresi ──", callback_data="noop")])
+    mbr_rows = []
+    mbr_row  = []
+    for val in MBR_DELETE_DELAY_PRESETS:
+        label = f"{'✅ ' if mbr_delay == val else ''}{DELAY_LABEL_MAP.get(val, str(val)+'sn')}"
+        mbr_row.append(InlineKeyboardButton(label, callback_data=f"set_mdelay_{val}"))
+        if len(mbr_row) == 3:
+            mbr_rows.append(mbr_row)
+            mbr_row = []
+    if mbr_row:
+        mbr_rows.append(mbr_row)
+    threshold_buttons.extend(mbr_rows)
 
     threshold_buttons.append([
         InlineKeyboardButton(
@@ -925,18 +1073,22 @@ async def build_set_panel(context):
     ])
     threshold_buttons.append([InlineKeyboardButton("❌ Kapat", callback_data="set_close")])
 
-    delay_label = {15: "15 sn", 30: "30 sn", 60: "1 dk", 120: "2 dk", 300: "5 dk"}.get(del_delay, f"{del_delay} sn")
+    alarm_delay_label = DELAY_LABEL_MAP.get(del_delay, f"{del_delay}sn")
+    mbr_delay_label   = DELAY_LABEL_MAP.get(mbr_delay, f"{mbr_delay}sn")
     text = (
         "⚙️ *Grup Ayarları — Admin Paneli*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🔔 *Alarm Durumu:* `{'AKTİF' if alarm_active else 'KAPALI'}`\n"
         f"🎯 *Alarm Eşiği:* `%{threshold}`\n"
-        f"🗑 *Mesaj Silme:* `{delay_label}` sonra\n\n"
-        "Eşik seçin, silme süresi ayarlayın:"
+        f"🗑 *Alarm Mesajı Silme:* `{alarm_delay_label}` sonra\n"
+        f"👥 *Üye Komut Silme:* `{mbr_delay_label}` sonra\n\n"
+        "Ayarları aşağıdan değiştirin:"
     )
     return text, InlineKeyboardMarkup(threshold_buttons)
 
 async def set_command(update: Update, context):
+    if not await check_group_access(update, context, "Admin Ayarları"):
+        return
     chat = update.effective_chat
     if chat.type != "private":
         try:
@@ -1006,6 +1158,20 @@ async def set_callback(update: Update, context):
             log.warning(f"set_delay: {e}")
         return
 
+    if q.data.startswith("set_mdelay_"):
+        try:
+            delay_val = int(q.data.replace("set_mdelay_", ""))
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE groups SET member_delete_delay=$1 WHERE chat_id=$2", delay_val, GROUP_CHAT_ID)
+            text, keyboard = await build_set_panel(context)
+            await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.warning(f"set_mdelay: {e}")
+        return
+
+    if q.data == "noop":
+        return
+
     if q.data == "set_open":
         text, keyboard = await build_set_panel(context)
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
@@ -1043,7 +1209,7 @@ async def reply_symbol(update: Update, context):
     if not symbol.endswith("USDT"):
         return
 
-    chat = update.effective_chat
+    chat     = update.effective_chat
     is_group = chat.type in ("group", "supergroup")
 
     if is_group:
@@ -1052,15 +1218,19 @@ async def reply_symbol(update: Update, context):
         except Exception:
             pass
 
+    delay = (await get_member_delete_delay()) if is_group else None
     await send_full_analysis(
         context.bot,
         chat.id, symbol, "PIYASA ANALIZ RAPORU",
-        auto_del=is_group
+        auto_del=is_group,
+        member_delay=delay
     )
 
 # ================= GELİŞMİŞ KİŞİSEL ALARM =================
 
 async def my_alarm_v2(update: Update, context):
+    if not await check_group_access(update, context, "Kişisel Alarmlar"):
+        return
     user_id = update.effective_user.id
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -1117,6 +1287,8 @@ async def my_alarm_v2(update: Update, context):
     await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
 
 async def alarm_ekle_v2(update: Update, context):
+    if not await check_group_access(update, context, "Alarm Ekle"):
+        return
     user_id  = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     args     = context.args or []
@@ -1195,6 +1367,8 @@ async def alarm_ekle_v2(update: Update, context):
     )
 
 async def alarm_sil(update: Update, context):
+    if not await check_group_access(update, context, "Alarm Sil"):
+        return
     user_id = update.effective_user.id
     if not context.args:
         await send_temp(context.bot, update.effective_chat.id,
@@ -1239,6 +1413,8 @@ async def my_alarm(update: Update, context):
     await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 async def favori_command(update: Update, context):
+    if not await check_group_access(update, context, "Favoriler"):
+        return
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -1299,6 +1475,8 @@ async def favori_command(update: Update, context):
     )
 
 async def alarm_duraklat(update: Update, context):
+    if not await check_group_access(update, context, "Alarm Duraklat"):
+        return
     user_id = update.effective_user.id
     args    = context.args or []
     if len(args) < 2:
@@ -1326,6 +1504,8 @@ async def alarm_duraklat(update: Update, context):
         )
 
 async def alarm_gecmis(update: Update, context):
+    if not await check_group_access(update, context, "Alarm Geçmişi"):
+        return
     user_id = update.effective_user.id
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -1500,6 +1680,8 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
 
 
 async def hedef_command(update: Update, context):
+    if not await check_group_access(update, context, "Fiyat Hedefi"):
+        return
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -1666,6 +1848,8 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
 # ================= KAR/ZARAR HESABI =================
 
 async def kar_command(update: Update, context):
+    if not await check_group_access(update, context, "Kar/Zarar"):
+        return
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -1918,7 +2102,9 @@ async def mtf_command(update: Update, context):
         text  = f"📊 *{symbol} — Gelişmiş MTF Analiz*\n"
         text += f"━━━━━━━━━━━━━━━━━━\n"
         text += f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
-        text += f"🏅 *Hacim Sırası:* `{rank_str}`   📦 `{vol_str} USDT`\n"
+        is_fallback2 = marketcap_rank_cache.get("_fallback", False)
+        rank_label2  = "Hacim Sırası" if is_fallback2 else "MarketCap Sırası"
+        text += f"🏅 *{rank_label2}:* `{rank_str}`   📦 `{vol_str} USDT`\n"
         text += f"📊 *24s:* `{ch24:+.2f}%`   H:`{format_price(high24)}`  L:`{format_price(low24)}`\n\n"
         text += f"*🎯 Piyasa Skoru Özeti*\n"
         text += f"  ⏱ Saatlik : `{sh}/100` — _{lh}_\n"
@@ -1959,7 +2145,14 @@ async def mtf_command(update: Update, context):
         text += f"\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
 
         await wait.delete()
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        chat     = update.effective_chat
+        is_group = chat and chat.type in ("group", "supergroup")
+        sent_msg = await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        if is_group and sent_msg:
+            delay = await get_member_delete_delay()
+            asyncio.create_task(auto_delete(context.bot, chat.id, sent_msg.message_id, delay))
+            if update.message:
+                asyncio.create_task(auto_delete(context.bot, chat.id, update.message.message_id, 3))
 
     except Exception as e:
         try: await wait.delete()
@@ -2043,6 +2236,8 @@ async def send_weekly_report(bot, chat_id):
 
 
 async def zamanla_command(update: Update, context):
+    if not await check_group_access(update, context, "Zamanlanmış Görevler"):
+        return
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     args    = context.args or []
@@ -2123,33 +2318,58 @@ async def scheduled_job(context):
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Market",          callback_data="market"),
-         InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
-        [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
-         InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
-        [InlineKeyboardButton("🔔 Alarmlarim",      callback_data="my_alarm"),
-         InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
-        [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
-         InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
-        [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
-         InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-        [InlineKeyboardButton("🛠 Admin Ayarlari",  callback_data="set_open")]
-    ])
-    welcome_text = (
-        "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
-        "7/24 piyasayi izliyorum.\n\n"
-        "💡 Analiz: `BTCUSDT` yaz\n"
-        "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
-        "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
-        "   Çoklu hedef: `/hedef BTCUSDT 60k 70k 80k`\n"
-        "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
-        "⭐ Favori: `/favori ekle BTCUSDT`\n"
-        "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
-    )
+    chat    = update.effective_chat
+    user_id = update.effective_user.id if update.effective_user else None
+    in_group = chat and chat.type in ("group", "supergroup")
+    admin_in_group = False
+    if in_group and user_id:
+        admin_in_group = await is_group_admin(context.bot, chat.id, user_id)
+
+    if in_group and not admin_in_group:
+        # Grup üyesine sadece izin verilen butonlar
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5"),
+             InlineKeyboardButton("📈 24s Liderleri", callback_data="top24")],
+            [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help")],
+        ])
+        welcome_text = (
+            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayi izliyorum.\n\n"
+            "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
+            "📊 Detaylı analiz: `/mtf BTCUSDT`\n\n"
+            "_Diğer özellikler için botu DM üzerinden kullanın._"
+        )
+    else:
+        # Admin veya DM: tüm butonlar
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Market",          callback_data="market"),
+             InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
+            [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
+             InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
+            [InlineKeyboardButton("🔔 Alarmlarim",      callback_data="my_alarm"),
+             InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
+            [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
+             InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
+            [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
+             InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
+            [InlineKeyboardButton("🛠 Admin Ayarlari",  callback_data="set_open")]
+        ])
+        welcome_text = (
+            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayi izliyorum.\n\n"
+            "💡 Analiz: `BTCUSDT` yaz\n"
+            "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
+            "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
+            "   Çoklu hedef: `/hedef BTCUSDT 60k 70k 80k`\n"
+            "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
+            "⭐ Favori: `/favori ekle BTCUSDT`\n"
+            "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
+        )
     await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 async def market(update: Update, context):
+    if not await check_group_access(update, context, "Piyasa Duyarlılığı"):
+        return
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
@@ -2161,6 +2381,11 @@ async def market(update: Update, context):
     await target.reply_text(msg, parse_mode="Markdown")
 
 async def top24(update: Update, context):
+    chat = update.effective_chat
+    is_group = chat and chat.type in ("group", "supergroup")
+    is_cb    = bool(update.callback_query)
+    user_id  = update.effective_user.id if update.effective_user else None
+
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
@@ -2171,8 +2396,14 @@ async def top24(update: Update, context):
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
     for i, c in enumerate(usdt, 1):
         text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
-    target = update.callback_query.message if update.callback_query else update.message
-    await target.reply_text(text, parse_mode="Markdown")
+
+    target = update.callback_query.message if is_cb else update.message
+    msg = await target.reply_text(text, parse_mode="Markdown")
+    if is_group:
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+        if not is_cb and update.message:
+            asyncio.create_task(auto_delete(context.bot, chat.id, update.message.message_id, 3))
 
 async def top5(update: Update, context):
     if not price_memory:
@@ -2214,10 +2445,20 @@ async def top5(update: Update, context):
         if not negatives:
             text += "_Dusus yok_\n"
 
-    target = update.callback_query.message if update.callback_query else update.message
-    await target.reply_text(text, parse_mode="Markdown")
+    chat  = update.effective_chat
+    is_group = chat and chat.type in ("group", "supergroup")
+    is_cb    = bool(update.callback_query)
+    target = update.callback_query.message if is_cb else update.message
+    msg = await target.reply_text(text, parse_mode="Markdown")
+    if is_group:
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+        if not is_cb and update.message:
+            asyncio.create_task(auto_delete(context.bot, chat.id, update.message.message_id, 3))
 
 async def status(update: Update, context):
+    if not await check_group_access(update, context, "Bot Durumu"):
+        return
     async with db_pool.acquire() as conn:
         r = await conn.fetchrow(
             "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=$1",
@@ -2244,6 +2485,35 @@ async def button_handler(update: Update, context):
         return
 
     await q.answer()
+
+    # Grup üyesi kısıtlaması: sadece belirli butonlar izinli
+    chat = q.message.chat if q.message else None
+    is_group_chat = chat and chat.type in ("group", "supergroup")
+    if is_group_chat:
+        is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
+        # Grup üyesi için sadece top24, top5, mtf_help izinli
+        GROUP_OK_CALLBACKS = {"top24", "top5", "mtf_help"}
+        if not is_adm and q.data not in GROUP_OK_CALLBACKS:
+            try:
+                await context.bot.send_message(
+                    chat_id=q.from_user.id,
+                    text=(
+                        "🔒 Bu özellik grupta yalnızca adminler tarafından kullanılabilir.\n"
+                        "Lütfen botu özel mesaj (DM) üzerinden kullanın."
+                    )
+                )
+            except Exception:
+                pass
+            try:
+                redir = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="🔒 Bu özellik için lütfen botu DM üzerinden kullanın. 👇",
+                    parse_mode="Markdown"
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
+            except Exception:
+                pass
+            return
 
     # ── Market & genel ──
     if q.data == "market":
@@ -2324,11 +2594,19 @@ async def button_handler(update: Update, context):
             parse_mode="Markdown"
         )
 
-    # ── Fiyat Hedefi (GELİŞTİRİLMİŞ) ──
+    # ── Fiyat Hedefi ──
     elif q.data == "hedef_liste":
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, edit_message=q.message)
+        # /start menüsünden veya başka bir mesajdan geldiyse yeni mesaj gönder
+        # hedef listesinin kendi butonlarından (Yenile/Geçmiş/Sil) geldiyse edit et
+        origin = q.message.text or ""
+        is_hedef_msg = "Fiyat Hedef" in origin or "adet)" in origin
+        em = q.message if is_hedef_msg else None
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, edit_message=em)
     elif q.data == "hedef_gecmis":
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True, edit_message=q.message)
+        origin = q.message.text or ""
+        is_hedef_msg = "Fiyat Hedef" in origin or "Tüm Hedef" in origin or "adet)" in origin
+        em = q.message if is_hedef_msg else None
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True, edit_message=em)
     elif q.data == "hedef_add_help":
         await q.message.reply_text(
             "🎯 *Fiyat Hedefi Ekle*\n━━━━━━━━━━━━━━━━━━\n"
