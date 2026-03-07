@@ -151,6 +151,19 @@ async def init_db():
             ALTER TABLE price_targets
             ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1
         """)
+        # NULL olan active değerlerini 1 yap
+        await conn.execute("""
+            UPDATE price_targets SET active=1 WHERE active IS NULL
+        """)
+        # UNIQUE constraint yoksa ekle (hata verirse zaten var demek)
+        try:
+            await conn.execute("""
+                ALTER TABLE price_targets
+                ADD CONSTRAINT price_targets_user_symbol_target_uniq
+                UNIQUE(user_id, symbol, target_price)
+            """)
+        except Exception:
+            pass  # zaten var
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS kar_pozisyonlar (
                 id         SERIAL PRIMARY KEY,
@@ -1851,22 +1864,26 @@ async def hedef_command(update: Update, context):
     cur_price = fiyat_map.get(symbol, 0)
 
     # DB'ye ekle
+    eklenenler = []
     async with db_pool.acquire() as conn:
-        eklenenler = []
         for target in hedef_fiyatlar:
             if cur_price > 0:
                 direction = "up" if target > cur_price else "down"
             else:
-                direction = "up"  # fallback; job tekrar hesaplar
+                direction = "up"
             try:
+                # Önce mevcut kaydı sil, sonra ekle (conflict güvenli)
                 await conn.execute("""
-                    INSERT INTO price_targets(user_id, symbol, target_price, direction)
-                    VALUES($1,$2,$3,$4)
-                    ON CONFLICT(user_id,symbol,target_price) DO UPDATE SET active=1, direction=$4
+                    DELETE FROM price_targets
+                    WHERE user_id=$1 AND symbol=$2 AND target_price=$3
+                """, user_id, symbol, target)
+                await conn.execute("""
+                    INSERT INTO price_targets(user_id, symbol, target_price, direction, active)
+                    VALUES($1,$2,$3,$4,1)
                 """, user_id, symbol, target, direction)
                 eklenenler.append((target, direction))
             except Exception as e:
-                log.warning(f"hedef ekle DB: {e}")
+                log.warning(f"hedef ekle DB hatasi ({symbol} @ {target}): {e}")
 
     # Yanıt oluştur
     lines = []
