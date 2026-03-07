@@ -1683,7 +1683,7 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
                 )
     except Exception as e:
         log.error(f"hedef_liste_goster DB: {e}")
-        await bot.send_message(chat_id, "⚠️ Hedefler yüklenirken bir hata oluştu.", parse_mode="Markdown")
+        await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:200]}`", parse_mode="Markdown")
         return
 
     async def _send(text, keyboard):
