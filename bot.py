@@ -157,7 +157,6 @@ cooldowns:          dict = {}
 chart_cache:        dict = {}
 whale_vol_mem:      dict = {}
 scheduled_last_run: dict = {}
-rank_cache:         dict = {}
 
 # ================= YARDIMCI =================
 
@@ -171,32 +170,52 @@ def format_price(price):
 
 # ================= RANK =================
 
-async def get_coin_rank(symbol: str):
+COINGECKO_API = "https://api.coingecko.com/api/v3"
+marketcap_rank_cache: dict = {}  # symbol -> (cached_at, rank)
+
+async def _refresh_marketcap_cache():
+    """CoinGecko'dan ilk 500 coinin marketcap sıralamasını çeker ve önbelleğe alır."""
+    global marketcap_rank_cache
     now = datetime.utcnow()
-    cached = rank_cache.get(symbol)
-    if cached:
-        cached_at, rank, total = cached
-        if now - cached_at < timedelta(minutes=5):
-            return rank, total
     try:
+        new_cache = {}
         async with aiohttp.ClientSession() as session:
-            async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                data = await resp.json()
-        usdt_pairs = [x for x in data if x["symbol"].endswith("USDT")]
-        usdt_pairs.sort(key=lambda x: float(x.get("quoteVolume", 0)), reverse=True)
-        total = len(usdt_pairs)
-        rank  = None
-        for i, c in enumerate(usdt_pairs, 1):
-            if c["symbol"] == symbol:
-                rank = i
-                break
-        if rank is None:
-            return None, total
-        rank_cache[symbol] = (now, rank, total)
-        return rank, total
+            for page in (1, 2, 3, 4, 5):
+                url = (
+                    f"{COINGECKO_API}/coins/markets"
+                    f"?vs_currency=usd&order=market_cap_desc"
+                    f"&per_page=100&page={page}&sparkline=false"
+                )
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        break
+                    coins = await resp.json()
+                for coin in coins:
+                    # CoinGecko sembolü küçük harf; USDT çiftini eşleştir
+                    cg_sym = (coin.get("symbol") or "").upper() + "USDT"
+                    mc_rank = coin.get("market_cap_rank")
+                    if mc_rank:
+                        new_cache[cg_sym] = mc_rank
+                await asyncio.sleep(0.3)  # rate-limit
+        if new_cache:
+            marketcap_rank_cache = {"_updated": now, **new_cache}
+            log.info(f"MarketCap önbelleği güncellendi: {len(new_cache)} coin")
     except Exception as e:
-        log.warning(f"get_coin_rank hatasi ({symbol}): {e}")
-        return None, 0
+        log.warning(f"MarketCap önbellek güncelleme hatasi: {e}")
+
+async def get_coin_rank(symbol: str):
+    """Coinin CoinGecko marketcap sırasını döndürür."""
+    now = datetime.utcnow()
+    updated = marketcap_rank_cache.get("_updated")
+    # 10 dakikada bir yenile
+    if not updated or now - updated > timedelta(minutes=10):
+        await _refresh_marketcap_cache()
+
+    rank = marketcap_rank_cache.get(symbol)
+    total = len(marketcap_rank_cache) - (1 if "_updated" in marketcap_rank_cache else 0)
+    if rank is None:
+        return None, total
+    return rank, total
 
 def rank_emoji(rank):
     if rank is None:   return ""
@@ -283,10 +302,9 @@ async def send_temp(bot, chat_id, text, delay=None, **kwargs):
 
 async def generate_candlestick_chart(symbol: str):
     if symbol in chart_cache:
-        cached_at, buf = chart_cache[symbol]
+        cached_at, buf_data = chart_cache[symbol]
         if datetime.utcnow() - cached_at < timedelta(minutes=5):
-            buf.seek(0)
-            return buf
+            return io.BytesIO(buf_data)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -294,7 +312,7 @@ async def generate_candlestick_chart(symbol: str):
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 data = await resp.json()
-        if not data or isinstance(data, dict):
+        if not data or isinstance(data, dict) or len(data) < 10:
             return None
         df = pd.DataFrame(data, columns=[
             "open_time","open","high","low","close","volume",
@@ -323,9 +341,9 @@ async def generate_candlestick_chart(symbol: str):
             ylabel="Fiyat (USDT)", volume=True, figsize=(8,4),
             savefig=dict(fname=buf, format="png", bbox_inches="tight", dpi=90),
         )
-        buf.seek(0)
-        chart_cache[symbol] = (datetime.utcnow(), buf)
-        return buf
+        buf_data = buf.getvalue()
+        chart_cache[symbol] = (datetime.utcnow(), buf_data)
+        return io.BytesIO(buf_data)
     except Exception as e:
         log.error(f"Grafik hatasi ({symbol}): {e}")
         return None
@@ -694,7 +712,7 @@ async def fetch_all_analysis(symbol):
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
 
-async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None):
+async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None, alarm_mode=False):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
          k1d, k15m, k4h_42, k1h_24, k1w,
@@ -714,7 +732,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         rank, total = await get_coin_rank(symbol)
         re = rank_emoji(rank)
         if rank:
-            rank_line = f"{re} *Hacim Sırası:* `#{rank}` _/ {total} coin_\n"
+            rank_line = f"{re} *MarketCap Sırası:* `#{rank}` _/ {total} coin_\n"
         else:
             rank_line = ""
 
@@ -824,7 +842,9 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
         msg = await bot.send_message(chat_id=chat_id, text=text,
                                      reply_markup=keyboard, parse_mode="Markdown")
-        if auto_del:
+        if alarm_mode:
+            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, 86400))
+        elif auto_del:
             delay = await get_delete_delay()
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, delay))
 
@@ -836,7 +856,9 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
                 caption=f"🕯️ *{symbol}* — 4 Saatlik",
                 parse_mode="Markdown"
             )
-            if auto_del:
+            if alarm_mode:
+                asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, 86400))
+            elif auto_del:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, delay))
 
     except Exception as e:
@@ -1346,25 +1368,24 @@ async def _hedef_canli_fiyat(semboller: list) -> dict:
     if eksik:
         try:
             async with aiohttp.ClientSession() as session:
-                tasks = [
-                    session.get(f"{BINANCE_24H}?symbol={sym}",
-                                timeout=aiohttp.ClientTimeout(total=5))
-                    for sym in eksik
-                ]
-                resps = await asyncio.gather(*tasks, return_exceptions=True)
-                for sym, resp in zip(eksik, resps):
-                    if not isinstance(resp, Exception):
-                        try:
+                for sym in eksik:
+                    try:
+                        async with session.get(
+                            f"{BINANCE_24H}?symbol={sym}",
+                            timeout=aiohttp.ClientTimeout(total=5)
+                        ) as resp:
                             data = await resp.json()
-                            canli[sym] = float(data.get("lastPrice", 0))
-                        except:
-                            pass
+                            lp = data.get("lastPrice")
+                            if lp:
+                                canli[sym] = float(lp)
+                    except Exception:
+                        pass
         except Exception as e:
             log.warning(f"_hedef_canli_fiyat: {e}")
     return canli
 
 
-async def hedef_liste_goster(bot, chat_id, user_id, show_all=False):
+async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message=None):
     """Hedefleri anlık fiyat ve uzaklık bilgisiyle göster."""
     async with db_pool.acquire() as conn:
         if show_all:
@@ -1396,6 +1417,12 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False):
             InlineKeyboardButton("➕ Hedef Ekle",  callback_data="hedef_add_help"),
             InlineKeyboardButton("📋 Geçmiş",      callback_data="hedef_gecmis"),
         ]])
+        if edit_message:
+            try:
+                await edit_message.edit_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+                return
+            except Exception:
+                pass
         await bot.send_message(chat_id, msg, parse_mode="Markdown", reply_markup=keyboard)
         return
 
@@ -1463,6 +1490,12 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False):
     else:
         keyboard = InlineKeyboardMarkup([alt_buttons])
 
+    if edit_message:
+        try:
+            await edit_message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            return
+        except Exception:
+            pass
     await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=keyboard)
 
 
@@ -1525,13 +1558,19 @@ async def hedef_command(update: Update, context):
     async with db_pool.acquire() as conn:
         eklenenler = []
         for target in hedef_fiyatlar:
-            direction = "up" if target > cur_price else "down"
-            await conn.execute("""
-                INSERT INTO price_targets(user_id, symbol, target, direction)
-                VALUES($1,$2,$3,$4)
-                ON CONFLICT(user_id,symbol,target) DO UPDATE SET triggered=0, direction=$4
-            """, user_id, symbol, target, direction)
-            eklenenler.append((target, direction))
+            if cur_price > 0:
+                direction = "up" if target > cur_price else "down"
+            else:
+                direction = "up"  # fallback; job tekrar hesaplar
+            try:
+                await conn.execute("""
+                    INSERT INTO price_targets(user_id, symbol, target, direction)
+                    VALUES($1,$2,$3,$4)
+                    ON CONFLICT(user_id,symbol,target) DO UPDATE SET triggered=0, direction=$4
+                """, user_id, symbol, target, direction)
+                eklenenler.append((target, direction))
+            except Exception as e:
+                log.warning(f"hedef ekle DB: {e}")
 
     # Yanıt oluştur
     lines = []
@@ -1575,11 +1614,17 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
 
         for row in rows:
             cur = canli.get(row["symbol"])
-            if not cur:
+            if not cur or cur <= 0:
                 continue
 
-            hit = (row["direction"] == "up"   and cur >= row["target"]) or \
-                  (row["direction"] == "down"  and cur <= row["target"])
+            target    = row["target"]
+            # direction'ı anlık olarak yeniden hesapla (eski kayıtlar için güvenlik)
+            direction = row["direction"]
+            if direction not in ("up", "down"):
+                direction = "up" if target > cur else "down"
+
+            hit = (direction == "up"   and cur >= target) or \
+                  (direction == "down" and cur <= target)
             if not hit:
                 continue
 
@@ -2281,9 +2326,9 @@ async def button_handler(update: Update, context):
 
     # ── Fiyat Hedefi (GELİŞTİRİLMİŞ) ──
     elif q.data == "hedef_liste":
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id)
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, edit_message=q.message)
     elif q.data == "hedef_gecmis":
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True)
+        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True, edit_message=q.message)
     elif q.data == "hedef_add_help":
         await q.message.reply_text(
             "🎯 *Fiyat Hedefi Ekle*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2309,8 +2354,7 @@ async def button_handler(update: Update, context):
                     hedef_id, user_id
                 )
                 await q.answer(f"✅ {row['symbol']} @ {format_price(row['target'])} silindi", show_alert=False)
-                # Listeyi yenile
-                await hedef_liste_goster(context.bot, q.message.chat.id, user_id)
+                await hedef_liste_goster(context.bot, q.message.chat.id, user_id, edit_message=q.message)
             else:
                 await q.answer("❌ Hedef bulunamadı.", show_alert=True)
     elif q.data.startswith("hedef_sil_hepsi_"):
@@ -2321,7 +2365,7 @@ async def button_handler(update: Update, context):
                     "DELETE FROM price_targets WHERE user_id=$1 AND triggered=0", uid
                 )
             await q.answer("🗑 Aktif hedefler silindi.", show_alert=False)
-            await hedef_liste_goster(context.bot, q.message.chat.id, uid)
+            await hedef_liste_goster(context.bot, q.message.chat.id, uid, edit_message=q.message)
 
     # ── Kar/Zarar ──
     elif q.data == "kar_help":
@@ -2403,7 +2447,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 continue
             cooldowns[key] = now
             yon = "⚡🟢 5dk YUKSELIS UYARISI 🟢⚡" if ch5 > 0 else "⚡🔴 5dk DUSUS UYARISI 🔴⚡"
-            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2))
+            await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2), alarm_mode=True)
 
     for row in user_rows:
         symbol     = row["symbol"]
