@@ -202,6 +202,18 @@ def format_price(price):
 COINGECKO_API = "https://api.coingecko.com/api/v3"
 marketcap_rank_cache: dict = {}  # symbol -> rank (int), "_updated" -> datetime, "_fallback" -> bool
 
+# CoinGecko sembol -> Binance sembol farklı olanlar
+CG_TO_BINANCE: dict = {
+    "MATICUSDT": "POLUSDT",   # Polygon yeniden adlandı
+    "MIOTAUSDT": "IOTAUSDT",  # MIOTA -> IOTA
+    "USDCUSDT":  None,        # Binance'de stablecoin, sıralama dışı
+    "USDTUSDT":  None,
+    "STETHUSDT": None,
+    "WSTETHUSDT":None,
+    "WEETHUSDT": None,
+    "WBTCUSDT":  "WBTCUSDT",
+}
+
 def _build_binance_rank_cache(data: list) -> dict:
     """Binance 24hr ticker listesinden quoteVolume sıralaması üretir."""
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
@@ -212,15 +224,9 @@ def _build_binance_rank_cache(data: list) -> dict:
     return cache
 
 async def _refresh_marketcap_cache():
-    """
-    CoinGecko'dan marketcap sıralaması çekmeye çalışır.
-    Başarısız olursa Binance quoteVolume kullanır.
-    Senkron bloklama yapmaz — arka plan jobı tarafından çağrılır.
-    """
+    """CoinGecko marketcap sıralaması, başarısız olursa Binance hacim sırası."""
     global marketcap_rank_cache
     now = datetime.utcnow()
-
-    # CoinGecko dene — sadece 1. sayfa (ilk 100 coin), hızlı
     cg_cache = {}
     try:
         async with aiohttp.ClientSession() as session:
@@ -242,10 +248,18 @@ async def _refresh_marketcap_cache():
                         if not isinstance(coins, list) or not coins:
                             break
                         for coin in coins:
-                            cg_sym  = (coin.get("symbol") or "").upper() + "USDT"
+                            raw_sym = (coin.get("symbol") or "").upper()
                             mc_rank = coin.get("market_cap_rank")
-                            if mc_rank and cg_sym not in cg_cache:
-                                cg_cache[cg_sym] = int(mc_rank)
+                            if not mc_rank:
+                                continue
+                            cg_sym = raw_sym + "USDT"
+                            # Mapping tablosunda varsa Binance sembolüne çevir
+                            if cg_sym in CG_TO_BINANCE:
+                                binance_sym = CG_TO_BINANCE[cg_sym]
+                            else:
+                                binance_sym = cg_sym
+                            if binance_sym and binance_sym not in cg_cache:
+                                cg_cache[binance_sym] = int(mc_rank)
                 except asyncio.TimeoutError:
                     log.warning(f"CoinGecko sayfa {page} timeout")
                     break
@@ -273,19 +287,24 @@ async def marketcap_refresh_job(context):
     await _refresh_marketcap_cache()
 
 async def get_coin_rank(symbol: str):
-    """
-    Cache'den anlık okur — asla bloklama yapmaz.
-    Cache boşsa Binance ticker verisini senkron olarak kullanır.
-    """
-    # Cache doluysa direkt oku
-    if marketcap_rank_cache.get("_updated"):
-        rank  = marketcap_rank_cache.get(symbol)
-        total = sum(1 for k in marketcap_rank_cache if not k.startswith("_"))
-        return rank, total
+    """Cache'den anlık okur. Bulamazsa base sembol ile fuzzy arama yapar."""
+    if not marketcap_rank_cache.get("_updated"):
+        await _refresh_marketcap_cache()
 
-    # İlk başlatmada cache henüz dolmamışsa bekle
-    await _refresh_marketcap_cache()
-    rank  = marketcap_rank_cache.get(symbol)
+    rank = marketcap_rank_cache.get(symbol)
+
+    # Direkt bulunamadıysa base sembolle ara (leveraged token'ları atla)
+    if rank is None and symbol.endswith("USDT"):
+        base = symbol[:-4]
+        leveraged = any(base.endswith(x) for x in ("3L","3S","UP","DOWN","BULL","BEAR","LONG","SHORT"))
+        if not leveraged:
+            for key, val in marketcap_rank_cache.items():
+                if isinstance(val, int) and not key.startswith("_"):
+                    key_base = key[:-4] if key.endswith("USDT") else key
+                    if key_base == base:
+                        rank = val
+                        break
+
     total = sum(1 for k in marketcap_rank_cache if not k.startswith("_"))
     return rank, total
 
