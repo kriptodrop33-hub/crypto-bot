@@ -129,15 +129,27 @@ async def init_db():
         """, GROUP_CHAT_ID, DEFAULT_THRESHOLD, DEFAULT_MODE)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS price_targets (
-                id         SERIAL PRIMARY KEY,
-                user_id    BIGINT,
-                symbol     TEXT,
-                target     REAL,
-                direction  TEXT,
-                triggered  INTEGER DEFAULT 0,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(user_id, symbol, target)
+                id          SERIAL PRIMARY KEY,
+                user_id     BIGINT,
+                symbol      TEXT,
+                target_price REAL,
+                direction   TEXT,
+                active      INTEGER DEFAULT 1,
+                UNIQUE(user_id, symbol, target_price)
             )
+        """)
+        # Migration: eski "target" kolonunu "target_price" olarak ekle (eğer yoksa)
+        await conn.execute("""
+            ALTER TABLE price_targets
+            ADD COLUMN IF NOT EXISTS target_price REAL
+        """)
+        await conn.execute("""
+            ALTER TABLE price_targets
+            ADD COLUMN IF NOT EXISTS direction TEXT
+        """)
+        await conn.execute("""
+            ALTER TABLE price_targets
+            ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS kar_pozisyonlar (
@@ -1669,30 +1681,21 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
         async with db_pool.acquire() as conn:
             if show_all:
                 rows = await conn.fetch(
-                    """SELECT id, symbol, target, direction, triggered, created_at
+                    """SELECT id, symbol, target_price AS target, direction, active AS triggered
                        FROM price_targets WHERE user_id=$1
-                       ORDER BY triggered ASC, symbol, target""",
+                       ORDER BY active DESC, symbol, target_price""",
                     user_id
                 )
             else:
                 rows = await conn.fetch(
-                    """SELECT id, symbol, target, direction, triggered, created_at
-                       FROM price_targets WHERE user_id=$1 AND triggered=0
-                       ORDER BY symbol, target""",
+                    """SELECT id, symbol, target_price AS target, direction, active AS triggered
+                       FROM price_targets WHERE user_id=$1 AND active=1
+                       ORDER BY symbol, target_price""",
                     user_id
                 )
     except Exception as e:
         log.error(f"hedef_liste_goster DB: {e}")
-        # Gerçek kolon adlarını logla
-        try:
-            async with db_pool.acquire() as conn:
-                cols = await conn.fetch(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name='price_targets' ORDER BY ordinal_position"
-                )
-            col_names = [r['column_name'] for r in cols]
-            await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:150]}`\nKolonlar: `{col_names}`", parse_mode="Markdown")
-        except Exception as e2:
-            await bot.send_message(chat_id, f"⚠️ DB Hatası: `{str(e)[:200]}`", parse_mode="Markdown")
+        await bot.send_message(chat_id, "⚠️ Hedefler yüklenirken bir hata oluştu.", parse_mode="Markdown")
         return
 
     async def _send(text, keyboard):
@@ -1746,12 +1749,12 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
         for r in hedefler:
             target    = r["target"]
             yon_icon  = "📈" if r["direction"] == "up" else "📉"
-            triggered = r["triggered"]
+            is_active = r["triggered"]  # alias: active kolonundan geliyor, 1=aktif 0=tetiklendi
 
-            if triggered:
+            if not is_active:  # active=0 → tetiklenmiş
                 durum = "✅"
                 uzak  = ""
-            else:
+            else:              # active=1 → bekliyor
                 durum = "🟡"
                 if cur and cur > 0:
                     pct  = ((target - cur) / cur) * 100
@@ -1761,7 +1764,7 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
 
             text += f"  {durum} {yon_icon} `{format_price(target)} USDT`{uzak}\n"
 
-            if not triggered:
+            if is_active:  # active=1 → hâlâ bekliyor, silinebilir
                 sil_buttons.append([
                     InlineKeyboardButton(
                         f"🗑 {sym} @ {format_price(target)}",
@@ -1857,9 +1860,9 @@ async def hedef_command(update: Update, context):
                 direction = "up"  # fallback; job tekrar hesaplar
             try:
                 await conn.execute("""
-                    INSERT INTO price_targets(user_id, symbol, target, direction)
+                    INSERT INTO price_targets(user_id, symbol, target_price, direction)
                     VALUES($1,$2,$3,$4)
-                    ON CONFLICT(user_id,symbol,target) DO UPDATE SET triggered=0, direction=$4
+                    ON CONFLICT(user_id,symbol,target_price) DO UPDATE SET active=1, direction=$4
                 """, user_id, symbol, target, direction)
                 eklenenler.append((target, direction))
             except Exception as e:
@@ -1896,7 +1899,7 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, user_id, symbol, target, direction FROM price_targets WHERE triggered=0"
+                "SELECT id, user_id, symbol, target_price AS target, direction FROM price_targets WHERE active=1"
             )
         if not rows:
             return
@@ -1923,7 +1926,7 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
 
             async with db_pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE price_targets SET triggered=1 WHERE id=$1", row["id"]
+                    "UPDATE price_targets SET active=0 WHERE id=$1", row["id"]
                 )
 
             yon  = "📈 YÜKSELDİ" if row["direction"] == "up" else "📉 DÜŞTÜ"
@@ -2768,7 +2771,7 @@ async def button_handler(update: Update, context):
             user_id  = q.from_user.id
             async with db_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT symbol, target FROM price_targets WHERE id=$1 AND user_id=$2",
+                    "SELECT symbol, target_price AS target FROM price_targets WHERE id=$1 AND user_id=$2",
                     hedef_id, user_id
                 )
                 if row:
@@ -2786,7 +2789,7 @@ async def button_handler(update: Update, context):
             if q.from_user.id == uid:
                 async with db_pool.acquire() as conn:
                     await conn.execute(
-                        "DELETE FROM price_targets WHERE user_id=$1 AND triggered=0", uid
+                        "UPDATE price_targets SET active=0 WHERE user_id=$1 AND active=1", uid
                     )
                 await q.answer("🗑 Aktif hedefler silindi.", show_alert=False)
                 await hedef_liste_goster(context.bot, uid, uid, edit_message=q.message)
