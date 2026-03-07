@@ -1665,21 +1665,39 @@ async def _hedef_canli_fiyat(semboller: list) -> dict:
 
 async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message=None):
     """Hedefleri anlık fiyat ve uzaklık bilgisiyle göster."""
-    async with db_pool.acquire() as conn:
-        if show_all:
-            rows = await conn.fetch(
-                """SELECT id, symbol, target, direction, triggered, created_at
-                   FROM price_targets WHERE user_id=$1
-                   ORDER BY triggered ASC, symbol, target""",
-                user_id
-            )
-        else:
-            rows = await conn.fetch(
-                """SELECT id, symbol, target, direction, triggered, created_at
-                   FROM price_targets WHERE user_id=$1 AND triggered=0
-                   ORDER BY symbol, target""",
-                user_id
-            )
+    try:
+        async with db_pool.acquire() as conn:
+            if show_all:
+                rows = await conn.fetch(
+                    """SELECT id, symbol, target, direction, triggered, created_at
+                       FROM price_targets WHERE user_id=$1
+                       ORDER BY triggered ASC, symbol, target""",
+                    user_id
+                )
+            else:
+                rows = await conn.fetch(
+                    """SELECT id, symbol, target, direction, triggered, created_at
+                       FROM price_targets WHERE user_id=$1 AND triggered=0
+                       ORDER BY symbol, target""",
+                    user_id
+                )
+    except Exception as e:
+        log.error(f"hedef_liste_goster DB: {e}")
+        await bot.send_message(chat_id, "⚠️ Hedefler yüklenirken bir hata oluştu.", parse_mode="Markdown")
+        return
+
+    async def _send(text, keyboard):
+        """Edit veya yeni mesaj gönder — her durumda bir şey çıksın."""
+        if edit_message:
+            try:
+                await edit_message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+                return
+            except Exception:
+                pass
+        try:
+            await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.error(f"hedef_liste_goster send: {e}")
 
     if not rows:
         msg = (
@@ -1695,13 +1713,7 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
             InlineKeyboardButton("➕ Hedef Ekle",  callback_data="hedef_add_help"),
             InlineKeyboardButton("📋 Geçmiş",      callback_data="hedef_gecmis"),
         ]])
-        if edit_message:
-            try:
-                await edit_message.edit_text(msg, parse_mode="Markdown", reply_markup=keyboard)
-                return
-            except Exception:
-                pass
-        await bot.send_message(chat_id, msg, parse_mode="Markdown", reply_markup=keyboard)
+        await _send(msg, keyboard)
         return
 
     # Anlık fiyatları toplu çek
@@ -1711,7 +1723,6 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
     baslik = "🎯 *Tüm Hedeflerim*" if show_all else "🎯 *Aktif Fiyat Hedeflerim*"
     text   = baslik + f" `({len(rows)} adet)`\n━━━━━━━━━━━━━━━━━━\n"
 
-    # Sembole göre grupla
     from collections import defaultdict as _dd
     gruplar = _dd(list)
     for r in rows:
@@ -1752,7 +1763,6 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
     if canli:
         text += "\n_↕️ Yüzde = anlık fiyattan uzaklık_"
 
-    # Butonlar
     alt_buttons = [
         InlineKeyboardButton("➕ Ekle",      callback_data="hedef_add_help"),
         InlineKeyboardButton("🔄 Yenile",    callback_data="hedef_liste"),
@@ -1768,13 +1778,7 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
     else:
         keyboard = InlineKeyboardMarkup([alt_buttons])
 
-    if edit_message:
-        try:
-            await edit_message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
-            return
-        except Exception:
-            pass
-    await bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=keyboard)
+    await _send(text, keyboard)
 
 
 async def hedef_command(update: Update, context):
@@ -2597,7 +2601,10 @@ async def button_handler(update: Update, context):
         # Grup üyesi için sadece top24, top5, mtf_help izinli
         # Grup üyesi için izin verilen callback'ler (grupta çalışanlar)
         GROUP_OK_CALLBACKS = {"top24", "top5", "mtf_help", "market", "status"}
-        if not is_adm and q.data not in GROUP_OK_CALLBACKS:
+        # Hedef ve diğer kişisel özellikler kendi bloğunda DM yönlendirmesi yapıyor
+        GROUP_SELF_HANDLED = {"hedef_liste", "hedef_gecmis", "hedef_add_help"}
+        if not is_adm and q.data not in GROUP_OK_CALLBACKS and q.data not in GROUP_SELF_HANDLED \
+                and not q.data.startswith("hedef_sil_"):
             try:
                 await context.bot.send_message(
                     chat_id=q.from_user.id,
@@ -2702,55 +2709,78 @@ async def button_handler(update: Update, context):
         )
 
     # ── Fiyat Hedefi ──
-    elif q.data == "hedef_liste":
-        # /start menüsünden veya başka bir mesajdan geldiyse yeni mesaj gönder
-        # hedef listesinin kendi butonlarından (Yenile/Geçmiş/Sil) geldiyse edit et
-        origin = q.message.text or ""
-        is_hedef_msg = "Fiyat Hedef" in origin or "adet)" in origin
-        em = q.message if is_hedef_msg else None
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, edit_message=em)
-    elif q.data == "hedef_gecmis":
-        origin = q.message.text or ""
-        is_hedef_msg = "Fiyat Hedef" in origin or "Tüm Hedef" in origin or "adet)" in origin
-        em = q.message if is_hedef_msg else None
-        await hedef_liste_goster(context.bot, q.message.chat.id, q.from_user.id, show_all=True, edit_message=em)
-    elif q.data == "hedef_add_help":
-        await q.message.reply_text(
-            "🎯 *Fiyat Hedefi Ekle*\n━━━━━━━━━━━━━━━━━━\n"
-            "Tek hedef:\n`/hedef BTCUSDT 70000`\n\n"
-            "Çoklu hedef (aynı coin, birden fazla fiyat):\n"
-            "`/hedef BTCUSDT 65000 70000 80000`\n\n"
-            "Hedef listeye ulaşınca DM bildirim alırsınız.\n\n"
-            "Sil: `/hedef sil BTCUSDT`\n"
-            "Geçmiş: `/hedef gecmis`",
-            parse_mode="Markdown"
-        )
-    elif q.data.startswith("hedef_sil_id_"):
-        hedef_id = int(q.data.replace("hedef_sil_id_", ""))
-        user_id  = q.from_user.id
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT symbol, target FROM price_targets WHERE id=$1 AND user_id=$2",
-                hedef_id, user_id
+    # Hedef butonları grup kısıtlamasından muaf — her yerden DM'e yönlendirir
+    elif q.data in ("hedef_liste", "hedef_gecmis", "hedef_add_help") or \
+         q.data.startswith("hedef_sil_id_") or q.data.startswith("hedef_sil_hepsi_"):
+
+        # Grup üyesiyse DM'e yönlendir, DM'de devam et
+        if is_group_chat and not await is_group_admin(context.bot, chat.id, q.from_user.id):
+            try:
+                await context.bot.send_message(
+                    chat_id=q.from_user.id,
+                    text=(
+                        "🎯 *Fiyat Hedefi* özelliğini kullanmak için buraya tıklayın 👇\n"
+                        "Hedeflerinizi DM üzerinden yönetebilirsiniz."
+                    ),
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            try:
+                tip = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="🔒 Fiyat Hedefi için lütfen DM'den kullanın 👇 @kriptodroptrhaberbot",
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+            except Exception:
+                pass
+            return
+
+        if q.data == "hedef_liste":
+            await hedef_liste_goster(context.bot, q.from_user.id, q.from_user.id, edit_message=None)
+
+        elif q.data == "hedef_gecmis":
+            await hedef_liste_goster(context.bot, q.from_user.id, q.from_user.id, show_all=True, edit_message=None)
+
+        elif q.data == "hedef_add_help":
+            await q.message.reply_text(
+                "🎯 *Fiyat Hedefi Ekle*\n━━━━━━━━━━━━━━━━━━\n"
+                "Tek hedef:\n`/hedef BTCUSDT 70000`\n\n"
+                "Çoklu hedef (aynı coin, birden fazla fiyat):\n"
+                "`/hedef BTCUSDT 65000 70000 80000`\n\n"
+                "Hedef listeye ulaşınca DM bildirim alırsınız.\n\n"
+                "Sil: `/hedef sil BTCUSDT`\n"
+                "Geçmiş: `/hedef gecmis`",
+                parse_mode="Markdown"
             )
-            if row:
-                await conn.execute(
-                    "DELETE FROM price_targets WHERE id=$1 AND user_id=$2",
+
+        elif q.data.startswith("hedef_sil_id_"):
+            hedef_id = int(q.data.replace("hedef_sil_id_", ""))
+            user_id  = q.from_user.id
+            async with db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT symbol, target FROM price_targets WHERE id=$1 AND user_id=$2",
                     hedef_id, user_id
                 )
-                await q.answer(f"✅ {row['symbol']} @ {format_price(row['target'])} silindi", show_alert=False)
-                await hedef_liste_goster(context.bot, q.message.chat.id, user_id, edit_message=q.message)
-            else:
-                await q.answer("❌ Hedef bulunamadı.", show_alert=True)
-    elif q.data.startswith("hedef_sil_hepsi_"):
-        uid = int(q.data.split("_")[-1])
-        if q.from_user.id == uid:
-            async with db_pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM price_targets WHERE user_id=$1 AND triggered=0", uid
-                )
-            await q.answer("🗑 Aktif hedefler silindi.", show_alert=False)
-            await hedef_liste_goster(context.bot, q.message.chat.id, uid, edit_message=q.message)
+                if row:
+                    await conn.execute(
+                        "DELETE FROM price_targets WHERE id=$1 AND user_id=$2",
+                        hedef_id, user_id
+                    )
+                    await q.answer(f"✅ {row['symbol']} @ {format_price(row['target'])} silindi", show_alert=False)
+                    await hedef_liste_goster(context.bot, user_id, user_id, edit_message=q.message)
+                else:
+                    await q.answer("❌ Hedef bulunamadı.", show_alert=True)
+
+        elif q.data.startswith("hedef_sil_hepsi_"):
+            uid = int(q.data.split("_")[-1])
+            if q.from_user.id == uid:
+                async with db_pool.acquire() as conn:
+                    await conn.execute(
+                        "DELETE FROM price_targets WHERE user_id=$1 AND triggered=0", uid
+                    )
+                await q.answer("🗑 Aktif hedefler silindi.", show_alert=False)
+                await hedef_liste_goster(context.bot, uid, uid, edit_message=q.message)
 
     # ── Kar/Zarar ──
     elif q.data == "kar_help":
