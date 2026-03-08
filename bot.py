@@ -361,12 +361,42 @@ async def fetch_market_badge():
     except Exception:
         return None, None, None
 
+# Bekleyen silme görevleri — restart sonrası kurtarma için
+_pending_deletes: list[tuple] = []   # (delete_at_ts, chat_id, message_id)
+
 async def auto_delete(bot, chat_id, message_id, delay=30):
+    import time as _t
+    delete_at = _t.time() + delay
+    _pending_deletes.append((delete_at, chat_id, message_id))
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception:
         pass
+    finally:
+        try:
+            _pending_deletes.remove((delete_at, chat_id, message_id))
+        except ValueError:
+            pass
+
+async def replay_pending_deletes(bot):
+    """Bot başlarken bekleyen silme işlemlerini yeniden zamanla."""
+    import time as _t
+    now = _t.time()
+    for (delete_at, chat_id, message_id) in list(_pending_deletes):
+        remaining = delete_at - now
+        if remaining <= 0:
+            # Zaman geçmiş — hemen sil
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+            try:
+                _pending_deletes.remove((delete_at, chat_id, message_id))
+            except ValueError:
+                pass
+        else:
+            asyncio.create_task(auto_delete(bot, chat_id, message_id, remaining))
 
 async def get_delete_delay() -> int:
     try:
@@ -935,8 +965,10 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
         msg = await bot.send_message(chat_id=chat_id, text=text,
                                      reply_markup=keyboard, parse_mode="Markdown")
+        # Silme süresi: alarm_mode dahil HEPSİ için DB'deki delete_delay kullan
         if alarm_mode:
-            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, 86400))
+            alarm_delay = await get_delete_delay()
+            asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, alarm_delay))
         elif member_delay is not None:
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, member_delay))
         elif auto_del:
@@ -952,7 +984,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
                 parse_mode="Markdown"
             )
             if alarm_mode:
-                asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, 86400))
+                asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, alarm_delay))
             elif member_delay is not None:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, member_delay))
             elif auto_del:
@@ -3000,6 +3032,8 @@ async def binance_engine():
 async def post_init(app):
     await init_db()
     asyncio.create_task(binance_engine())
+    # Bot restart sonrası bekleyen silme işlemlerini yeniden zamanla
+    await replay_pending_deletes(app.bot)
     await app.bot.set_my_commands([
         BotCommand("start",          "Botu başlat / Ana menü"),
         BotCommand("hedef",          "Fiyat hedefi ekle / listele"),
