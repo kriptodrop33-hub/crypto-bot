@@ -2109,7 +2109,7 @@ async def mtf_command(update: Update, context):
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
-    wait = await send_temp(context.bot, update.effective_chat.id, "⏳ Derin analiz yapiliyor...", parse_mode="Markdown")
+    wait = await send_temp(context.bot, update.effective_chat.id, "⏳ MTF analiz yapılıyor...", parse_mode="Markdown")
     try:
         async with aiohttp.ClientSession() as session:
             ticker_resp, k15m, k1h, k4h, k1d, k1w = await asyncio.gather(
@@ -2122,177 +2122,149 @@ async def mtf_command(update: Update, context):
             )
             ticker = await ticker_resp.json()
 
-        price   = float(ticker.get("lastPrice", 0))
-        ch24    = float(ticker.get("priceChangePercent", 0))
-        high24  = float(ticker.get("highPrice", 0))
-        low24   = float(ticker.get("lowPrice", 0))
-        vol24   = float(ticker.get("quoteVolume", 0))
+        price  = float(ticker.get("lastPrice", 0))
+        ch24   = float(ticker.get("priceChangePercent", 0))
+        vol24  = float(ticker.get("quoteVolume", 0))
         vol_str = f"{vol24/1_000_000:.1f}M" if vol24 >= 1_000_000 else f"{vol24/1_000:.0f}K"
 
         rank, total = await get_coin_rank(symbol)
-        re = rank_emoji(rank)
-        rank_str = f"{re} #{rank}/{total}" if rank else "—"
+        re_icon = rank_emoji(rank)
+        rank_str = f"#{rank}" if rank else "—"
+        is_fallback2 = marketcap_rank_cache.get("_fallback", True)
+        rank_label2  = "Hacim" if is_fallback2 else "MCap"
 
-        def rsi_bar(r):
-            if r >= 70:   return f"`{r:.1f}` 🔴"
-            elif r >= 55: return f"`{r:.1f}` 🟡"
-            elif r <= 30: return f"`{r:.1f}` 🔵"
-            elif r <= 45: return f"`{r:.1f}` 🟡"
-            else:         return f"`{r:.1f}` 🟢"
-
-        def macd_icon(data):
-            _, hist = calc_macd(data)
-            return ("🟢 +" if hist > 0 else "🔴 -") + f"`{abs(hist):.6f}`"
-
-        def boll_label(data):
-            pos = calc_bollinger(data, period=20)
-            pos = max(0, min(100, pos))
-            if pos >= 80:   return f"🔴 Üst Bant `{pos:.0f}%`"
-            elif pos <= 20: return f"🔵 Alt Bant `{pos:.0f}%`"
-            else:           return f"🟢 Orta `{pos:.0f}%`"
-
-        def ema_label(data, fast, slow):
-            ef = calc_ema(data, fast)
-            es = calc_ema(data, slow)
-            diff_pct = ((ef - es) / es * 100) if es else 0
-            icon = "🟢" if ef > es else "🔴"
-            return f"{icon} EMA{fast}/EMA{slow} `{diff_pct:+.2f}%`"
-
-        def obv_label(data, lb=14):
-            o = calc_obv_trend(data, lookback=lb)
-            return "🟢 Yükseliyor" if o == 1 else ("🔴 Düşüyor" if o == -1 else "⚪ Yatay")
-
-        def stoch_label(data):
-            s = calc_stoch_rsi(data)
-            if s >= 80:   icon = "🔴"
-            elif s >= 60: icon = "🟡"
-            elif s <= 20: icon = "🔵"
-            elif s <= 40: icon = "🟡"
-            else:         icon = "🟢"
-            return f"{icon} `{s:.1f}`"
-
-        def tf_block(data, label, ema_fast, ema_slow):
+        # ── Zaman Dilimi Özeti ──────────────────────────────────
+        def tf_line(data, label):
             if not data or len(data) < 20:
-                return f"*{label}* — veri yetersiz\n"
-            ch   = calc_change(data[-2:])
-            ch7  = calc_change(data[-7:])  if len(data) >= 7 else 0
+                return f"  {label:<6} `veri yok`\n"
             rsi  = calc_rsi(data, 14)
-            cur_p = float(data[-1][4])
-            yon  = "📈" if ch > 0 else "📉"
+            stch = calc_stoch_rsi(data)
+            _, hist = calc_macd(data)
+            ch   = calc_change(data[-2:])
+            yon  = "▲" if ch > 0 else "▼"
+
+            if rsi >= 70:   rsi_icon = "🔴"
+            elif rsi >= 55: rsi_icon = "🟡"
+            elif rsi <= 30: rsi_icon = "🔵"
+            elif rsi <= 45: rsi_icon = "🟡"
+            else:           rsi_icon = "🟢"
+
+            macd_icon = "⬆" if hist > 0 else "⬇"
             return (
-                f"*{label}* {yon} `{ch:+.2f}%`  _(7 mum: `{ch7:+.2f}%`)_\n"
-                f"  Fiyat: `{format_price(cur_p)} USDT`\n"
-                f"  RSI 14: {rsi_bar(rsi)}   StochRSI: {stoch_label(data)}\n"
-                f"  MACD: {macd_icon(data)}\n"
-                f"  {ema_label(data, ema_fast, ema_slow)}\n"
-                f"  Bollinger: {boll_label(data)}\n"
-                f"  OBV: {obv_label(data)}\n"
+                f"  {label:<5} {yon}`{ch:+.2f}%`  "
+                f"RSI{rsi_icon}`{rsi:.0f}`  "
+                f"MACD{macd_icon}  "
+                f"StRSI`{stch:.0f}`\n"
             )
 
-        def calc_fibo_full(data, lookback=200):
-            if not data:
-                return None, None, None, None, None
+        # ── Fibonacci + Destek/Direnç ───────────────────────────
+        def calc_fibo_levels(data, lookback=200):
+            if not data or len(data) < 10:
+                return None
             window = data[-min(lookback, len(data)):]
-            hi  = max(float(c[2]) for c in window)
-            lo  = min(float(c[3]) for c in window)
+            hi   = max(float(c[2]) for c in window)
+            lo   = min(float(c[3]) for c in window)
             diff = hi - lo
-            levels = [
-                ("0.0%",   hi),
-                ("23.6%",  hi - diff * 0.236),
-                ("38.2%",  hi - diff * 0.382),
-                ("50.0%",  hi - diff * 0.500),
-                ("61.8%",  hi - diff * 0.618),
-                ("78.6%",  hi - diff * 0.786),
-                ("100%",   lo),
-            ]
+            if diff == 0:
+                return None
             cur = float(data[-1][4])
-            below = [(k, v) for k, v in levels if v <= cur]
-            above = [(k, v) for k, v in levels if v >  cur]
-            sup = max(below, key=lambda x: x[1]) if below else None
-            res = min(above, key=lambda x: x[1]) if above else None
-            pct_in_range = ((cur - lo) / diff * 100) if diff > 0 else 50
-            return sup, res, hi, lo, pct_in_range
+            ratios = [0.0, 0.236, 0.382, 0.500, 0.618, 0.786, 1.0]
+            levels = [(f"{r*100:.1f}%", hi - diff * r) for r in ratios]
+            return {"hi": hi, "lo": lo, "cur": cur, "levels": levels}
 
-        fib_sup, fib_res, swing_hi, swing_lo, fib_pct = calc_fibo_full(k4h, lookback=200)
-
-        def fib_all_levels(hi, lo):
-            diff = hi - lo
-            cur  = float(k4h[-1][4]) if k4h else 0
-            rows_f = [
-                ("0.0%",   hi),
-                ("23.6%",  hi - diff * 0.236),
-                ("38.2%",  hi - diff * 0.382),
-                ("50.0%",  hi - diff * 0.500),
-                ("61.8%",  hi - diff * 0.618),
-                ("78.6%",  hi - diff * 0.786),
-                ("100%",   lo),
-            ]
+        def build_sr_fib_block(data):
+            fib = calc_fibo_levels(data, lookback=200)
+            sw_destek, sw_direnc = calc_support_resistance(data)
             lines = []
-            for k, v in rows_f:
-                marker = " ◄ _şu an_" if fib_sup and k == fib_sup[0] else (
-                         " ◄ _direnç_" if fib_res and k == fib_res[0] else "")
-                dist = ((cur - v) / v * 100) if v else 0
-                lines.append(f"  `{k:<6}` `{format_price(v)}` `{dist:+.1f}%`{marker}")
+
+            if fib:
+                cur  = fib["cur"]
+                hi   = fib["hi"]
+                lo   = fib["lo"]
+
+                # En yakın alt ve üst Fib seviyeleri
+                below = [(k, v) for k, v in fib["levels"] if v <= cur]
+                above = [(k, v) for k, v in fib["levels"] if v >  cur]
+                fib_sup = max(below, key=lambda x: x[1]) if below else None
+                fib_res = min(above, key=lambda x: x[1]) if above else None
+
+                # Fiyatın range içindeki pozisyonu
+                pct_pos = ((cur - lo) / (hi - lo)) * 100
+
+                lines.append(f"📐 *Fibonacci Seviyeleri* _(4s · 200 mum)_")
+                lines.append(f"  Swing High : `{format_price(hi)}`")
+                lines.append(f"  Swing Low  : `{format_price(lo)}`")
+                lines.append(f"  Pozisyon   : `{pct_pos:.1f}%` _(alt=0 · üst=100)_")
+                lines.append("")
+
+                # Tüm seviyeleri göster, anlık seviyeyi vurgula
+                for label, val in fib["levels"]:
+                    dist = ((val - cur) / cur) * 100
+                    if fib_res and label == fib_res[0]:
+                        marker = " ◄ 🔴 Direnç"
+                    elif fib_sup and label == fib_sup[0]:
+                        marker = " ◄ 🔵 Destek"
+                    else:
+                        marker = ""
+                    dist_str = f"`{dist:+.2f}%`" if abs(dist) < 50 else ""
+                    lines.append(f"  `{label:<6}` `{format_price(val)}` {dist_str}{marker}")
+
+            lines.append("")
+            lines.append(f"🔵 *Swing Destek / Direnç* _(4s pivot)_")
+            if sw_destek:
+                d = ((price - sw_destek) / price) * 100
+                lines.append(f"  🔵 Destek : `{format_price(sw_destek)}`  `{d:.2f}% altında`")
+            else:
+                lines.append(f"  🔵 Destek : —")
+            if sw_direnc:
+                d = ((sw_direnc - price) / price) * 100
+                lines.append(f"  🔴 Direnç : `{format_price(sw_direnc)}`  `{d:.2f}% yukarıda`")
+            else:
+                lines.append(f"  🔴 Direnç : —")
+
             return "\n".join(lines)
 
-        destek, direnc = calc_support_resistance(k4h)
+        # ── Diverjans ────────────────────────────────────────────
+        div_1h = calc_rsi_divergence(k1h)
+        div_4h = calc_rsi_divergence(k4h)
+        div_lines = []
+        if div_1h == "bearish": div_lines.append("⚠️ 1s Bearish Div — RSI düşüyor, fiyat çıkıyor")
+        if div_1h == "bullish": div_lines.append("💡 1s Bullish Div — RSI yükseliyor, fiyat düşüyor")
+        if div_4h == "bearish": div_lines.append("⚠️ 4s Bearish Div — RSI düşüyor, fiyat çıkıyor")
+        if div_4h == "bullish": div_lines.append("💡 4s Bullish Div — RSI yükseliyor, fiyat düşüyor")
 
+        # ── Piyasa Skoru ─────────────────────────────────────────
         sh, lh, _ = calc_score_hourly(ticker, k1h, k15m, k15m, calc_rsi(k1h, 14))
         sd, ld, _ = calc_score_daily(ticker, k4h, k1h, k1d)
         sw, lw, _ = calc_score_weekly(ticker, k1d, k1w)
 
-        div_1h = calc_rsi_divergence(k1h)
-        div_4h = calc_rsi_divergence(k4h)
-        div_lines = ""
-        if div_1h == "bearish": div_lines += "⚠️ 1s *Bearish Div* — RSI düşüyor fiyat çıkıyor\n"
-        if div_1h == "bullish": div_lines += "💡 1s *Bullish Div* — RSI yükseliyor fiyat düşüyor\n"
-        if div_4h == "bearish": div_lines += "⚠️ 4s *Bearish Div* — RSI düşüyor fiyat çıkıyor\n"
-        if div_4h == "bullish": div_lines += "💡 4s *Bullish Div* — RSI yükseliyor fiyat düşüyor\n"
-
-        text  = f"📊 *{symbol} — Gelişmiş MTF Analiz*\n"
+        # ── Mesaj ───────────────────────────────────────────────
+        ch24_icon = "📈" if ch24 >= 0 else "📉"
+        text  = f"📊 *{symbol} — MTF Analiz*\n"
         text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
-        is_fallback2 = marketcap_rank_cache.get("_fallback", True)
-        rank_label2  = "Hacim Sırası" if is_fallback2 else "MarketCap Sırası"
-        text += f"🏅 *{rank_label2}:* `{rank_str}`   📦 `{vol_str} USDT`\n"
-        text += f"📊 *24s:* `{ch24:+.2f}%`   H:`{format_price(high24)}`  L:`{format_price(low24)}`\n\n"
-        text += f"*🎯 Piyasa Skoru Özeti*\n"
+        text += f"💵 `{format_price(price)} USDT`  {ch24_icon} `{ch24:+.2f}%`\n"
+        text += f"{re_icon} {rank_label2} Sırası: `{rank_str}`  📦 `{vol_str}`\n\n"
+
+        text += f"*🎯 Piyasa Skoru*\n"
         text += f"  ⏱ Saatlik : `{sh}/100` — _{lh}_\n"
         text += f"  📅 Günlük  : `{sd}/100` — _{ld}_\n"
         text += f"  📆 Haftalık: `{sw}/100` — _{lw}_\n\n"
 
+        text += f"*📉 Zaman Dilimi Özeti*\n"
+        text += tf_line(k15m, "15dk")
+        text += tf_line(k1h,  "1sa")
+        text += tf_line(k4h,  "4sa")
+        text += tf_line(k1d,  "1gün")
+        text += tf_line(k1w,  "1hft")
+
         if div_lines:
-            text += f"*⚡ Diverjans Uyarıları*\n{div_lines}\n"
+            text += f"\n*⚡ Diverjans*\n"
+            for dl in div_lines:
+                text += f"  {dl}\n"
 
-        text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += tf_block(k15m, "⏱ 15 Dakika",  9, 21) + "\n"
-        text += tf_block(k1h,  "🕐 1 Saat",    9, 21) + "\n"
-        text += tf_block(k4h,  "🕓 4 Saat",   21, 55) + "\n"
-        text += tf_block(k1d,  "📅 1 Gün",    50, 200) + "\n"
-        text += tf_block(k1w,  "📆 1 Hafta",  10, 30) + "\n"
-
-        text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += f"📐 *Fibonacci — 4h (Son 200 Mum)*\n"
-        text += f"  Swing High: `{format_price(swing_hi)}`   Low: `{format_price(swing_lo)}`\n"
-        text += f"  Fiyat pozisyonu: `{fib_pct:.1f}%` _(alt→üst)_\n\n"
-        if swing_hi and swing_lo:
-            text += fib_all_levels(swing_hi, swing_lo) + "\n"
-        text += "\n"
-
-        text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += f"🔵 *Destek/Direnç (4h Swing)*\n"
-        if destek:
-            dist_d = ((price - destek) / destek * 100)
-            text += f"  🔵 Destek: `{format_price(destek)}` _({dist_d:+.2f}% uzakta)_\n"
-        else:
-            text += f"  🔵 Destek: —\n"
-        if direnc:
-            dist_r = ((direnc - price) / price * 100)
-            text += f"  🔴 Direnç: `{format_price(direnc)}` _({dist_r:+.2f}% uzakta)_\n"
-        else:
-            text += f"  🔴 Direnç: —\n"
-
-        text += f"\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
+        text += f"\n━━━━━━━━━━━━━━━━━━\n"
+        text += build_sr_fib_block(k4h)
+        text += f"\n\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
 
         await wait.delete()
         chat     = update.effective_chat
