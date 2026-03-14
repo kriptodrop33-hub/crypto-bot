@@ -850,6 +850,11 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         if ch5_override is not None:
             ch5m = ch5_override
 
+        # 7 günlük değişim: k1d son 8 mum (8. mum kapanışı → bugün kapanışı)
+        ch7d  = calc_change(k1d[-8:])  if k1d  and len(k1d)  >= 8  else 0.0
+        # 30 günlük değişim: k1d tüm 30 mum
+        ch30d = calc_change(k1d)       if k1d  and len(k1d)  >= 2  else 0.0
+
         rank, total = await get_coin_rank(symbol)
         re = rank_emoji(rank)
         is_fallback = marketcap_rank_cache.get("_fallback", True)
@@ -889,6 +894,8 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         e1,s1   = get_ui(ch1h)
         e4,s4   = get_ui(ch4h)
         e24,s24 = get_ui(ch24)
+        e7,s7   = get_ui(ch7d)
+        e30,s30 = get_ui(ch30d)
 
         def rsi_label(r):
             if r >= 80:   return "🔴 Aşırı Alım"
@@ -937,7 +944,9 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
             f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
             f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
-            f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n\n"
+            f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n"
+            f"{e7} `7gün :` `{s7}{ch7d:+.2f}%`\n"
+            f"{e30} `30gün:` `{s30}{ch30d:+.2f}%`\n\n"
             f"*RSI:*\n"
             f"• 4sa  RSI 14 : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
             f"• 1gün RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
@@ -2329,41 +2338,74 @@ async def mtf_command(update: Update, context):
         div_1h = calc_rsi_divergence(k1h)
         div_4h = calc_rsi_divergence(k4h)
         div_lines = []
-        if div_1h == "bearish": div_lines.append("⚠️ 1s Bearish Div — RSI düşüyor, fiyat çıkıyor")
-        if div_1h == "bullish": div_lines.append("💡 1s Bullish Div — RSI yükseliyor, fiyat düşüyor")
-        if div_4h == "bearish": div_lines.append("⚠️ 4s Bearish Div — RSI düşüyor, fiyat çıkıyor")
-        if div_4h == "bullish": div_lines.append("💡 4s Bullish Div — RSI yükseliyor, fiyat düşüyor")
+        if div_1h == "bearish": div_lines.append("⚠️ 1s Bearish — RSI düşüyor, fiyat çıkıyor")
+        if div_1h == "bullish": div_lines.append("💡 1s Bullish — RSI yükseliyor, fiyat düşüyor")
+        if div_4h == "bearish": div_lines.append("⚠️ 4s Bearish — RSI düşüyor, fiyat çıkıyor")
+        if div_4h == "bullish": div_lines.append("💡 4s Bullish — RSI yükseliyor, fiyat düşüyor")
 
         # ── Piyasa Skoru ─────────────────────────────────────────
         sh, lh, _ = calc_score_hourly(ticker, k1h, k15m, k15m, calc_rsi(k1h, 14))
         sd, ld, _ = calc_score_daily(ticker, k4h, k1h, k1d)
         sw, lw, _ = calc_score_weekly(ticker, k1d, k1w)
 
+        # ── Yardımcı ─────────────────────────────────────────────
+        def ch_icon(v):
+            return "🟢▲" if v > 0 else ("🔴▼" if v < 0 else "⚪→")
+
+        def score_bar(s):
+            filled = round(s / 20)
+            return "█" * filled + "░" * (5 - filled)
+
+        # 7g / 30g değişim
+        ch7d  = calc_change(k1d[-8:]) if k1d and len(k1d) >= 8 else 0.0
+        ch30d = calc_change(k1d)      if k1d and len(k1d) >= 2 else 0.0
+
         # ── Mesaj ───────────────────────────────────────────────
-        ch24_icon = "📈" if ch24 >= 0 else "📉"
+        ch24_icon = ch_icon(ch24)
         text  = f"📊 *{symbol} — MTF Analiz*\n"
         text += f"━━━━━━━━━━━━━━━━━━\n"
-        text += f"💵 `{format_price(price)} USDT`  {ch24_icon} `{ch24:+.2f}%`\n"
-        text += f"{re_icon} {rank_label2} Sırası: `{rank_str}`  📦 `{vol_str}`\n\n"
+        text += f"💵 Fiyat\n"
+        text += f"  `{format_price(price)} USDT`\n"
+        text += f"  {ch24_icon} 24sa: `{ch24:+.2f}%`\n"
+        if rank:
+            text += f"  {re_icon} {rank_label2}: `#{rank}`  📦 `{vol_str}`\n"
+        else:
+            text += f"  📦 Hacim: `{vol_str}`\n"
+        text += f"\n"
 
-        text += f"*🎯 Piyasa Skoru*\n"
-        text += f"  ⏱ Saatlik : `{sh}/100` — _{lh}_\n"
-        text += f"  📅 Günlük  : `{sd}/100` — _{ld}_\n"
-        text += f"  📆 Haftalık: `{sw}/100` — _{lw}_\n\n"
+        text += f"📈 *Performans*\n"
+        text += f"  {ch_icon(calc_change(k15m[-2:] if k15m and len(k15m)>=2 else []))} 15dk : `{calc_change(k15m[-2:] if k15m and len(k15m)>=2 else []):+.2f}%`\n"
+        text += f"  {ch_icon(calc_change(k1h[-2:]  if k1h  and len(k1h) >=2 else []))} 1sa  : `{calc_change(k1h[-2:]  if k1h  and len(k1h) >=2 else []):+.2f}%`\n"
+        text += f"  {ch_icon(calc_change(k4h[-2:]  if k4h  and len(k4h) >=2 else []))} 4sa  : `{calc_change(k4h[-2:]  if k4h  and len(k4h) >=2 else []):+.2f}%`\n"
+        text += f"  {ch24_icon} 24sa : `{ch24:+.2f}%`\n"
+        text += f"  {ch_icon(ch7d)}  7gün : `{ch7d:+.2f}%`\n"
+        text += f"  {ch_icon(ch30d)} 30gün: `{ch30d:+.2f}%`\n"
+        text += f"\n"
 
-        text += f"*📉 Zaman Dilimi Özeti*\n"
+        text += f"🎯 *Piyasa Skoru*\n"
+        text += f"  ⏱ Saatlik\n"
+        text += f"  `{score_bar(sh)}` `{sh}/100` — _{lh}_\n"
+        text += f"  📅 Günlük\n"
+        text += f"  `{score_bar(sd)}` `{sd}/100` — _{ld}_\n"
+        text += f"  📆 Haftalık\n"
+        text += f"  `{score_bar(sw)}` `{sw}/100` — _{lw}_\n"
+        text += f"\n"
+
+        text += f"📉 *Zaman Dilimi (RSI · MACD · StochRSI)*\n"
         text += tf_line(k15m, "15dk")
-        text += tf_line(k1h,  "1sa")
-        text += tf_line(k4h,  "4sa")
+        text += tf_line(k1h,  "1sa ")
+        text += tf_line(k4h,  "4sa ")
         text += tf_line(k1d,  "1gün")
         text += tf_line(k1w,  "1hft")
+        text += f"\n"
 
         if div_lines:
-            text += f"\n*⚡ Diverjans*\n"
+            text += f"⚡ *Diverjans*\n"
             for dl in div_lines:
                 text += f"  {dl}\n"
+            text += f"\n"
 
-        text += f"\n━━━━━━━━━━━━━━━━━━\n"
+        text += f"━━━━━━━━━━━━━━━━━━\n"
         text += build_sr_fib_block(k4h)
         text += f"\n\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
 
