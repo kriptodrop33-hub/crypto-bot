@@ -965,13 +965,20 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
         msg = await bot.send_message(chat_id=chat_id, text=text,
                                      reply_markup=keyboard, parse_mode="Markdown")
-        # Silme süresi: alarm_mode dahil HEPSİ için DB'deki delete_delay kullan
-        if alarm_mode:
+        # DM'e gönderimde mesajları silme, sadece grup kanallarında sil
+        is_group_chat = False
+        try:
+            chat_obj = await bot.get_chat(chat_id)
+            is_group_chat = chat_obj.type in ("group", "supergroup", "channel")
+        except Exception:
+            pass
+
+        if alarm_mode and is_group_chat:
             alarm_delay = await get_delete_delay()
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, alarm_delay))
-        elif member_delay is not None:
+        elif member_delay is not None and is_group_chat:
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, member_delay))
-        elif auto_del:
+        elif auto_del and is_group_chat:
             delay = await get_delete_delay()
             asyncio.create_task(auto_delete(bot, chat_id, msg.message_id, delay))
 
@@ -983,11 +990,11 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
                 caption=f"🕯️ *{symbol}* — 4 Saatlik",
                 parse_mode="Markdown"
             )
-            if alarm_mode:
+            if alarm_mode and is_group_chat:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, alarm_delay))
-            elif member_delay is not None:
+            elif member_delay is not None and is_group_chat:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, member_delay))
-            elif auto_del:
+            elif auto_del and is_group_chat:
                 asyncio.create_task(auto_delete(bot, chat_id, photo_msg.message_id, delay))
 
     except Exception as e:
@@ -1420,9 +1427,11 @@ async def my_alarm_v2(update: Update, context):
             "🔔 *Kisisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
             "Henuz alarm yok.\n\n"
             "Alarm turleri:\n"
-            "• `%`  : `/alarm_ekle BTCUSDT 3.5`\n"
-            "• RSI  : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
-            "• Bant : `/alarm_ekle BTCUSDT bant 60000 70000`"
+            "• `%`    : `/alarm_ekle BTCUSDT 3.5`\n"
+            "• Fiyat  : `/alarm_ekle BTCUSDT fiyat 70000`\n"
+            "• RSI    : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
+            "• Bant   : `/alarm_ekle BTCUSDT bant 60000 70000`\n\n"
+            "💡 Fiyat alarmı için `/hedef BTCUSDT 70000` da kullanabilirsiniz."
         )
     else:
         text = "🔔 *Kisisel Alarmlariniz*\n━━━━━━━━━━━━━━━━━━\n"
@@ -1470,15 +1479,55 @@ async def alarm_ekle_v2(update: Update, context):
     if len(args) < 2:
         await send_temp(context.bot, update.effective_chat.id,
             "📌 *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
-            "• `%`  : `/alarm_ekle BTCUSDT 3.5`\n"
-            "• RSI  : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
-            "• Bant : `/alarm_ekle BTCUSDT bant 60000 70000`",
+            "• `%`    : `/alarm_ekle BTCUSDT 3.5`\n"
+            "• Fiyat  : `/alarm_ekle BTCUSDT fiyat 70000`\n"
+            "• RSI    : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
+            "• Bant   : `/alarm_ekle BTCUSDT bant 60000 70000`",
             parse_mode="Markdown"
         )
         return
 
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
+
+    # ── FİYAT ALARMI (/alarm_ekle BTCUSDT fiyat 70000) ──────────────────
+    if args[1].lower() in ("fiyat", "price", "hedef"):
+        if len(args) < 3:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Kullanim: `/alarm_ekle BTCUSDT fiyat 70000`", parse_mode="Markdown"); return
+        try:
+            target_price = float(args[2].replace(",","."))
+        except:
+            await send_temp(context.bot, update.effective_chat.id, "Fiyat degeri sayi olmali.", parse_mode="Markdown"); return
+
+        # Anlık fiyatı al, direction belirle
+        fiyat_map = await _hedef_canli_fiyat([symbol])
+        cur_price = fiyat_map.get(symbol, 0)
+        direction = "up" if (cur_price == 0 or target_price > cur_price) else "down"
+
+        async with db_pool.acquire() as conn:
+            # Önce mevcut kaydı sil (varsa), sonra ekle
+            await conn.execute("""
+                DELETE FROM price_targets
+                WHERE user_id=$1 AND symbol=$2 AND target_price=$3
+            """, user_id, symbol, target_price)
+            await conn.execute("""
+                INSERT INTO price_targets(user_id, symbol, target_price, direction, active)
+                VALUES($1,$2,$3,$4,1)
+            """, user_id, symbol, target_price, direction)
+
+        yon_str = "ulaşınca 📈" if direction == "up" else "düşünce 📉"
+        if cur_price > 0:
+            pct  = ((target_price - cur_price) / cur_price) * 100
+            uzak = f" _(şu andan `{pct:+.2f}%`)_"
+        else:
+            uzak = ""
+        await send_temp(context.bot, update.effective_chat.id,
+            f"🎯 *{symbol}* `{format_price(target_price)} USDT` fiyatına {yon_str} DM alacaksınız!{uzak}\n\n"
+            f"_Hedeflerinizi görmek için: /hedef_",
+            parse_mode="Markdown"
+        )
+        return
 
     if args[1].lower() == "rsi":
         if len(args) < 3:
@@ -2155,6 +2204,14 @@ async def mtf_command(update: Update, context):
             ticker = await ticker_resp.json()
 
         price  = float(ticker.get("lastPrice", 0))
+        if price == 0 or "code" in ticker:
+            try: await wait.delete()
+            except: pass
+            await send_temp(context.bot, update.effective_chat.id,
+                f"⚠️ *{symbol}* bulunamadı veya Binance'de işlem görmüyor.\n"
+                "Sembolü kontrol edin. Örnek: `BTCUSDT`, `ETHUSDT`",
+                parse_mode="Markdown")
+            return
         ch24   = float(ticker.get("priceChangePercent", 0))
         vol24  = float(ticker.get("quoteVolume", 0))
         vol_str = f"{vol24/1_000_000:.1f}M" if vol24 >= 1_000_000 else f"{vol24/1_000:.0f}K"
@@ -2167,7 +2224,7 @@ async def mtf_command(update: Update, context):
 
         # ── Zaman Dilimi Özeti ──────────────────────────────────
         def tf_line(data, label):
-            if not data or len(data) < 20:
+            if not data or len(data) < 3:
                 return f"  {label:<6} `veri yok`\n"
             rsi  = calc_rsi(data, 14)
             stch = calc_stoch_rsi(data)
@@ -2524,6 +2581,7 @@ async def start(update: Update, context):
             "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
             "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
             "   Çoklu hedef: `/hedef BTCUSDT 60k 70k 80k`\n"
+            "🔔 Fiyat Alarm (DM): `/alarm_ekle BTCUSDT fiyat 70000`\n"
             "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
             "⭐ Favori: `/favori ekle BTCUSDT`\n"
             "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
