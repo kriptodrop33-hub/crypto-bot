@@ -2183,11 +2183,23 @@ async def kar_command(update: Update, context):
 # ================= GELİŞMİŞ MTF ANALİZ =================
 
 async def mtf_command(update: Update, context):
-    msg  = update.callback_query.message if update.callback_query else update.message
+    # args: komuttan veya callback'ten gelebilir
     args = context.args or []
+    # Eğer args boşsa ve mesaj varsa, mesaj metninden sembol almayı dene
+    if not args and update.message and update.message.text:
+        parts = update.message.text.strip().split()
+        if len(parts) > 1:
+            args = parts[1:]
+
     if not args:
-        await send_temp(context.bot, update.effective_chat.id, "Kullanim: `/mtf BTCUSDT`", parse_mode="Markdown"); return
-    symbol = args[0].upper().replace("#","").replace("/","")
+        await send_temp(context.bot, update.effective_chat.id,
+            "📊 *MTF Analiz*\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanim: `/mtf BTCUSDT`\n"
+            "Örnek: `/mtf XRPUSDT`",
+            parse_mode="Markdown")
+        return
+
+    symbol = args[0].upper().replace("#","").replace("/","").strip()
     if not symbol.endswith("USDT"): symbol += "USDT"
 
     wait = await send_temp(context.bot, update.effective_chat.id, "⏳ MTF analiz yapılıyor...", parse_mode="Markdown")
@@ -2751,10 +2763,14 @@ async def button_handler(update: Update, context):
 
     # ── Alarm ──
     elif q.data == "my_alarm":
-        await my_alarm(update, context)
+        await my_alarm_v2(update, context)
     elif q.data == "alarm_guide":
         await q.message.reply_text(
-            "➕ *Alarm Eklemek Icin:*\n`/alarm_ekle BTCUSDT 3.5`\n\n"
+            "➕ *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
+            "• `%` : `/alarm_ekle BTCUSDT 3.5`\n"
+            "• Fiyat : `/alarm_ekle BTCUSDT fiyat 70000`\n"
+            "• RSI : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
+            "• Bant : `/alarm_ekle BTCUSDT bant 60000 70000`\n\n"
             "🗑 *Alarm Silmek Icin:*\n`/alarm_sil BTCUSDT`",
             parse_mode="Markdown"
         )
@@ -2792,17 +2808,14 @@ async def button_handler(update: Update, context):
     elif q.data == "mtf_help":
         await q.message.reply_text(
             "📊 *Gelişmiş MTF Analiz*\n━━━━━━━━━━━━━━━━━━\n"
-            "Kullanim: `/mtf BTCUSDT`\n\n"
+            "Analiz için sembol yazın:\n"
+            "`/mtf BTCUSDT`\n"
+            "`/mtf XRPUSDT`\n"
+            "`/mtf ETHUSDT`\n\n"
             "15dk · 1sa · 4sa · 1gn · 1hf\n"
-            "Her zaman diliminde:\n"
-            "• Fiyat & değişim\n"
-            "• RSI 14 + StochRSI\n"
-            "• MACD histogram\n"
-            "• EMA çaprazlaması\n"
-            "• Bollinger Bandı\n"
-            "• OBV trendi\n"
-            "• Fibonacci (200 mum)\n"
-            "• Destek/Direnç\n"
+            "• RSI 14 + StochRSI + MACD\n"
+            "• EMA çaprazlaması + OBV\n"
+            "• Fibonacci + Destek/Direnç\n"
             "• Diverjans uyarıları",
             parse_mode="Markdown"
         )
