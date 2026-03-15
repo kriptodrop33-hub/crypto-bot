@@ -1051,7 +1051,7 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
             text=(
                 f"🔒 *{fname}* grupta yalnızca adminler tarafından kullanılabilir.\n"
                 f"Lütfen botu özel mesaj (DM) üzerinden kullanın. 👇\n"
-                f"@kriptodroptrhaberbot"
+                f"@KriptoDrop_alertbot"
             ),
             parse_mode="Markdown"
         )
@@ -2603,7 +2603,7 @@ async def start(update: Update, context):
              InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
             [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
              InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-            [InlineKeyboardButton("💬 Botu DM'den Kullan", url="https://t.me/kriptodroptrhaberbot")],
+            [InlineKeyboardButton("💬 Botu DM'den Kullan", url="https://t.me/KriptoDrop_alertbot")],
         ])
         welcome_text = (
             "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2611,7 +2611,7 @@ async def start(update: Update, context):
             "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
             "📊 Detaylı analiz: `/mtf BTCUSDT`\n\n"
             "🔒 _Alarm, hedef ve kişisel özellikler için_\n"
-            "👇 *Botu DM'den başlatın:* @kriptodroptrhaberbot"
+            "👇 *Botu DM'den başlatın:* @KriptoDrop_alertbot"
         )
     else:
         # Admin veya DM: tüm butonlar
@@ -2662,13 +2662,38 @@ async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
-    usdt = sorted(
-        [x for x in data if x["symbol"].endswith("USDT")],
-        key=lambda x: float(x["priceChangePercent"]), reverse=True
-    )[:10]
+
+    MIN_VOLUME_USDT = 1_000_000  # En az 1M USDT günlük hacim — ghost/stale coinleri filtrele
+
+    def safe_pct(c):
+        try:
+            open_price = float(c["openPrice"])
+            last_price = float(c["lastPrice"])
+            if open_price <= 0:
+                return None
+            return ((last_price - open_price) / open_price) * 100
+        except Exception:
+            return None
+
+    filtered = []
+    for c in data:
+        if not c["symbol"].endswith("USDT"):
+            continue
+        try:
+            vol = float(c.get("quoteVolume", 0))
+        except Exception:
+            vol = 0
+        if vol < MIN_VOLUME_USDT:
+            continue
+        pct = safe_pct(c)
+        if pct is None:
+            continue
+        filtered.append((c, pct))
+
+    usdt = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-    for i, c in enumerate(usdt, 1):
-        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
+    for i, (c, pct) in enumerate(usdt, 1):
+        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{pct:+6.2f}`\n"
 
     target = update.callback_query.message if is_cb else update.message
     msg = await target.reply_text(text, parse_mode="Markdown")
@@ -2784,7 +2809,7 @@ async def button_handler(update: Update, context):
                     chat_id=chat.id,
                     text=(
                         "🔒 Bu özellik için lütfen botu DM üzerinden kullanın. 👇\n"
-                        "@kriptodroptrhaberbot"
+                        "@KriptoDrop_alertbot"
                     ),
                     parse_mode="Markdown"
                 )
@@ -2894,7 +2919,7 @@ async def button_handler(update: Update, context):
             try:
                 tip = await context.bot.send_message(
                     chat_id=chat.id,
-                    text="🔒 Fiyat Hedefi için lütfen DM'den kullanın 👇 @kriptodroptrhaberbot",
+                    text="🔒 Fiyat Hedefi için lütfen DM'den kullanın 👇 @KriptoDrop_alertbot",
                 )
                 asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
             except Exception:
