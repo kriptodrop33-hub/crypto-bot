@@ -2207,6 +2207,8 @@ async def kar_command(update: Update, context):
 # ================= GELİŞMİŞ MTF ANALİZ =================
 
 async def mtf_command(update: Update, context):
+    if not await check_group_access(update, context, "MTF Analiz"):
+        return
     # args: komuttan veya callback'ten gelebilir
     args = context.args or []
     # Eğer args boşsa ve mesaj varsa, mesaj metninden sembol almayı dene
@@ -3201,6 +3203,7 @@ async def post_init(app):
         BotCommand("alarm_gecmis",   "Alarm geçmişi"),
         BotCommand("favori",         "Favori coinler"),
         BotCommand("mtf",            "Gelişmiş MTF analiz"),
+        BotCommand("mft",            "Gelişmiş MTF analiz"),
         BotCommand("zamanla",        "Zamanlanmış görev"),
         BotCommand("kar",            "Kar/zarar hesabı"),
         BotCommand("top24",          "24s liderleri"),
@@ -3234,6 +3237,7 @@ def main():
     app.add_handler(CommandHandler("alarm_gecmis",   alarm_gecmis))
     app.add_handler(CommandHandler("favori",         favori_command))
     app.add_handler(CommandHandler("mtf",            mtf_command))
+    app.add_handler(CommandHandler("mft",            mtf_command))  # typo alias
     app.add_handler(CommandHandler("zamanla",        zamanla_command))
     app.add_handler(CommandHandler("hedef",          hedef_command))
     app.add_handler(CommandHandler("kar",            kar_command))
