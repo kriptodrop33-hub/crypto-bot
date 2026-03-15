@@ -1037,13 +1037,13 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     if await is_group_admin(context.bot, chat.id, user_id):
         return True
 
-    # İzin verilen komutları kontrol et
+    # İzin verilen komutları kontrol et (üyeler bunları grupta kullanabilir)
     if update.message and update.message.text:
         cmd = update.message.text.lstrip("/").split("@")[0].split()[0].lower()
         if cmd in GROUP_ALLOWED_CMDS:
             return True
 
-    # Üye → yasak → yönlendir
+    # Üye → yasak → mesajı sil + grupta uyarı + False döndür
     fname = feature_name or "Bu özellik"
     msg_id = update.message.message_id if update.message else None
     if msg_id:
@@ -2658,13 +2658,32 @@ async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
-    usdt = sorted(
-        [x for x in data if x["symbol"].endswith("USDT")],
-        key=lambda x: float(x["priceChangePercent"]), reverse=True
-    )[:10]
+    MIN_VOL = 1_000_000
+
+    def safe_pct(c):
+        try:
+            op = float(c["openPrice"])
+            lp = float(c["lastPrice"])
+            return ((lp - op) / op) * 100 if op > 0 else None
+        except Exception:
+            return None
+
+    filtered = []
+    for c in data:
+        if not c["symbol"].endswith("USDT"): continue
+        try:
+            vol = float(c.get("quoteVolume", 0))
+        except Exception:
+            vol = 0
+        if vol < MIN_VOL: continue
+        pct = safe_pct(c)
+        if pct is None: continue
+        filtered.append((c, pct))
+
+    usdt = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-    for i, c in enumerate(usdt, 1):
-        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
+    for i, (c, pct) in enumerate(usdt, 1):
+        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{pct:+6.2f}`\n"
 
     target = update.callback_query.message if is_cb else update.message
     msg = await target.reply_text(text, parse_mode="Markdown")
@@ -2758,21 +2777,24 @@ async def button_handler(update: Update, context):
     is_group_chat = chat and chat.type in ("group", "supergroup")
     if is_group_chat:
         is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
+        # Grup üyesi için sadece top24, top5, mtf_help izinli
+        # Grup üyesi için izin verilen callback'ler (grupta çalışanlar)
         GROUP_OK_CALLBACKS = {"top24", "top5", "mtf_help", "market", "status"}
+        # Hedef ve diğer kişisel özellikler kendi bloğunda DM yönlendirmesi yapıyor
         GROUP_SELF_HANDLED = {"hedef_liste", "hedef_gecmis", "hedef_add_help"}
         if not is_adm and q.data not in GROUP_OK_CALLBACKS and q.data not in GROUP_SELF_HANDLED \
                 and not q.data.startswith("hedef_sil_"):
-            # Önce DM'e yönlendirme mesajı göndermeyi dene
+            # DM'e yönlendirme mesajı gönder
             dm_sent = False
             try:
                 await context.bot.send_message(
                     chat_id=q.from_user.id,
                     text=(
                         "🔒 Bu özellik grupta kullanılamaz.\n"
-                        "Buradan kullanabilirsiniz 👇"
+                        "Botu buradan kullanabilirsiniz 👇"
                     ),
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🚀 Botu Buradan Kullan", url=f"https://t.me/KriptoDrop_alertbot?start=go")
+                        InlineKeyboardButton("🚀 Botu DM'den Aç", url="https://t.me/KriptoDrop_alertbot?start=go")
                     ]])
                 )
                 dm_sent = True
@@ -2780,10 +2802,10 @@ async def button_handler(update: Update, context):
                 pass
             # Kullanıcıya callback popup göster
             if dm_sent:
-                await q.answer("✅ DM'ine yönlendirme mesajı gönderildi!", show_alert=False)
+                await q.answer("✅ DM'ine yönlendirme gönderildi!", show_alert=False)
             else:
                 await q.answer(
-                    "🔒 Bu özellik için önce botu DM'den başlatın:\n@KriptoDrop_alertbot → /start",
+                    "🔒 Bu özellik için önce botu DM'den başlatın: @KriptoDrop_alertbot → /start",
                     show_alert=True
                 )
             # Grupta kısa bilgi mesajı
