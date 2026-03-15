@@ -165,6 +165,35 @@ async def init_db():
         except Exception:
             pass  # zaten var
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS grup_alarmlar (
+                id          SERIAL PRIMARY KEY,
+                chat_id     BIGINT,
+                symbol      TEXT,
+                threshold   REAL,
+                mode        TEXT DEFAULT 'both',
+                active      INTEGER DEFAULT 1,
+                created_by  BIGINT,
+                UNIQUE(chat_id, symbol)
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS istatistik (
+                chat_id        BIGINT PRIMARY KEY,
+                show_in_group  INTEGER DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS hosgeldin (
+                chat_id  BIGINT PRIMARY KEY,
+                active   INTEGER DEFAULT 1,
+                mesaj    TEXT DEFAULT ''
+            )
+        """)
+        await conn.execute("""
+            ALTER TABLE kar_pozisyonlar
+            ADD COLUMN IF NOT EXISTS not_text TEXT DEFAULT ''
+        """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS kar_pozisyonlar (
                 id         SERIAL PRIMARY KEY,
                 user_id    BIGINT,
@@ -833,6 +862,631 @@ async def fetch_all_analysis(symbol):
 
     return ticker, k4h, k1h_2, k5m, k1h_100, k1d, k15m, k4h_42, k1h_24, k1w, k4h_100, k1d_100
 
+
+# ================= COIN TARAYICI =================
+
+async def tara_command(update: Update, context):
+    if not await check_group_access(update, context, "Coin Tarayıcı"):
+        return
+    args = context.args or []
+
+    # Kriter: rsi_asiri_satim | rsi_asiri_alim | macd_yukari | macd_asagi | hacim | hepsi
+    kriter = args[0].lower() if args else "hepsi"
+    valid = {"rsi_asiri_satim", "rsi_asiri_alim", "macd_yukari", "macd_asagi", "hacim", "hepsi"}
+    if kriter not in valid:
+        await send_temp(context.bot, update.effective_chat.id,
+            "🔍 *Coin Tarayıcı*\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: `/tara [kriter]`\n\n"
+            "Kriterler:\n"
+            "• `/tara rsi_asiri_satim` — RSI < 30\n"
+            "• `/tara rsi_asiri_alim`  — RSI > 70\n"
+            "• `/tara macd_yukari`     — MACD yukarı kesiş\n"
+            "• `/tara macd_asagi`      — MACD aşağı kesiş\n"
+            "• `/tara hacim`           — Hacim anomalisi 3x+\n"
+            "• `/tara hepsi`           — Tüm kriterler\n\n"
+            "_Tarama 500 coin üzerinde yapılır, ~30sn sürer._",
+            parse_mode="Markdown")
+        return
+
+    wait = await send_temp(context.bot, update.effective_chat.id,
+        f"🔍 Taranıyor... kriter: `{kriter}` _(bu ~20-30sn sürebilir)_",
+        parse_mode="Markdown")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                ticker_list = await resp.json()
+
+        usdt_tickers = {
+            t["symbol"]: t for t in ticker_list
+            if t["symbol"].endswith("USDT")
+            and float(t.get("quoteVolume", 0)) > 5_000_000  # min 5M hacim
+            and not any(x in t["symbol"] for x in ["UP", "DOWN", "BULL", "BEAR", "3L", "3S"])
+        }
+
+        # En yüksek hacimli 150 coin al
+        sorted_syms = sorted(usdt_tickers.keys(),
+                             key=lambda s: float(usdt_tickers[s].get("quoteVolume", 0)),
+                             reverse=True)[:150]
+
+        results = []
+
+        async def tarama_yap(sym):
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    k1h = await fetch_klines(sess, sym, "1h", limit=50)
+                    k4h = await fetch_klines(sess, sym, "4h", limit=30)
+                if not k1h or len(k1h) < 20:
+                    return
+
+                rsi = calc_rsi(k1h, 14)
+                macd_val, macd_hist = calc_macd(k1h)
+                vol_ratio = calc_volume_anomaly(k1h[-24:]) if len(k1h) >= 24 else None
+                ch24 = float(usdt_tickers[sym].get("priceChangePercent", 0))
+                price = float(usdt_tickers[sym].get("lastPrice", 0))
+
+                etiketler = []
+
+                if kriter in ("rsi_asiri_satim", "hepsi") and rsi < 30:
+                    etiketler.append(f"RSI:{rsi:.0f}🔵")
+                if kriter in ("rsi_asiri_alim", "hepsi") and rsi > 70:
+                    etiketler.append(f"RSI:{rsi:.0f}🔴")
+                if kriter in ("macd_yukari", "hepsi") and macd_hist > 0 and macd_val > 0:
+                    etiketler.append("MACD↑🟢")
+                if kriter in ("macd_asagi", "hepsi") and macd_hist < 0 and macd_val < 0:
+                    etiketler.append("MACD↓🔴")
+                if kriter in ("hacim", "hepsi") and vol_ratio and vol_ratio >= 3.0:
+                    etiketler.append(f"Hacim:{vol_ratio:.1f}x⚡")
+
+                if etiketler:
+                    results.append((sym, price, ch24, etiketler))
+            except Exception:
+                pass
+
+        # Paralel tarama (10'ar batch)
+        batch_size = 10
+        for i in range(0, len(sorted_syms), batch_size):
+            batch = sorted_syms[i:i+batch_size]
+            await asyncio.gather(*[tarama_yap(s) for s in batch])
+            await asyncio.sleep(0.3)
+
+        # Sonuçları sırala: en çok etiket + hacim
+        results.sort(key=lambda x: (len(x[3]), abs(x[2])), reverse=True)
+
+        if not results:
+            try: await wait.delete()
+            except: pass
+            await send_temp(context.bot, update.effective_chat.id,
+                f"🔍 `{kriter}` kriteri için sonuç bulunamadı.", parse_mode="Markdown")
+            return
+
+        text = f"🔍 *Coin Tarama — {kriter.upper()}*\n━━━━━━━━━━━━━━━━━━\n"
+        text += f"_{len(sorted_syms)} coin tarandı, {len(results)} eşleşme_\n\n"
+
+        for sym, price, ch24, etiketler in results[:15]:
+            icon = "🟢" if ch24 >= 0 else "🔴"
+            etiket_str = "  ".join(etiketler)
+            text += f"{icon} `{sym:<14}` `{ch24:+.2f}%`\n    {etiket_str}\n"
+
+        text += f"\n_Güncel fiyat analizi için sembol adını yazın._"
+
+        try: await wait.delete()
+        except: pass
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", delay=120)
+
+    except Exception as e:
+        log.error(f"Tara hatası: {e}")
+        try: await wait.delete()
+        except: pass
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Tarama sırasında hata oluştu.", parse_mode="Markdown")
+
+
+# ================= ÇOKLU GRUP ALARM =================
+
+async def grup_alarm_command(update: Update, context):
+    """Admin DM'den grup için coin alarmı ekler/listeler/siler."""
+    user_id = update.effective_user.id
+    chat = update.effective_chat
+
+    # Sadece DM'den kullanılır
+    if chat.type != "private":
+        await send_temp(context.bot, chat.id,
+            "⚙️ Grup alarm yönetimi sadece DM üzerinden yapılır.",
+            parse_mode="Markdown")
+        return
+
+    # Admin mi kontrol et
+    try:
+        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+        if member.status not in ("administrator", "creator"):
+            await context.bot.send_message(chat.id, "🚫 Sadece grup adminleri kullanabilir.")
+            return
+    except Exception:
+        await context.bot.send_message(chat.id, "⚠️ Yetki kontrol edilemedi.")
+        return
+
+    args = context.args or []
+
+    if not args or args[0].lower() == "liste":
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT symbol, threshold, mode, active FROM grup_alarmlar WHERE chat_id=$1 ORDER BY symbol",
+                GROUP_CHAT_ID)
+        if not rows:
+            await context.bot.send_message(chat.id,
+                "📋 *Grup Alarm Listesi*\n━━━━━━━━━━━━━━━━━━\n"
+                "Kayıtlı alarm yok.\n\n"
+                "Eklemek için:\n"
+                "`/grup_alarm ekle BTCUSDT 4 her_iki`\n"
+                "`/grup_alarm ekle ETHUSDT 3 yukari`\n"
+                "`/grup_alarm ekle SOLUSDT 5 asagi`\n\n"
+                "Mod seçenekleri: `her_iki` | `yukari` | `asagi`\n"
+                "Silmek için: `/grup_alarm sil BTCUSDT`",
+                parse_mode="Markdown")
+            return
+
+        text = "📋 *Grup Alarm Listesi*\n━━━━━━━━━━━━━━━━━━\n"
+        for r in rows:
+            durum = "✅" if r["active"] else "⏹"
+            mod_icon = {"both": "↕️", "up": "📈", "down": "📉"}.get(r["mode"], "↕️")
+            text += f"{durum} `{r['symbol']:<14}` `%{r['threshold']}` {mod_icon}\n"
+        text += "\n`/grup_alarm sil SYMBOL` — sil\n`/grup_alarm kapat SYMBOL` — duraklat\n`/grup_alarm ac SYMBOL` — aktifleştir"
+        await context.bot.send_message(chat.id, text, parse_mode="Markdown")
+        return
+
+    if args[0].lower() == "ekle":
+        if len(args) < 3:
+            await context.bot.send_message(chat.id,
+                "Kullanım: `/grup_alarm ekle BTCUSDT 4 her_iki`\n"
+                "Mod: `her_iki` | `yukari` | `asagi`", parse_mode="Markdown")
+            return
+        symbol = args[1].upper().replace("#", "").replace("/", "")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        try:
+            threshold = float(args[2].replace(",", "."))
+        except:
+            await context.bot.send_message(chat.id, "Eşik sayı olmalı. Örnek: `4`"); return
+
+        mod_map = {"her_iki": "both", "yukari": "up", "asagi": "down", "both": "both", "up": "up", "down": "down"}
+        mode = mod_map.get(args[3].lower() if len(args) > 3 else "her_iki", "both")
+
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO grup_alarmlar(chat_id, symbol, threshold, mode, active, created_by)
+                VALUES($1,$2,$3,$4,1,$5)
+                ON CONFLICT(chat_id,symbol) DO UPDATE
+                SET threshold=$3, mode=$4, active=1
+            """, GROUP_CHAT_ID, symbol, threshold, mode, user_id)
+
+        mod_label = {"both": "Her iki yön ↕️", "up": "Sadece yukarı 📈", "down": "Sadece aşağı 📉"}[mode]
+        await context.bot.send_message(chat.id,
+            f"✅ *{symbol}* için grup alarmı eklendi!\n"
+            f"Eşik: `%{threshold}` (24 saatlik)\n"
+            f"Mod: {mod_label}\n\n"
+            f"_24 saatte bu eşik aşılırsa gruba otomatik analiz gönderilir._",
+            parse_mode="Markdown")
+        return
+
+    if args[0].lower() == "sil":
+        if len(args) < 2:
+            await context.bot.send_message(chat.id, "Kullanım: `/grup_alarm sil BTCUSDT`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#", "").replace("/", "")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM grup_alarmlar WHERE chat_id=$1 AND symbol=$2", GROUP_CHAT_ID, symbol)
+        await context.bot.send_message(chat.id, f"🗑 `{symbol}` grup alarmı silindi.", parse_mode="Markdown")
+        return
+
+    if args[0].lower() in ("kapat", "ac"):
+        if len(args) < 2:
+            await context.bot.send_message(chat.id, "Kullanım: `/grup_alarm kapat BTCUSDT`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#", "").replace("/", "")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        val = 0 if args[0].lower() == "kapat" else 1
+        async with db_pool.acquire() as conn:
+            await conn.execute("UPDATE grup_alarmlar SET active=$1 WHERE chat_id=$2 AND symbol=$3", val, GROUP_CHAT_ID, symbol)
+        durum = "durduruldu ⏹" if val == 0 else "aktifleştirildi ✅"
+        await context.bot.send_message(chat.id, f"`{symbol}` grup alarmı {durum}.", parse_mode="Markdown")
+        return
+
+    await context.bot.send_message(chat.id,
+        "Kullanım:\n`/grup_alarm liste`\n`/grup_alarm ekle BTCUSDT 4 her_iki`\n"
+        "`/grup_alarm sil BTCUSDT`\n`/grup_alarm kapat BTCUSDT`\n`/grup_alarm ac BTCUSDT`",
+        parse_mode="Markdown")
+
+
+async def grup_alarm_job(context):
+    """Her 10 dakikada grup alarmlarını kontrol eder."""
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT symbol, threshold, mode FROM grup_alarmlar WHERE chat_id=$1 AND active=1",
+                GROUP_CHAT_ID)
+        if not rows:
+            return
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                ticker_list = await resp.json()
+
+        ticker_map = {t["symbol"]: t for t in ticker_list}
+        now = datetime.utcnow()
+
+        for row in rows:
+            sym = row["symbol"]
+            threshold = row["threshold"]
+            mode = row["mode"]
+
+            t = ticker_map.get(sym)
+            if not t:
+                continue
+
+            try:
+                ch24 = float(t["priceChangePercent"])
+            except:
+                continue
+
+            triggered = False
+            if mode == "both":   triggered = abs(ch24) >= threshold
+            elif mode == "up":   triggered = ch24 >= threshold
+            elif mode == "down": triggered = ch24 <= -threshold
+
+            if not triggered:
+                continue
+
+            key = f"grup_alarm_{sym}"
+            if key in cooldowns and now - cooldowns[key] < timedelta(hours=4):
+                continue
+            cooldowns[key] = now
+
+            yon = "⚡🟢 YUKSELIS" if ch24 > 0 else "⚡🔴 DUSUS"
+            await send_full_analysis(
+                context.bot, GROUP_CHAT_ID, sym,
+                f"📊 GRUP ALARM — {yon} — {sym}",
+                alarm_mode=True
+            )
+    except Exception as e:
+        log.error(f"grup_alarm_job: {e}")
+
+
+# ================= İSTATİSTİK PANELİ =================
+
+async def istatistik_command(update: Update, context):
+    """Admin DM'den istatistikleri gösterir, gruba açıp kapatabilir."""
+    user_id = update.effective_user.id
+    chat = update.effective_chat
+
+    if chat.type != "private":
+        await send_temp(context.bot, chat.id,
+            "📊 İstatistik paneli sadece DM'den kullanılır.", parse_mode="Markdown")
+        return
+
+    try:
+        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+        if member.status not in ("administrator", "creator"):
+            await context.bot.send_message(chat.id, "🚫 Sadece grup adminleri kullanabilir.")
+            return
+    except Exception:
+        await context.bot.send_message(chat.id, "⚠️ Yetki kontrol edilemedi.")
+        return
+
+    args = context.args or []
+
+    # Grup için açık/kapalı toggle
+    if args and args[0].lower() in ("ac", "kapat"):
+        val = 1 if args[0].lower() == "ac" else 0
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO istatistik(chat_id, show_in_group) VALUES($1,$2)
+                ON CONFLICT(chat_id) DO UPDATE SET show_in_group=$2
+            """, GROUP_CHAT_ID, val)
+        durum = "açıldı ✅ — `/istatistik` komutu grupta çalışır" if val else "kapatıldı ⏹ — sadece DM'den erişilir"
+        await context.bot.send_message(chat.id, f"📊 İstatistik paneli {durum}.", parse_mode="Markdown")
+        return
+
+    # İstatistikleri çek
+    async with db_pool.acquire() as conn:
+        alarm_count     = await conn.fetchval("SELECT COUNT(*) FROM user_alarms WHERE active=1")
+        hedef_count     = await conn.fetchval("SELECT COUNT(*) FROM price_targets WHERE active=1")
+        favori_count    = await conn.fetchval("SELECT COUNT(*) FROM favorites")
+        pozisyon_count  = await conn.fetchval("SELECT COUNT(*) FROM kar_pozisyonlar")
+        alarm_history_c = await conn.fetchval("SELECT COUNT(*) FROM alarm_history")
+        grup_alarm_c    = await conn.fetchval("SELECT COUNT(*) FROM grup_alarmlar WHERE chat_id=$1 AND active=1", GROUP_CHAT_ID)
+        # En çok sorgulanan coinler (alarm_history'den)
+        top_coins = await conn.fetch("""
+            SELECT symbol, COUNT(*) as cnt FROM alarm_history
+            GROUP BY symbol ORDER BY cnt DESC LIMIT 5
+        """)
+
+    # Bellek durumu
+    ws_symbols = len(price_memory)
+    cache_status = "✅ Aktif" if marketcap_rank_cache.get("_updated") else "⏳ Bekleniyor"
+
+    text = (
+        "📊 *Bot İstatistikleri*\n━━━━━━━━━━━━━━━━━━\n"
+        f"🔔 Aktif kişisel alarm  : `{alarm_count}`\n"
+        f"🎯 Aktif fiyat hedefi   : `{hedef_count}`\n"
+        f"⭐ Favori kayıt         : `{favori_count}`\n"
+        f"💰 Açık pozisyon        : `{pozisyon_count}`\n"
+        f"📋 Grup alarmı          : `{grup_alarm_c}`\n"
+        f"📈 Toplam alarm tetiklenme: `{alarm_history_c}`\n"
+        f"\n📡 *Sistem*\n"
+        f"🔄 WebSocket izlenen coin: `{ws_symbols}`\n"
+        f"🏅 MarketCap cache      : `{cache_status}`\n"
+    )
+
+    if top_coins:
+        text += "\n🏆 *En Çok Tetiklenen Coinler*\n"
+        for i, r in enumerate(top_coins, 1):
+            text += f"  {get_number_emoji(i)} `{r['symbol']}` — `{r['cnt']}x`\n"
+
+    text += (
+        "\n⚙️ *Grup Paneli*\n"
+        "`/istatistik ac` — grupta göster\n"
+        "`/istatistik kapat` — sadece DM'de kalsın"
+    )
+
+    await context.bot.send_message(chat.id, text, parse_mode="Markdown")
+
+
+# ================= OTOMATIK HOŞ GELDİN =================
+
+async def hosgeldin_command(update: Update, context):
+    """Admin DM'den hoş geldin mesajını açar/kapatır/düzenler."""
+    user_id = update.effective_user.id
+    chat = update.effective_chat
+
+    if chat.type != "private":
+        await send_temp(context.bot, chat.id,
+            "👋 Hoş geldin ayarı sadece DM'den yapılır.", parse_mode="Markdown")
+        return
+
+    try:
+        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+        if member.status not in ("administrator", "creator"):
+            await context.bot.send_message(chat.id, "🚫 Sadece grup adminleri kullanabilir.")
+            return
+    except Exception:
+        await context.bot.send_message(chat.id, "⚠️ Yetki kontrol edilemedi.")
+        return
+
+    args = context.args or []
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT active, mesaj FROM hosgeldin WHERE chat_id=$1", GROUP_CHAT_ID)
+    active = row["active"] if row else 1
+    mesaj  = row["mesaj"]  if row else ""
+
+    if not args:
+        durum = "✅ Açık" if active else "⏹ Kapalı"
+        await context.bot.send_message(chat.id,
+            f"👋 *Hoş Geldin Ayarları*\n━━━━━━━━━━━━━━━━━━\n"
+            f"Durum: {durum}\n"
+            f"Özel mesaj: {mesaj if mesaj else '_Yok (varsayılan kullanılıyor)_'}\n\n"
+            "`/hosgeldin ac` — aç\n"
+            "`/hosgeldin kapat` — kapat\n"
+            "`/hosgeldin mesaj Merhaba! Gruba hoş geldiniz 🎉` — özel mesaj ayarla",
+            parse_mode="Markdown")
+        return
+
+    if args[0].lower() in ("ac", "kapat"):
+        val = 1 if args[0].lower() == "ac" else 0
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO hosgeldin(chat_id, active) VALUES($1,$2)
+                ON CONFLICT(chat_id) DO UPDATE SET active=$2
+            """, GROUP_CHAT_ID, val)
+        durum = "açıldı ✅" if val else "kapatıldı ⏹"
+        await context.bot.send_message(chat.id, f"👋 Hoş geldin mesajı {durum}.", parse_mode="Markdown")
+        return
+
+    if args[0].lower() == "mesaj" and len(args) > 1:
+        ozel_mesaj = " ".join(args[1:])
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO hosgeldin(chat_id, mesaj) VALUES($1,$2)
+                ON CONFLICT(chat_id) DO UPDATE SET mesaj=$2
+            """, GROUP_CHAT_ID, ozel_mesaj)
+        await context.bot.send_message(chat.id,
+            f"✅ Özel hoş geldin mesajı kaydedildi:\n_{ozel_mesaj}_",
+            parse_mode="Markdown")
+        return
+
+    await context.bot.send_message(chat.id,
+        "Kullanım:\n`/hosgeldin ac`\n`/hosgeldin kapat`\n"
+        "`/hosgeldin mesaj <metin>`", parse_mode="Markdown")
+
+
+async def yeni_uye_handler(update: Update, context):
+    """Gruba yeni üye katılınca tetiklenir."""
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT active, mesaj FROM hosgeldin WHERE chat_id=$1", GROUP_CHAT_ID)
+        if row and not row["active"]:
+            return
+
+        ozel_mesaj = row["mesaj"] if row and row["mesaj"] else ""
+
+        for member in update.message.new_chat_members:
+            if member.is_bot:
+                continue
+
+            isim = member.first_name or "Üye"
+
+            # Gruba kısa karşılama
+            grup_text = (
+                f"👋 Hoş geldin *{isim}*!\n"
+                f"🤖 Kripto Analiz Botunu DM'den başlatmayı unutma 👉 @KriptoDrop_alertbot"
+            )
+            if ozel_mesaj:
+                grup_text = ozel_mesaj + f"\n\n👋 Hoş geldin *{isim}*!"
+
+            grp_msg = await context.bot.send_message(
+                chat_id=GROUP_CHAT_ID,
+                text=grup_text,
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(auto_delete(context.bot, GROUP_CHAT_ID, grp_msg.message_id, 60))
+
+            # DM'e detaylı karşılama
+            try:
+                dm_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📊 Market",        callback_data="market"),
+                     InlineKeyboardButton("📈 24s Liderleri", callback_data="top24")],
+                    [InlineKeyboardButton("🔔 Alarm Ekle",    callback_data="alarm_guide"),
+                     InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste")],
+                    [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help"),
+                     InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
+                ])
+                await context.bot.send_message(
+                    chat_id=member.id,
+                    text=(
+                        f"👋 Merhaba *{isim}*! KriptoDropTR grubuna hoş geldin!\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"🤖 Ben 7/24 piyasayı izleyen kripto analiz botuyum.\n\n"
+                        f"Yapabileceklerin:\n"
+                        f"• Herhangi bir coin sembolü yaz → anlık analiz\n"
+                        f"• `/alarm_ekle BTCUSDT 3.5` → % alarm\n"
+                        f"• `/hedef BTCUSDT 70000` → fiyat hedefi\n"
+                        f"• `/mtf BTCUSDT` → gelişmiş analiz\n"
+                        f"• `/tara rsi_asiri_satim` → fırsat tara\n\n"
+                        f"Aşağıdan başla 👇"
+                    ),
+                    reply_markup=dm_keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass  # Kullanıcı DM kapalıysa sessizce geç
+    except Exception as e:
+        log.error(f"yeni_uye_handler: {e}")
+
+
+# ================= GELİŞMİŞ PORTFÖY TAKİBİ =================
+
+async def portfolyo_command(update: Update, context):
+    """Gelişmiş portföy takibi — toplam değer, günlük PnL, özet."""
+    if not await check_group_access(update, context, "Portföy"):
+        return
+    user_id = update.effective_user.id
+    args = context.args or []
+
+    # Pozisyon ekle: /portfolyo ekle BTCUSDT 0.5 60000
+    if args and args[0].lower() == "ekle":
+        if len(args) < 4:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Kullanım: `/portfolyo ekle BTCUSDT 0.5 60000`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#","").replace("/","")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        try:
+            amount    = float(args[2].replace(",","."))
+            buy_price = float(args[3].replace(",","."))
+        except:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Miktar ve fiyat sayı olmalı.", parse_mode="Markdown"); return
+        not_text = " ".join(args[4:]) if len(args) > 4 else ""
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO kar_pozisyonlar(user_id, symbol, amount, buy_price, note, not_text)
+                VALUES($1,$2,$3,$4,$5,$6)
+                ON CONFLICT(user_id,symbol) DO UPDATE
+                SET amount=$3, buy_price=$4, not_text=$6
+            """, user_id, symbol, amount, buy_price, not_text, not_text)
+        await send_temp(context.bot, update.effective_chat.id,
+            f"✅ `{symbol}` portföye eklendi.\n"
+            f"Miktar: `{amount}` × `{format_price(buy_price)} USDT`",
+            parse_mode="Markdown")
+        return
+
+    # Pozisyon sil
+    if args and args[0].lower() == "sil":
+        if len(args) < 2:
+            await send_temp(context.bot, update.effective_chat.id,
+                "Kullanım: `/portfolyo sil BTCUSDT`", parse_mode="Markdown"); return
+        symbol = args[1].upper().replace("#","").replace("/","")
+        if not symbol.endswith("USDT"): symbol += "USDT"
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM kar_pozisyonlar WHERE user_id=$1 AND symbol=$2", user_id, symbol)
+        await send_temp(context.bot, update.effective_chat.id,
+            f"🗑 `{symbol}` portföyden silindi.", parse_mode="Markdown"); return
+
+    # Portföy özeti göster
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT symbol, amount, buy_price, not_text FROM kar_pozisyonlar WHERE user_id=$1 ORDER BY symbol",
+            user_id)
+
+    if not rows:
+        await send_temp(context.bot, update.effective_chat.id,
+            "💼 *Portföy Takibi*\n━━━━━━━━━━━━━━━━━━\n"
+            "Portföyün boş.\n\n"
+            "Eklemek için:\n"
+            "`/portfolyo ekle BTCUSDT 0.5 60000`\n"
+            "`/portfolyo ekle ETHUSDT 2 3000 DCA`\n\n"
+            "Silmek için:\n"
+            "`/portfolyo sil BTCUSDT`",
+            parse_mode="Markdown"); return
+
+    semboller = [r["symbol"] for r in rows]
+    canli = await _hedef_canli_fiyat(semboller)
+
+    toplam_yatirim = 0.0
+    toplam_guncel  = 0.0
+    en_iyi = None
+    en_kotu = None
+
+    text = "💼 *Portföy Özeti*\n━━━━━━━━━━━━━━━━━━\n"
+    satirlar = []
+
+    for r in rows:
+        cur = canli.get(r["symbol"], r["buy_price"])
+        invested    = r["amount"] * r["buy_price"]
+        current_val = r["amount"] * cur
+        pnl         = current_val - invested
+        pnl_pct     = ((cur - r["buy_price"]) / r["buy_price"]) * 100
+        toplam_yatirim += invested
+        toplam_guncel  += current_val
+
+        icon = "🟢" if pnl >= 0 else "🔴"
+        not_str = f" _{r['not_text']}_" if r.get("not_text") else ""
+        satirlar.append((r["symbol"], pnl_pct, pnl, icon, cur, r["buy_price"], r["amount"], not_str))
+
+        if en_iyi is None or pnl_pct > en_iyi[1]:
+            en_iyi = (r["symbol"], pnl_pct)
+        if en_kotu is None or pnl_pct < en_kotu[1]:
+            en_kotu = (r["symbol"], pnl_pct)
+
+    # Pozisyonları PnL'e göre sırala
+    satirlar.sort(key=lambda x: x[1], reverse=True)
+
+    for sym, pnl_pct, pnl, icon, cur, buy_price, amount, not_str in satirlar:
+        text += (
+            f"{icon} `{sym}`{not_str}\n"
+            f"  `{format_price(buy_price)}` → `{format_price(cur)}` `{pnl_pct:+.2f}%`\n"
+            f"  P&L: `{pnl:+.2f} USDT`\n"
+        )
+
+    toplam_pnl     = toplam_guncel - toplam_yatirim
+    toplam_pnl_pct = ((toplam_guncel - toplam_yatirim) / toplam_yatirim * 100) if toplam_yatirim > 0 else 0
+    toplam_icon    = "🟢" if toplam_pnl >= 0 else "🔴"
+
+    text += (
+        f"\n━━━━━━━━━━━━━━━━━━\n"
+        f"💼 *Toplam Yatırım :* `{toplam_yatirim:,.2f} USDT`\n"
+        f"📈 *Güncel Değer   :* `{toplam_guncel:,.2f} USDT`\n"
+        f"{toplam_icon} *Toplam P&L      :* `{toplam_pnl:+,.2f} USDT` `({toplam_pnl_pct:+.2f}%)`\n"
+    )
+
+    if en_iyi and en_kotu and len(satirlar) > 1:
+        text += (
+            f"\n🏆 En iyi : `{en_iyi[0]}` `{en_iyi[1]:+.2f}%`\n"
+            f"💀 En kötü: `{en_kotu[0]}` `{en_kotu[1]:+.2f}%`\n"
+        )
+
+    text += "\n`/portfolyo ekle SYMBOL MIKTAR FIYAT` — ekle\n`/portfolyo sil SYMBOL` — sil"
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown", delay=120)
+
+
 async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_info=None, auto_del=False, ch5_override=None, alarm_mode=False, member_delay=None):
     try:
         (ticker, k4h, k1h_2, k5m, k1h_100,
@@ -1045,32 +1699,22 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
 
     # Üye → yasak → yönlendir
     fname = feature_name or "Bu özellik"
-
-    # Komutu gruptan sil
-    if update.message:
+    msg_id = update.message.message_id if update.message else None
+    if msg_id:
         try:
-            await context.bot.delete_message(chat_id=chat.id, message_id=update.message.message_id)
+            await context.bot.delete_message(chat_id=chat.id, message_id=msg_id)
         except Exception:
             pass
-
-    # Fiyat Hedefi ile aynı pattern: DM'e mesaj + gruba kısa uyarı
-    try:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🔒 *{fname}* özelliğini kullanmak için buraya tıklayın 👇\n"
-                f"Botu DM üzerinden kullanabilirsiniz."
-            ),
-            parse_mode="Markdown"
-        )
-    except Exception:
-        pass
     try:
         redir = await context.bot.send_message(
             chat_id=chat.id,
-            text=f"🔒 {fname} için lütfen DM'den kullanın 👇 @KriptoDrop_alertbot",
+            text=(
+                f"🔒 *{fname}* grupta kullanılamaz.\n"
+                f"Lütfen botu DM üzerinden kullanın 👉 @KriptoDrop_alertbot"
+            ),
+            parse_mode="Markdown"
         )
-        asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
+        asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 15))
     except Exception:
         pass
     return False
@@ -2779,23 +3423,17 @@ async def button_handler(update: Update, context):
     if is_group_chat:
         is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
 
-    # Grupta sadece bu callback'ler kısıtlama olmadan çalışır
-    GROUP_FREE = {
-        "top24", "top5", "market", "status",
-    }
-
-    # Grupta üye bu butonlara tıklayınca DM yönlendirmesi yapılır
-    GROUP_DM_REDIRECT = {
-        "my_alarm", "fav_liste", "zamanla_help", "kar_help",
-        "mtf_help", "alarm_guide", "alarm_history",
-    }
+    # Grupta ücretsiz çalışan callback'ler
+    GROUP_FREE = {"top24", "top5", "market", "status", "tara_help"}
 
     async def dm_redirect(feature_name: str):
-        """Fiyat Hedefi ile aynı pattern: DM'e mesaj + gruba kısa uyarı."""
         try:
             await context.bot.send_message(
                 chat_id=q.from_user.id,
-                text=f"🔒 *{feature_name}* özelliğini kullanmak için buraya tıklayın 👇\nBotu DM üzerinden kullanabilirsiniz.",
+                text=(
+                    f"🔒 *{feature_name}* özelliğini kullanmak için buraya tıklayın 👇\n"
+                    f"Botu DM üzerinden kullanabilirsiniz."
+                ),
                 parse_mode="Markdown"
             )
         except Exception:
@@ -2812,33 +3450,37 @@ async def button_handler(update: Update, context):
 
     if is_group_chat and not is_adm:
         if q.data == "my_alarm":
-            await dm_redirect("Alarmlarım")
-            return
-        elif q.data == "fav_liste" or q.data.startswith("fav_"):
-            await dm_redirect("Favorilerim")
-            return
-        elif q.data == "kar_help" or q.data.startswith("kar_"):
-            await dm_redirect("Kar/Zarar")
-            return
+            await dm_redirect("Alarmlarım"); return
+        elif q.data in ("fav_liste",) or q.data.startswith("fav_"):
+            await dm_redirect("Favorilerim"); return
+        elif q.data in ("kar_help",) or q.data.startswith("kar_"):
+            await dm_redirect("Kar/Zarar"); return
         elif q.data == "zamanla_help":
-            await dm_redirect("Zamanla")
-            return
-        elif q.data == "mtf_help" or q.data.startswith("mtf_sym_"):
-            await dm_redirect("MTF Analiz")
-            return
-        elif q.data in ("alarm_guide", "alarm_history") or q.data.startswith("alarm_deleteall_"):
-            await dm_redirect("Alarmlarım")
-            return
-        elif q.data not in GROUP_FREE \
-                and not q.data.startswith("hedef_") \
-                and not q.data.startswith("set_"):
-            await dm_redirect("Bu özellik")
-            return
+            await dm_redirect("Zamanla"); return
+        elif q.data in ("mtf_help",) or q.data.startswith("mtf_sym_"):
+            await dm_redirect("MTF Analiz"); return
+        elif q.data in ("alarm_guide","alarm_history") or q.data.startswith("alarm_deleteall_"):
+            await dm_redirect("Alarmlarım"); return
+        elif q.data in ("portfolyo_goster",):
+            await dm_redirect("Portföy"); return
+        elif q.data not in GROUP_FREE                 and not q.data.startswith("hedef_")                 and not q.data.startswith("set_"):
+            await dm_redirect("Bu özellik"); return
 
     await q.answer()
 
     # ── Market & genel ──
-    if q.data == "market":
+    if q.data == "tara_help":
+        await q.message.reply_text(
+            "🔍 *Coin Tarayıcı*\n━━━━━━━━━━━━━━━━━━\n"
+            "• `/tara rsi_asiri_satim` — RSI < 30 fırsat coinler\n"
+            "• `/tara rsi_asiri_alim`  — RSI > 70 aşırı alım\n"
+            "• `/tara macd_yukari`     — MACD yukarı kesiş\n"
+            "• `/tara macd_asagi`      — MACD aşağı kesiş\n"
+            "• `/tara hacim`           — Hacim anomalisi 3x+\n"
+            "• `/tara hepsi`           — Tüm kriterler\n\n"
+            "_150 coin üzerinde tarama yapılır, ~20-30sn sürer._",
+            parse_mode="Markdown")
+    elif q.data == "market":
         await market(update, context)
     elif q.data == "top24":
         await top24(update, context)
