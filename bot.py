@@ -2596,9 +2596,64 @@ async def start(update: Update, context):
     if in_group and user_id:
         admin_in_group = await is_group_admin(context.bot, chat.id, user_id)
 
+    dm_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Market",          callback_data="market"),
+         InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
+        [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
+         InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
+        [InlineKeyboardButton("🔔 Alarmlarım",      callback_data="my_alarm"),
+         InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
+        [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
+         InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
+        [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
+         InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
+    ])
+    dm_text = (
+        "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
+        "7/24 piyasayı izliyorum.\n\n"
+        "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
+        "📊 Detaylı analiz: `/mtf BTCUSDT`\n"
+        "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
+        "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
+        "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
+        "⭐ Favori: `/favori ekle BTCUSDT`\n"
+        "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
+    )
+
     if in_group and not admin_in_group:
-        # Grup üyesi — tüm özellikleri görür, kısıtlı olanlar DM'e yönlendirir
-        keyboard = InlineKeyboardMarkup([
+        # Grup üyesi: DM'e menü gönder, grupta kısa yönlendirme bırak
+        dm_sent = False
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=dm_text,
+                reply_markup=dm_keyboard,
+                parse_mode="Markdown"
+            )
+            dm_sent = True
+        except Exception:
+            pass
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+        if dm_sent:
+            grp_msg = await context.bot.send_message(
+                chat_id=chat.id,
+                text="✅ Menü DM'ine gönderildi! @KriptoDrop_alertbot",
+                parse_mode="Markdown"
+            )
+        else:
+            grp_msg = await context.bot.send_message(
+                chat_id=chat.id,
+                text="👋 Botu kullanmak için önce DM'den başlatın:\n👉 @KriptoDrop_alertbot → /start",
+                parse_mode="Markdown"
+            )
+        asyncio.create_task(auto_delete(context.bot, chat.id, grp_msg.message_id, 15))
+        return
+
+    if in_group and admin_in_group:
+        admin_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📊 Market",          callback_data="market"),
              InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
             [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
@@ -2609,44 +2664,23 @@ async def start(update: Update, context):
              InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
             [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
              InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-            [InlineKeyboardButton("💬 Botu DM'den Kullan", url="https://t.me/KriptoDrop_alertbot")],
+            [InlineKeyboardButton("🛠 Admin Ayarları",  callback_data="set_open")]
         ])
-        welcome_text = (
-            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
-            "7/24 piyasayi izliyorum.\n\n"
-            "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
-            "📊 Detaylı analiz: `/mtf BTCUSDT`\n\n"
-            "🔒 _Alarm, hedef ve kişisel özellikler için_\n"
-            "👇 *Botu DM'den başlatın:* @KriptoDrop_alertbot"
-        )
-    else:
-        # Admin veya DM: tüm butonlar
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📊 Market",          callback_data="market"),
-             InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
-            [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
-             InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
-            [InlineKeyboardButton("🔔 Alarmlarim",      callback_data="my_alarm"),
-             InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
-            [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
-             InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
-            [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
-             InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-            [InlineKeyboardButton("🛠 Admin Ayarlari",  callback_data="set_open")]
-        ])
-        welcome_text = (
-            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
-            "7/24 piyasayi izliyorum.\n\n"
+        admin_text = (
+            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayı izliyorum.\n\n"
             "💡 Analiz: `BTCUSDT` yaz\n"
             "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
             "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
-            "   Çoklu hedef: `/hedef BTCUSDT 60k 70k 80k`\n"
-            "🔔 Fiyat Alarm (DM): `/alarm_ekle BTCUSDT fiyat 70000`\n"
             "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
             "⭐ Favori: `/favori ekle BTCUSDT`\n"
             "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
         )
-    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+        await update.message.reply_text(admin_text, reply_markup=admin_keyboard, parse_mode="Markdown")
+        return
+
+    # DM: tam menü
+    await update.message.reply_text(dm_text, reply_markup=dm_keyboard, parse_mode="Markdown")
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
