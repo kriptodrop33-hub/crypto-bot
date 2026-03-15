@@ -2770,55 +2770,28 @@ async def button_handler(update: Update, context):
         await set_callback(update, context)
         return
 
-    await q.answer()
-
-    # Grup üyesi kısıtlaması: sadece belirli butonlar izinli
+    # Grup üyesi kısıtlaması — q.answer() henüz çağrılmadı, bir kez çağrılacak
     chat = q.message.chat if q.message else None
     is_group_chat = chat and chat.type in ("group", "supergroup")
     if is_group_chat:
         is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
-        # Grup üyesi için sadece top24, top5, mtf_help izinli
-        # Grup üyesi için izin verilen callback'ler (grupta çalışanlar)
         GROUP_OK_CALLBACKS = {"top24", "top5", "mtf_help", "market", "status"}
-        # Hedef ve diğer kişisel özellikler kendi bloğunda DM yönlendirmesi yapıyor
         GROUP_SELF_HANDLED = {"hedef_liste", "hedef_gecmis", "hedef_add_help"}
-        if not is_adm and q.data not in GROUP_OK_CALLBACKS and q.data not in GROUP_SELF_HANDLED \
-                and not q.data.startswith("hedef_sil_"):
-            # DM'e yönlendirme mesajı gönder
-            dm_sent = False
-            try:
-                await context.bot.send_message(
-                    chat_id=q.from_user.id,
-                    text=(
-                        "🔒 Bu özellik grupta kullanılamaz.\n"
-                        "Botu buradan kullanabilirsiniz 👇"
-                    ),
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🚀 Botu DM'den Aç", url="https://t.me/KriptoDrop_alertbot?start=go")
-                    ]])
-                )
-                dm_sent = True
-            except Exception:
-                pass
-            # Kullanıcıya callback popup göster
-            if dm_sent:
-                await q.answer("✅ DM'ine yönlendirme gönderildi!", show_alert=False)
-            else:
-                await q.answer(
-                    "🔒 Bu özellik için önce botu DM'den başlatın: @KriptoDrop_alertbot → /start",
-                    show_alert=True
-                )
-            # Grupta kısa bilgi mesajı
-            try:
-                redir = await context.bot.send_message(
-                    chat_id=chat.id,
-                    text="🔒 Bu özellik için botu DM'den kullanın 👉 @KriptoDrop_alertbot",
-                    parse_mode="Markdown"
-                )
-                asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
-            except Exception:
-                pass
+        if not is_adm and q.data not in GROUP_OK_CALLBACKS and q.data not in GROUP_SELF_HANDLED                 and not q.data.startswith("hedef_sil_"):
+            # Gruba yönlendirme mesajı gönder
+            redir = await context.bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    "🔒 Bu özellik grupta kullanılamaz.\n"
+                    "👉 @KriptoDrop_alertbot adresinden botu DM'den kullanın."
+                ),
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
+            await q.answer()
             return
+
+    await q.answer()
 
     # ── Market & genel ──
     if q.data == "market":
