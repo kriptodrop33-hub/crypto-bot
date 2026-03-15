@@ -36,7 +36,7 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 COOLDOWN_MINUTES  = 15
 DEFAULT_THRESHOLD = 5.0
 DEFAULT_MODE      = "both"
-MAX_SYMBOLS       = 1000
+MAX_SYMBOLS       = 500
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1036,6 +1036,12 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     # Admin kontrolü
     if await is_group_admin(context.bot, chat.id, user_id):
         return True
+
+    # İzin verilen komutlar listesini kontrol et
+    if update.message and update.message.text:
+        cmd = update.message.text.lstrip("/").split("@")[0].split()[0].lower()
+        if cmd in GROUP_ALLOWED_CMDS:
+            return True
 
     # Üye → yasak → yönlendir
     fname = feature_name or "Bu özellik"
