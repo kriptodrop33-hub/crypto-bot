@@ -166,77 +166,53 @@ async def init_db():
             pass  # zaten var
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS sinyaller (
-                id           SERIAL PRIMARY KEY,
-                user_id      BIGINT,
-                symbol       TEXT,
-                sinyal       TEXT,
-                puan         INTEGER,
-                fiyat_giris  REAL,
-                created_at   TIMESTAMPTZ DEFAULT NOW()
+                id SERIAL PRIMARY KEY, user_id BIGINT, symbol TEXT,
+                sinyal TEXT, puan INTEGER, fiyat_giris REAL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS sr_alarmlar (
-                id       SERIAL PRIMARY KEY,
-                user_id  BIGINT,
-                symbol   TEXT,
-                active   INTEGER DEFAULT 1,
-                UNIQUE(user_id, symbol)
+                id SERIAL PRIMARY KEY, user_id BIGINT, symbol TEXT,
+                active INTEGER DEFAULT 1, UNIQUE(user_id, symbol)
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
-                user_id  BIGINT,
-                symbol   TEXT,
-                not_text TEXT DEFAULT '',
+                user_id BIGINT, symbol TEXT, not_text TEXT DEFAULT '',
                 UNIQUE(user_id, symbol)
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS anketler (
-                id         SERIAL PRIMARY KEY,
-                chat_id    BIGINT,
-                soru       TEXT,
-                secenekler TEXT,
-                aktif      INTEGER DEFAULT 1,
+                id SERIAL PRIMARY KEY, chat_id BIGINT, soru TEXT,
+                secenekler TEXT, aktif INTEGER DEFAULT 1,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS anket_oylar (
-                id        SERIAL PRIMARY KEY,
-                anket_id  INTEGER,
-                user_id   BIGINT,
-                secim     INTEGER,
-                UNIQUE(anket_id, user_id)
+                id SERIAL PRIMARY KEY, anket_id INTEGER, user_id BIGINT,
+                secim INTEGER, UNIQUE(anket_id, user_id)
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS volatilite_alarmlar (
-                id       SERIAL PRIMARY KEY,
-                user_id  BIGINT,
-                symbol   TEXT,
-                esik     REAL DEFAULT 5.0,
-                active   INTEGER DEFAULT 1,
+                id SERIAL PRIMARY KEY, user_id BIGINT, symbol TEXT,
+                esik REAL DEFAULT 5.0, active INTEGER DEFAULT 1,
                 UNIQUE(user_id, symbol)
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS brief_ayar (
-                user_id BIGINT PRIMARY KEY,
-                saat    INTEGER DEFAULT 8,
-                dakika  INTEGER DEFAULT 0,
-                active  INTEGER DEFAULT 1
+                user_id BIGINT PRIMARY KEY, saat INTEGER DEFAULT 8,
+                dakika INTEGER DEFAULT 0, active INTEGER DEFAULT 1
             )
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS backtest_gecmis (
-                id         SERIAL PRIMARY KEY,
-                user_id    BIGINT,
-                symbol     TEXT,
-                strateji   TEXT,
-                sonuc      TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW()
+                id SERIAL PRIMARY KEY, user_id BIGINT, symbol TEXT,
+                strateji TEXT, sonuc TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
         await conn.execute("""
@@ -914,7 +890,6 @@ async def fetch_all_analysis(symbol):
 # ═══════════════════════════════════════════════════════════
 
 def calc_signal(ticker, k1h, k4h, k1d):
-    """RSI + MACD + EMA kombinasyonuna göre AL/SAT/BEKLE sinyali üretir."""
     try:
         rsi_1h  = calc_rsi(k1h, 14)
         rsi_4h  = calc_rsi(k4h, 14)
@@ -925,52 +900,34 @@ def calc_signal(ticker, k1h, k4h, k1d):
         ema21_4h = calc_ema(k4h, 21)
         ema55_4h = calc_ema(k4h, 55)
         ch24     = float(ticker.get("priceChangePercent", 0))
-        vol24    = float(ticker.get("quoteVolume", 0))
 
-        puan = 50  # Nötr başlangıç
-
-        # RSI puanı
+        puan = 50
         if rsi_1h < 30:   puan += 15
         elif rsi_1h < 45: puan += 7
         elif rsi_1h > 70: puan -= 15
         elif rsi_1h > 55: puan -= 7
-
         if rsi_4h < 35:   puan += 10
         elif rsi_4h > 65: puan -= 10
-
-        # MACD puanı
         if macd_h1 > 0 and macd_v1 > 0: puan += 12
         elif macd_h1 < 0 and macd_v1 < 0: puan -= 12
         elif macd_h1 > 0: puan += 6
         elif macd_h1 < 0: puan -= 6
-
         if macd_h4 > 0: puan += 8
         elif macd_h4 < 0: puan -= 8
-
-        # EMA puanı
         if ema9_1h > ema21_1h:  puan += 8
         else:                    puan -= 8
         if ema21_4h > ema55_4h: puan += 7
         else:                    puan -= 7
-
-        # Momentum
         if ch24 > 3:   puan += 5
         elif ch24 < -3: puan -= 5
 
         puan = max(0, min(100, puan))
-
         if puan >= 65:
-            sinyal = "🟢 AL"
-            emoji  = "🚀"
-            guc    = "Güçlü" if puan >= 75 else "Orta"
+            sinyal = "🟢 AL";    emoji = "🚀"; guc = "Güçlü" if puan >= 75 else "Orta"
         elif puan <= 35:
-            sinyal = "🔴 SAT"
-            emoji  = "⚠️"
-            guc    = "Güçlü" if puan <= 25 else "Orta"
+            sinyal = "🔴 SAT";   emoji = "⚠️"; guc = "Güçlü" if puan <= 25 else "Orta"
         else:
-            sinyal = "🟡 BEKLE"
-            emoji  = "⏳"
-            guc    = "Nötr"
+            sinyal = "🟡 BEKLE"; emoji = "⏳"; guc = "Nötr"
 
         gerekce = []
         if rsi_1h < 35:  gerekce.append("RSI aşırı satımda")
@@ -993,12 +950,13 @@ async def sinyal_command(update: Update, context):
     args = context.args or []
     if not args:
         await send_temp(context.bot, update.effective_chat.id,
-            "📡 *Sinyal Sistemi*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/sinyal BTCUSDT`\\n\\n"
-            "RSI + MACD + EMA kombinasyonuna göre\\n"
-            "AL / SAT / BEKLE sinyali üretir.\\n\\n"
-            "Geçmiş: `/sinyal_gecmis`",
-            parse_mode="Markdown")
+            "<b>📡 Sinyal Sistemi</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/sinyal BTCUSDT</code>\n\n"
+            "RSI + MACD + EMA kombinasyonu ile\n"
+            "🟢 AL / 🔴 SAT / 🟡 BEKLE sinyali\n\n"
+            "Geçmiş: /sinyal_gecmis",
+            parse_mode="HTML")
         return
 
     symbol = args[0].upper().replace("#","").replace("/","")
@@ -1006,7 +964,7 @@ async def sinyal_command(update: Update, context):
     user_id = update.effective_user.id
 
     wait = await send_temp(context.bot, update.effective_chat.id,
-        f"📡 `{symbol}` için sinyal hesaplanıyor...", parse_mode="Markdown")
+        f"📡 <code>{symbol}</code> için sinyal hesaplanıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             ticker_r, k1h, k4h, k1d = await asyncio.gather(
@@ -1021,38 +979,32 @@ async def sinyal_command(update: Update, context):
             try: await wait.delete()
             except: pass
             await send_temp(context.bot, update.effective_chat.id,
-                f"⚠️ `{symbol}` bulunamadı.", parse_mode="Markdown"); return
+                f"⚠️ <code>{symbol}</code> bulunamadı.", parse_mode="HTML")
+            return
 
         price = float(ticker["lastPrice"])
         puan, sinyal, emoji, guc, gerekce = calc_signal(ticker, k1h, k4h, k1d)
 
-        # Bar göster
         filled = round(puan / 10)
         bar = "█" * filled + "░" * (10 - filled)
 
         text = (
-            f"{emoji} *{symbol} — Sinyal Analizi*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"💵 Fiyat : `{format_price(price)} USDT`\\n"
-            f"📡 Sinyal: *{sinyal}* ({guc})\\n"
-            f"🎯 Güç   : `{bar}` `{puan}/100`\\n\\n"
-            f"📋 *Gerekçe:*\\n"
+            f"{emoji} <b>{symbol} — Sinyal Analizi</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 Fiyat : <code>{format_price(price)} USDT</code>\n"
+            f"📡 Sinyal: <b>{sinyal}</b> ({guc})\n"
+            f"🎯 Güç   : <code>{bar}</code> <code>{puan}/100</code>\n\n"
+            f"📋 <b>Gerekçe:</b>\n"
         )
         for g in gerekce:
-            text += f"  • {g}\\n"
+            text += f"  • {g}\n"
+        text += "\n⚠️ <i>Bu sinyal yatırım tavsiyesi değildir.</i>"
 
-        text += (
-            f"\\n⚠️ _Bu sinyal yatırım tavsiyesi değildir._\\n"
-            f"_Kendi analizinizi yapın._"
-        )
-
-        # Sinyali kaydet
         try:
             async with db_pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO sinyaller(user_id, symbol, sinyal, puan, fiyat_giris)
-                    VALUES($1,$2,$3,$4,$5)
-                """, user_id, symbol, sinyal, puan, price)
+                await conn.execute(
+                    "INSERT INTO sinyaller(user_id,symbol,sinyal,puan,fiyat_giris) VALUES($1,$2,$3,$4,$5)",
+                    user_id, symbol, sinyal, puan, price)
         except Exception:
             pass
 
@@ -1063,13 +1015,12 @@ async def sinyal_command(update: Update, context):
             InlineKeyboardButton("📊 MTF Analiz", callback_data=f"mtf_sym_{symbol}"),
             InlineKeyboardButton("📈 Geçmiş", callback_data="sinyal_gecmis"),
         ]])
-        await send_temp(context.bot, update.effective_chat.id, text,
-                        parse_mode="Markdown", reply_markup=kb)
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"sinyal_command: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 async def sinyal_gecmis_command(update: Update, context):
@@ -1077,29 +1028,27 @@ async def sinyal_gecmis_command(update: Update, context):
         return
     user_id = update.effective_user.id
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT symbol, sinyal, puan, fiyat_giris, created_at
-            FROM sinyaller WHERE user_id=$1
-            ORDER BY created_at DESC LIMIT 20
-        """, user_id)
+        rows = await conn.fetch(
+            "SELECT symbol,sinyal,puan,fiyat_giris,created_at FROM sinyaller WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20",
+            user_id)
 
     if not rows:
         await send_temp(context.bot, update.effective_chat.id,
-            "📈 Henüz sinyal geçmişin yok.\\n`/sinyal BTCUSDT` ile başla.",
-            parse_mode="Markdown"); return
+            "📈 Henüz sinyal geçmişin yok.\n<code>/sinyal BTCUSDT</code> ile başla.",
+            parse_mode="HTML")
+        return
 
-    al   = sum(1 for r in rows if "AL"   in r["sinyal"])
-    sat  = sum(1 for r in rows if "SAT"  in r["sinyal"])
+    al   = sum(1 for r in rows if "AL"    in r["sinyal"])
+    sat  = sum(1 for r in rows if "SAT"   in r["sinyal"])
     bekl = sum(1 for r in rows if "BEKLE" in r["sinyal"])
 
-    text = "📈 *Sinyal Geçmişin*\\n━━━━━━━━━━━━━━━━━━\\n"
-    text += f"🟢 AL: `{al}`  🔴 SAT: `{sat}`  🟡 BEKLE: `{bekl}`\\n\\n"
-
+    text = "<b>📈 Sinyal Geçmişin</b>\n━━━━━━━━━━━━━━━━━━\n"
+    text += f"🟢 AL: <code>{al}</code>  🔴 SAT: <code>{sat}</code>  🟡 BEKLE: <code>{bekl}</code>\n\n"
     for r in rows[:10]:
         ts = r["created_at"].strftime("%d.%m %H:%M")
-        text += f"`{r['symbol']:<12}` {r['sinyal']} `{r['puan']}/100` _{ts}_\\n"
+        text += f"<code>{r['symbol']:<12}</code> {r['sinyal']} <code>{r['puan']}/100</code> <i>{ts}</i>\n"
 
-    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1114,53 +1063,54 @@ async def sr_alarm_command(update: Update, context):
 
     if not args:
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT symbol, active FROM sr_alarmlar WHERE user_id=$1", user_id)
+            rows = await conn.fetch("SELECT symbol, active FROM sr_alarmlar WHERE user_id=$1", user_id)
         if not rows:
             await send_temp(context.bot, update.effective_chat.id,
-                "🎯 *Destek/Direnç Alarmı*\\n━━━━━━━━━━━━━━━━━━\\n"
-                "Fiyat destek/direncine yaklaşınca otomatik uyarı.\\n\\n"
-                "Ekle: `/sr_alarm BTCUSDT`\\n"
-                "Sil : `/sr_alarm sil BTCUSDT`",
-                parse_mode="Markdown"); return
-        text = "🎯 *S/R Alarmlarım*\\n━━━━━━━━━━━━━━━━━━\\n"
+                "<b>🎯 Destek/Direnç Alarmı</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "Fiyat destek/direncine yaklaşınca DM alarmı.\n\n"
+                "Ekle: <code>/sr_alarm BTCUSDT</code>\n"
+                "Sil : <code>/sr_alarm sil BTCUSDT</code>",
+                parse_mode="HTML")
+            return
+        text = "<b>🎯 S/R Alarmlarım</b>\n━━━━━━━━━━━━━━━━━━\n"
         for r in rows:
             durum = "✅" if r["active"] else "⏹"
-            text += f"{durum} `{r['symbol']}`\\n"
-        text += "\\n`/sr_alarm sil SYMBOL` — sil"
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown"); return
+            text += f"{durum} <code>{r['symbol']}</code>\n"
+        text += "\n<code>/sr_alarm sil SYMBOL</code> — sil"
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
+        return
 
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanım: `/sr_alarm sil BTCUSDT`", parse_mode="Markdown"); return
+                "Kullanım: <code>/sr_alarm sil BTCUSDT</code>", parse_mode="HTML")
+            return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM sr_alarmlar WHERE user_id=$1 AND symbol=$2", user_id, symbol)
         await send_temp(context.bot, update.effective_chat.id,
-            f"🗑 `{symbol}` S/R alarmı silindi.", parse_mode="Markdown"); return
+            f"🗑 <code>{symbol}</code> S/R alarmı silindi.", parse_mode="HTML")
+        return
 
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO sr_alarmlar(user_id, symbol, active)
-            VALUES($1,$2,1) ON CONFLICT(user_id,symbol) DO UPDATE SET active=1
-        """, user_id, symbol)
+        await conn.execute(
+            "INSERT INTO sr_alarmlar(user_id,symbol,active) VALUES($1,$2,1) ON CONFLICT(user_id,symbol) DO UPDATE SET active=1",
+            user_id, symbol)
     await send_temp(context.bot, update.effective_chat.id,
-        f"✅ `{symbol}` S/R alarmı eklendi!\\n"
-        f"Destek/direncine %2 yaklaşınca DM alacaksın.",
-        parse_mode="Markdown")
+        f"✅ <code>{symbol}</code> S/R alarmı eklendi!\n"
+        "Destek/direncine %2 yaklaşınca DM alacaksın.",
+        parse_mode="HTML")
 
 
 async def sr_alarm_job(context):
-    """Her 10 dakikada S/R alarmlarını kontrol et."""
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT user_id, symbol FROM sr_alarmlar WHERE active=1")
         if not rows: return
-
         now = datetime.utcnow()
         for row in rows:
             user_id = row["user_id"]
@@ -1171,33 +1121,27 @@ async def sr_alarm_job(context):
             try:
                 async with aiohttp.ClientSession() as session:
                     k4h = await fetch_klines(session, symbol, "4h", limit=50)
-                    ticker_r = await session.get(
-                        f"{BINANCE_24H}?symbol={symbol}",
-                        timeout=aiohttp.ClientTimeout(total=5))
+                    ticker_r = await session.get(f"{BINANCE_24H}?symbol={symbol}", timeout=aiohttp.ClientTimeout(total=5))
                     ticker = await ticker_r.json()
-
                 price = float(ticker.get("lastPrice", 0))
                 if price == 0: continue
-
                 destek, direnc = calc_support_resistance(k4h)
-
                 mesajlar = []
                 if destek and abs(price - destek) / price < 0.02:
                     mesajlar.append(
-                        f"🔵 *{symbol}* desteğe yakın!\\n"
-                        f"Destek: `{format_price(destek)}` | Fiyat: `{format_price(price)}`\\n"
-                        f"_%{abs(price-destek)/price*100:.1f} uzakta_")
+                        f"🔵 <b>{symbol}</b> desteğe yakın!\n"
+                        f"Destek: <code>{format_price(destek)}</code> | Fiyat: <code>{format_price(price)}</code>\n"
+                        f"<i>%{abs(price-destek)/price*100:.1f} uzakta</i>")
                 if direnc and abs(direnc - price) / price < 0.02:
                     mesajlar.append(
-                        f"🔴 *{symbol}* dirençte!\\n"
-                        f"Direnç: `{format_price(direnc)}` | Fiyat: `{format_price(price)}`\\n"
-                        f"_%{abs(direnc-price)/price*100:.1f} uzakta_")
-
+                        f"🔴 <b>{symbol}</b> dirençte!\n"
+                        f"Direnç: <code>{format_price(direnc)}</code> | Fiyat: <code>{format_price(price)}</code>\n"
+                        f"<i>%{abs(direnc-price)/price*100:.1f} uzakta</i>")
                 for msg in mesajlar:
                     cooldowns[key] = now
                     await context.bot.send_message(user_id,
-                        f"🎯 *S/R Alarm*\\n━━━━━━━━━━━━━━━━━━\\n{msg}",
-                        parse_mode="Markdown")
+                        f"🎯 <b>S/R Alarm</b>\n━━━━━━━━━━━━━━━━━━\n{msg}",
+                        parse_mode="HTML")
             except Exception:
                 pass
     except Exception as e:
@@ -1209,12 +1153,10 @@ async def sr_alarm_job(context):
 # ═══════════════════════════════════════════════════════════
 
 async def volatilite_job(context):
-    """Her 30 dakikada volatilite alarmlarını kontrol et."""
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT user_id, symbol, esik FROM volatilite_alarmlar WHERE active=1")
         if not rows: return
-
         now = datetime.utcnow()
         for row in rows:
             user_id = row["user_id"]
@@ -1227,25 +1169,21 @@ async def volatilite_job(context):
                 async with aiohttp.ClientSession() as session:
                     k1h = await fetch_klines(session, symbol, "1h", limit=48)
                 if not k1h or len(k1h) < 24: continue
-
-                # Son 4 saatlik hareket vs önceki 20 saatlik ortalama
                 son4  = [abs(float(c[4]) - float(c[1])) / float(c[1]) * 100 for c in k1h[-4:]]
                 onc20 = [abs(float(c[4]) - float(c[1])) / float(c[1]) * 100 for c in k1h[-24:-4]]
-                vol_son  = sum(son4) / len(son4) if son4 else 0
-                vol_ort  = sum(onc20) / len(onc20) if onc20 else 0
-
+                vol_son = sum(son4) / len(son4) if son4 else 0
+                vol_ort = sum(onc20) / len(onc20) if onc20 else 0
                 if vol_ort == 0: continue
                 oran = vol_son / vol_ort
-
                 if oran >= (1 + esik / 100):
                     cooldowns[key] = now
                     await context.bot.send_message(user_id,
-                        f"⚡ *Volatilite Artışı — {symbol}*\\n"
-                        f"━━━━━━━━━━━━━━━━━━\\n"
-                        f"Son 4sa volatilite normalin `{oran:.1f}x` üstünde!\\n"
-                        f"Son 4sa ort: `%{vol_son:.2f}` | Genel ort: `%{vol_ort:.2f}`\\n\\n"
-                        f"_Büyük hareket yaklaşıyor olabilir!_",
-                        parse_mode="Markdown")
+                        f"⚡ <b>Volatilite Artışı — {symbol}</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"Son 4sa volatilite normalin <code>{oran:.1f}x</code> üstünde!\n"
+                        f"Son 4sa: <code>%{vol_son:.2f}</code> | Genel ort: <code>%{vol_ort:.2f}</code>\n\n"
+                        f"<i>Büyük hareket yaklaşıyor olabilir!</i>",
+                        parse_mode="HTML")
             except Exception:
                 pass
     except Exception as e:
@@ -1262,16 +1200,18 @@ async def ath_command(update: Update, context):
     args = context.args or []
     if not args:
         await send_temp(context.bot, update.effective_chat.id,
-            "🏆 *ATH/ATL Takibi*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/ath BTCUSDT`\\n"
-            "52 haftalık yüksek/düşük ve ATH mesafesini gösterir.",
-            parse_mode="Markdown"); return
+            "<b>🏆 ATH/ATL Takibi</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/ath BTCUSDT</code>\n"
+            "52 haftalık yüksek/düşük ve ATH mesafesi.",
+            parse_mode="HTML")
+        return
 
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
     wait = await send_temp(context.bot, update.effective_chat.id,
-        f"🏆 `{symbol}` ATH/ATL hesaplanıyor...", parse_mode="Markdown")
+        f"🏆 <code>{symbol}</code> ATH/ATL hesaplanıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             ticker_r, k1d = await asyncio.gather(
@@ -1284,49 +1224,44 @@ async def ath_command(update: Update, context):
         if not price:
             try: await wait.delete()
             except: pass
-            await send_temp(context.bot, update.effective_chat.id,
-                f"⚠️ `{symbol}` bulunamadı.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, f"⚠️ <code>{symbol}</code> bulunamadı.", parse_mode="HTML")
+            return
 
         if k1d and len(k1d) >= 7:
             ath_52h = max(float(c[2]) for c in k1d)
             atl_52h = min(float(c[3]) for c in k1d)
             ath_dist = (ath_52h - price) / ath_52h * 100
             atl_dist = (price - atl_52h) / atl_52h * 100
-
-            # 7 günlük ATH/ATL
             ath_7d = max(float(c[2]) for c in k1d[-7:])
             atl_7d = min(float(c[3]) for c in k1d[-7:])
 
-            # ATH/ATL'ye yakınlık bildirimi
             uyari = ""
-            if ath_dist < 5:
-                uyari = "\\n🔥 *ATH'ye çok yakın!*"
-            elif atl_dist < 5:
-                uyari = "\\n❄️ *ATL'ye çok yakın!*"
+            if ath_dist < 5:  uyari = "\n🔥 <b>ATH'ye çok yakın!</b>"
+            elif atl_dist < 5: uyari = "\n❄️ <b>ATL'ye çok yakın!</b>"
 
             text = (
-                f"🏆 *{symbol} — ATH/ATL Analizi*\\n"
-                f"━━━━━━━━━━━━━━━━━━\\n"
-                f"💵 Güncel Fiyat : `{format_price(price)} USDT`\\n\\n"
-                f"📅 *52 Haftalık*\\n"
-                f"  🔺 Yüksek : `{format_price(ath_52h)}` _(ATH'ye `%{ath_dist:.1f}` uzak)_\\n"
-                f"  🔻 Düşük  : `{format_price(atl_52h)}` _(ATL'den `%{atl_dist:.1f}` yukarı)_\\n\\n"
-                f"📅 *7 Günlük*\\n"
-                f"  🔺 Yüksek : `{format_price(ath_7d)}`\\n"
-                f"  🔻 Düşük  : `{format_price(atl_7d)}`"
+                f"🏆 <b>{symbol} — ATH/ATL Analizi</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"💵 Güncel: <code>{format_price(price)} USDT</code>\n\n"
+                f"📅 <b>52 Haftalık</b>\n"
+                f"  🔺 Yüksek: <code>{format_price(ath_52h)}</code> <i>(ATH'ye %{ath_dist:.1f} uzak)</i>\n"
+                f"  🔻 Düşük : <code>{format_price(atl_52h)}</code> <i>(ATL'den %{atl_dist:.1f} yukarı)</i>\n\n"
+                f"📅 <b>7 Günlük</b>\n"
+                f"  🔺 Yüksek: <code>{format_price(ath_7d)}</code>\n"
+                f"  🔻 Düşük : <code>{format_price(atl_7d)}</code>"
                 f"{uyari}"
             )
         else:
-            text = f"⚠️ `{symbol}` için yeterli veri yok."
+            text = f"⚠️ <code>{symbol}</code> için yeterli veri yok."
 
         try: await wait.delete()
         except: pass
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"ath_command: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1335,24 +1270,23 @@ async def ath_command(update: Update, context):
 
 SEKTOR_COINLER = {
     "🔷 Layer 1": ["BTCUSDT","ETHUSDT","SOLUSDT","AVAXUSDT","ADAUSDT","DOTUSDT","NEARUSDT","APTUSDT"],
-    "⚡ Layer 2": ["MATICUSDT","ARBUSDT","OPUSDT","STRKUSDT","MANAUSDT"],
-    "🌊 DeFi":    ["UNIUSDT","AAVEUSDT","MKRUSDT","CRVUSDT","SNXUSDT","COMPUSDT","SUSHIUSDT"],
+    "⚡ Layer 2": ["MATICUSDT","ARBUSDT","OPUSDT","STRKUSDT"],
+    "🌊 DeFi":    ["UNIUSDT","AAVEUSDT","MKRUSDT","CRVUSDT","COMPUSDT"],
     "🎮 GameFi":  ["AXSUSDT","SANDUSDT","MANAUSDT","GALAUSDT","IMXUSDT"],
-    "🤖 AI":      ["FETUSDT","AGIXUSDT","RNDRRNDR","WLDUSDT","TAOUSDT"],
+    "🤖 AI":      ["FETUSDT","AGIXUSDT","WLDUSDT"],
     "🐶 Meme":    ["DOGEUSDT","SHIBUSDT","PEPEUSDT","FLOKIUSDT","BONKUSDT"],
 }
 
 async def sektor_command(update: Update, context):
     wait = await send_temp(context.bot, update.effective_chat.id,
-        "📊 Sektör analizi yapılıyor...", parse_mode="Markdown")
+        "📊 Sektör analizi yapılıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 tickers = await resp.json()
 
-        ticker_map = {t["symbol"]: float(t.get("priceChangePercent",0)) for t in tickers}
-
-        text = "📊 *Sektör Performansı (24s)*\\n━━━━━━━━━━━━━━━━━━\\n"
+        ticker_map = {t["symbol"]: float(t.get("priceChangePercent", 0)) for t in tickers}
+        text = "<b>📊 Sektör Performansı (24s)</b>\n━━━━━━━━━━━━━━━━━━\n"
         sektor_sonuc = []
 
         for sektor, coinler in SEKTOR_COINLER.items():
@@ -1365,27 +1299,26 @@ async def sektor_command(update: Update, context):
 
         for sektor, ort, degisimler in sektor_sonuc:
             icon = "🟢" if ort >= 0 else "🔴"
-            en_iyi = max(degisimler)
+            en_iyi  = max(degisimler)
             en_kotu = min(degisimler)
             text += (
-                f"{icon} *{sektor}*\\n"
-                f"  Ort: `{ort:+.2f}%` | 🔺`{en_iyi:+.1f}%` 🔻`{en_kotu:+.1f}%`\\n"
+                f"{icon} <b>{sektor}</b>\n"
+                f"  Ort: <code>{ort:+.2f}%</code> | 🔺<code>{en_iyi:+.1f}%</code> 🔻<code>{en_kotu:+.1f}%</code>\n"
             )
 
-        # Genel piyasa
-        usdt_all = [float(t.get("priceChangePercent",0)) for t in tickers if t["symbol"].endswith("USDT")]
+        usdt_all = [float(t.get("priceChangePercent", 0)) for t in tickers if t["symbol"].endswith("USDT")]
         piyasa_ort = sum(usdt_all) / len(usdt_all) if usdt_all else 0
         mood = "🐂 Boğa" if piyasa_ort > 1 else "🐻 Ayı" if piyasa_ort < -1 else "😐 Yatay"
-        text += f"\\n📈 *Genel Piyasa:* `{piyasa_ort:+.2f}%` — {mood}"
+        text += f"\n📈 <b>Genel Piyasa:</b> <code>{piyasa_ort:+.2f}%</code> — {mood}"
 
         try: await wait.delete()
         except: pass
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"sektor: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1393,49 +1326,47 @@ async def sektor_command(update: Update, context):
 # ═══════════════════════════════════════════════════════════
 
 def detect_patterns(k1d):
-    """Klasik grafik formasyonlarını tespit eder."""
     patterns = []
-    if not k1d or len(k1d) < 20:
-        return patterns
-
+    if not k1d or len(k1d) < 20: return patterns
     closes = [float(c[4]) for c in k1d]
     highs  = [float(c[2]) for c in k1d]
     lows   = [float(c[3]) for c in k1d]
     n = len(closes)
 
-    # Çift Dip (Double Bottom)
     try:
-        min1_idx = lows.index(min(lows[-20:-10]))
-        min2_idx = lows.index(min(lows[-10:]), n-10)
-        if abs(lows[min1_idx] - lows[min2_idx]) / lows[min1_idx] < 0.03:
-            if closes[-1] > max(closes[min1_idx:min2_idx]):
+        win_lows  = lows[-20:-10]
+        win_lows2 = lows[-10:]
+        min1 = min(win_lows); min2 = min(win_lows2)
+        if abs(min1 - min2) / min1 < 0.03:
+            idx1 = lows.index(min1, n-20, n-10)
+            idx2 = lows.index(min2, n-10, n)
+            if closes[-1] > max(closes[idx1:idx2]):
                 patterns.append("🔵 Çift Dip — Potansiyel yükseliş")
     except: pass
 
-    # Çift Tepe (Double Top)
     try:
-        max1_idx = highs.index(max(highs[-20:-10]))
-        max2_idx = highs.index(max(highs[-10:]), n-10)
-        if abs(highs[max1_idx] - highs[max2_idx]) / highs[max1_idx] < 0.03:
-            if closes[-1] < min(closes[max1_idx:max2_idx]):
+        win_highs  = highs[-20:-10]
+        win_highs2 = highs[-10:]
+        max1 = max(win_highs); max2 = max(win_highs2)
+        if abs(max1 - max2) / max1 < 0.03:
+            idx1 = highs.index(max1, n-20, n-10)
+            idx2 = highs.index(max2, n-10, n)
+            if closes[-1] < min(closes[idx1:idx2]):
                 patterns.append("🔴 Çift Tepe — Potansiyel düşüş")
     except: pass
 
-    # Yükselen Kanal
     try:
         if all(closes[i] > closes[i-1] for i in range(-5, 0)):
             if all(lows[i] > lows[i-1] for i in range(-5, 0)):
                 patterns.append("📈 Yükselen Kanal — Trend yukarı")
     except: pass
 
-    # Düşen Kanal
     try:
         if all(closes[i] < closes[i-1] for i in range(-5, 0)):
             if all(highs[i] < highs[i-1] for i in range(-5, 0)):
                 patterns.append("📉 Düşen Kanal — Trend aşağı")
     except: pass
 
-    # Bayrak (Bull Flag)
     try:
         onceki10 = (closes[-11] - closes[-20]) / closes[-20] * 100 if closes[-20] else 0
         son5 = (closes[-1] - closes[-5]) / closes[-5] * 100 if closes[-5] else 0
@@ -1452,19 +1383,21 @@ async def pattern_command(update: Update, context):
     args = context.args or []
     if not args:
         await send_temp(context.bot, update.effective_chat.id,
-            "📐 *Pattern Tanıma*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/pattern BTCUSDT`\\n\\n"
-            "Tespit edilen formasyonlar:\\n"
-            "• Çift Dip / Çift Tepe\\n"
-            "• Yükselen / Düşen Kanal\\n"
+            "<b>📐 Pattern Tanıma</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/pattern BTCUSDT</code>\n\n"
+            "Tespit edilen formasyonlar:\n"
+            "• Çift Dip / Çift Tepe\n"
+            "• Yükselen / Düşen Kanal\n"
             "• Bull Flag",
-            parse_mode="Markdown"); return
+            parse_mode="HTML")
+        return
 
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
 
     wait = await send_temp(context.bot, update.effective_chat.id,
-        f"📐 `{symbol}` pattern analizi yapılıyor...", parse_mode="Markdown")
+        f"📐 <code>{symbol}</code> pattern analizi yapılıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             k1d = await fetch_klines(session, symbol, "1d", limit=30)
@@ -1472,32 +1405,28 @@ async def pattern_command(update: Update, context):
 
         patterns_1d = detect_patterns(k1d)
         patterns_4h = detect_patterns(k4h)
-
         try: await wait.delete()
         except: pass
 
         if not patterns_1d and not patterns_4h:
             await send_temp(context.bot, update.effective_chat.id,
-                f"📐 `{symbol}` — Belirgin pattern bulunamadı.",
-                parse_mode="Markdown"); return
+                f"📐 <code>{symbol}</code> — Belirgin pattern bulunamadı.", parse_mode="HTML")
+            return
 
-        text = f"📐 *{symbol} — Pattern Analizi*\\n━━━━━━━━━━━━━━━━━━\\n"
+        text = f"📐 <b>{symbol} — Pattern Analizi</b>\n━━━━━━━━━━━━━━━━━━\n"
         if patterns_1d:
-            text += "📅 *Günlük (1D):*\\n"
-            for p in patterns_1d:
-                text += f"  • {p}\\n"
+            text += "📅 <b>Günlük (1D):</b>\n"
+            for p in patterns_1d: text += f"  • {p}\n"
         if patterns_4h:
-            text += "\\n⏰ *4 Saatlik (4H):*\\n"
-            for p in patterns_4h:
-                text += f"  • {p}\\n"
-        text += "\\n⚠️ _Pattern yatırım tavsiyesi değildir._"
-
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+            text += "\n⏰ <b>4 Saatlik (4H):</b>\n"
+            for p in patterns_4h: text += f"  • {p}\n"
+        text += "\n⚠️ <i>Pattern yatırım tavsiyesi değildir.</i>"
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"pattern: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1510,86 +1439,80 @@ async def dca_command(update: Update, context):
     args = context.args or []
     if len(args) < 3:
         await send_temp(context.bot, update.effective_chat.id,
-            "💹 *DCA Hesaplayıcı*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/dca BTCUSDT 100 12`\\n"
-            "_(symbol, aylık_dolar, kaç_ay)_\\n\\n"
-            "Örnek: `/dca BTCUSDT 100 24`\\n"
-            "→ 24 ay boyunca aylık 100$ alsaydın ne olurdu?",
-            parse_mode="Markdown"); return
+            "<b>💹 DCA Hesaplayıcı</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/dca BTCUSDT 100 12</code>\n"
+            "<i>(symbol, aylık_dolar, kaç_ay)</i>\n\n"
+            "Örnek: <code>/dca BTCUSDT 100 24</code>",
+            parse_mode="HTML")
+        return
 
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     try:
         aylik_dolar = float(args[1].replace(",","."))
-        ay_sayisi   = int(args[2])
-        if ay_sayisi > 48: ay_sayisi = 48
+        ay_sayisi   = min(int(args[2]), 48)
     except:
         await send_temp(context.bot, update.effective_chat.id,
-            "Hatalı format. Örnek: `/dca BTCUSDT 100 12`", parse_mode="Markdown"); return
+            "Hatalı format. Örnek: <code>/dca BTCUSDT 100 12</code>", parse_mode="HTML")
+        return
 
-    wait = await send_temp(context.bot, update.effective_chat.id,
-        f"💹 DCA hesaplanıyor...", parse_mode="Markdown")
+    wait = await send_temp(context.bot, update.effective_chat.id, "💹 DCA hesaplanıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             k1m = await fetch_klines(session, symbol, "1M", limit=ay_sayisi+1)
-            ticker_r = await session.get(
-                f"{BINANCE_24H}?symbol={symbol}", timeout=aiohttp.ClientTimeout(total=5))
+            ticker_r = await session.get(f"{BINANCE_24H}?symbol={symbol}", timeout=aiohttp.ClientTimeout(total=5))
             ticker = await ticker_r.json()
 
         current_price = float(ticker.get("lastPrice", 0))
         if not current_price or not k1m:
             try: await wait.delete()
             except: pass
-            await send_temp(context.bot, update.effective_chat.id,
-                f"⚠️ `{symbol}` için veri alınamadı.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, f"⚠️ <code>{symbol}</code> için veri alınamadı.", parse_mode="HTML")
+            return
 
-        toplam_yatirim = 0.0
-        toplam_adet    = 0.0
-        satirlar = []
-
-        for i, mum in enumerate(k1m[-ay_sayisi:]):
-            fiyat = float(mum[1])  # Open fiyatı
+        toplam_yatirim = toplam_adet = 0.0
+        for mum in k1m[-ay_sayisi:]:
+            fiyat = float(mum[1])
             if fiyat == 0: continue
-            adet = aylik_dolar / fiyat
+            toplam_adet    += aylik_dolar / fiyat
             toplam_yatirim += aylik_dolar
-            toplam_adet    += adet
-            satirlar.append((i+1, fiyat, adet))
 
         if toplam_adet == 0:
             try: await wait.delete()
             except: pass
-            await send_temp(context.bot, update.effective_chat.id, "⚠️ Hesaplama yapılamadı.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "⚠️ Hesaplama yapılamadı.", parse_mode="HTML")
+            return
 
         ort_maliyet  = toplam_yatirim / toplam_adet
         guncel_deger = toplam_adet * current_price
         kar_zarar    = guncel_deger - toplam_yatirim
-        kar_pct      = (kar_zarar / toplam_yatirim) * 100
+        kar_pct      = kar_zarar / toplam_yatirim * 100
         icon         = "🟢" if kar_zarar >= 0 else "🔴"
 
         try: await wait.delete()
         except: pass
 
         text = (
-            f"💹 *DCA Analizi — {symbol}*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"📅 Süre          : `{ay_sayisi} ay`\\n"
-            f"💰 Aylık yatırım : `${aylik_dolar:,.0f}`\\n"
-            f"💼 Toplam yatırım: `${toplam_yatirim:,.0f}`\\n"
-            f"\\n"
-            f"📊 *Sonuç:*\\n"
-            f"  Ortalama maliyet: `{format_price(ort_maliyet)} USDT`\\n"
-            f"  Güncel fiyat    : `{format_price(current_price)} USDT`\\n"
-            f"  Toplam adet     : `{toplam_adet:.6f}`\\n"
-            f"  Güncel değer    : `${guncel_deger:,.2f}`\\n"
-            f"  {icon} Kar/Zarar    : `${kar_zarar:+,.2f}` `({kar_pct:+.1f}%)`\\n"
-            f"\\n_Geçmiş veriler gelecek performansı garanti etmez._"
+            f"💹 <b>DCA Analizi — {symbol}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Süre          : <code>{ay_sayisi} ay</code>\n"
+            f"💰 Aylık yatırım : <code>${aylik_dolar:,.0f}</code>\n"
+            f"💼 Toplam yatırım: <code>${toplam_yatirim:,.0f}</code>\n\n"
+            f"📊 <b>Sonuç:</b>\n"
+            f"  Ort. maliyet: <code>{format_price(ort_maliyet)} USDT</code>\n"
+            f"  Güncel fiyat: <code>{format_price(current_price)} USDT</code>\n"
+            f"  Toplam adet : <code>{toplam_adet:.6f}</code>\n"
+            f"  Güncel değer: <code>${guncel_deger:,.2f}</code>\n"
+            f"  {icon} Kar/Zarar: <code>${kar_zarar:+,.2f}</code> <code>({kar_pct:+.1f}%)</code>\n\n"
+            f"<i>Geçmiş veriler gelecek performansı garanti etmez.</i>"
         )
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"dca: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1602,64 +1525,60 @@ async def rr_command(update: Update, context):
     args = context.args or []
     if len(args) < 3:
         await send_temp(context.bot, update.effective_chat.id,
-            "⚖️ *Risk/Ödül Hesaplayıcı*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/rr giriş stop hedef`\\n\\n"
-            "Örnek: `/rr 100 95 115`\\n"
-            "→ Giriş: 100 | Stop: 95 | Hedef: 115\\n\\n"
-            "İsteğe bağlı sermaye: `/rr 100 95 115 1000`",
-            parse_mode="Markdown"); return
+            "<b>⚖️ Risk/Ödül Hesaplayıcı</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/rr giriş stop hedef</code>\n\n"
+            "Örnek: <code>/rr 100 95 115</code>\n"
+            "Sermaye ile: <code>/rr 100 95 115 1000</code>",
+            parse_mode="HTML")
+        return
     try:
-        giris  = float(args[0].replace(",","."))
-        stop   = float(args[1].replace(",","."))
-        hedef  = float(args[2].replace(",","."))
+        giris   = float(args[0].replace(",","."))
+        stop    = float(args[1].replace(",","."))
+        hedef   = float(args[2].replace(",","."))
         sermaye = float(args[3].replace(",",".")) if len(args) > 3 else None
     except:
         await send_temp(context.bot, update.effective_chat.id,
-            "Hatalı format. Örnek: `/rr 100 95 115`", parse_mode="Markdown"); return
+            "Hatalı format. Örnek: <code>/rr 100 95 115</code>", parse_mode="HTML")
+        return
 
-    risk   = abs(giris - stop)
-    odül   = abs(hedef - giris)
+    risk = abs(giris - stop)
+    odül = abs(hedef - giris)
     if risk == 0:
-        await send_temp(context.bot, update.effective_chat.id,
-            "⚠️ Stop ve giriş fiyatı aynı olamaz.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Stop ve giriş aynı olamaz.", parse_mode="HTML")
+        return
 
-    oran   = odül / risk
+    oran     = odül / risk
     risk_pct = risk / giris * 100
     odül_pct = odül / giris * 100
-    yon    = "📈 Long" if hedef > giris else "📉 Short"
-    renk   = "🟢" if oran >= 2 else "🟡" if oran >= 1 else "🔴"
+    yon      = "📈 Long" if hedef > giris else "📉 Short"
+    renk     = "🟢" if oran >= 2 else "🟡" if oran >= 1 else "🔴"
 
     text = (
-        f"⚖️ *Risk/Ödül Analizi*\\n"
-        f"━━━━━━━━━━━━━━━━━━\\n"
-        f"Yön      : {yon}\\n"
-        f"Giriş    : `{format_price(giris)}`\\n"
-        f"Stop     : `{format_price(stop)}` _(-%{risk_pct:.1f})_\\n"
-        f"Hedef    : `{format_price(hedef)}` _(+%{odül_pct:.1f})_\\n"
-        f"\\n"
-        f"{renk} *R/R Oranı: `1 : {oran:.2f}`*\\n"
+        f"⚖️ <b>Risk/Ödül Analizi</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Yön   : {yon}\n"
+        f"Giriş : <code>{format_price(giris)}</code>\n"
+        f"Stop  : <code>{format_price(stop)}</code> <i>(-%{risk_pct:.1f})</i>\n"
+        f"Hedef : <code>{format_price(hedef)}</code> <i>(+%{odül_pct:.1f})</i>\n\n"
+        f"{renk} <b>R/R Oranı: 1 : {oran:.2f}</b>\n"
     )
-
     if sermaye:
-        max_risk_dolar = sermaye * 0.02  # %2 risk kuralı
-        pozisyon_byt   = max_risk_dolar / (risk / giris)
-        adet           = pozisyon_byt / giris
+        max_risk = sermaye * 0.02
+        poz_byt  = max_risk / (risk / giris)
+        adet     = poz_byt / giris
         text += (
-            f"\\n💼 *Pozisyon Boyutu (%2 Risk Kuralı)*\\n"
-            f"  Sermaye      : `${sermaye:,.0f}`\\n"
-            f"  Max Risk     : `${max_risk_dolar:,.2f}` (sermayenin %2'si)\\n"
-            f"  Pozisyon byt.: `${pozisyon_byt:,.2f}`\\n"
-            f"  Alınacak adet: `{adet:.4f}`\\n"
+            f"\n💼 <b>Pozisyon Boyutu (%2 Kural)</b>\n"
+            f"  Sermaye: <code>${sermaye:,.0f}</code>\n"
+            f"  Max risk: <code>${max_risk:,.2f}</code>\n"
+            f"  Pozisyon: <code>${poz_byt:,.2f}</code>\n"
+            f"  Adet: <code>{adet:.4f}</code>\n"
         )
+    if oran < 1:    text += "\n❌ <i>R/R 1'den düşük — riskli işlem</i>"
+    elif oran < 2:  text += "\n🟡 <i>R/R kabul edilebilir (1-2 arası)</i>"
+    else:           text += "\n✅ <i>R/R iyi (2 ve üzeri)</i>"
 
-    if oran < 1:
-        text += "\\n❌ _R/R 1'den düşük — riskli işlem_"
-    elif oran < 2:
-        text += "\\n🟡 _R/R kabul edilebilir (1-2 arası)_"
-    else:
-        text += "\\n✅ _R/R iyi (2 ve üzeri)_"
-
-    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1667,46 +1586,37 @@ async def rr_command(update: Update, context):
 # ═══════════════════════════════════════════════════════════
 
 MAKRO_TAKVIM = [
-    {"isim": "FED Faiz Kararı",   "ay": [1,3,5,6,7,9,11,12], "gun": 15, "aciklama": "Fed faiz kararı piyasaları doğrudan etkiler"},
-    {"isim": "CPI Verisi",         "ay": list(range(1,13)),    "gun": 12, "aciklama": "ABD enflasyon verisi"},
-    {"isim": "NFP (İstihdam)",      "ay": list(range(1,13)),    "gun": 5,  "aciklama": "ABD tarım dışı istihdam"},
+    {"isim": "FED Faiz Kararı", "ay": [1,3,5,6,7,9,11,12], "gun": 15, "aciklama": "Fed faiz kararı piyasaları doğrudan etkiler"},
+    {"isim": "CPI Verisi",      "ay": list(range(1,13)),    "gun": 12, "aciklama": "ABD enflasyon verisi"},
+    {"isim": "NFP (İstihdam)",  "ay": list(range(1,13)),    "gun": 5,  "aciklama": "ABD tarım dışı istihdam"},
 ]
 
 async def makro_command(update: Update, context):
     now = datetime.utcnow()
-    text = "🌐 *Global Makro Takvim*\\n━━━━━━━━━━━━━━━━━━\\n"
-    text += f"📅 Bugün: `{now.strftime('%d.%m.%Y')}`\\n\\n"
+    text = f"<b>🌐 Global Makro Takvim</b>\n━━━━━━━━━━━━━━━━━━\n📅 Bugün: <code>{now.strftime('%d.%m.%Y')}</code>\n\n"
 
     yaklaşan = []
     for etkinlik in MAKRO_TAKVIM:
         if now.month in etkinlik["ay"]:
             hedef_gun = datetime(now.year, now.month, min(etkinlik["gun"], 28))
             if hedef_gun < now:
-                if now.month < 12:
-                    hedef_gun = datetime(now.year, now.month+1, min(etkinlik["gun"], 28))
-                else:
-                    hedef_gun = datetime(now.year+1, 1, min(etkinlik["gun"], 28))
+                ay = now.month + 1 if now.month < 12 else 1
+                yil = now.year if now.month < 12 else now.year + 1
+                hedef_gun = datetime(yil, ay, min(etkinlik["gun"], 28))
             kalan = (hedef_gun - now).days
             yaklaşan.append((kalan, etkinlik["isim"], etkinlik["aciklama"], hedef_gun))
 
     yaklaşan.sort(key=lambda x: x[0])
-
     for kalan, isim, aciklama, tarih in yaklaşan[:6]:
-        if kalan <= 3:
-            icon = "🔥"
-        elif kalan <= 7:
-            icon = "⚠️"
-        else:
-            icon = "📅"
+        icon = "🔥" if kalan <= 3 else "⚠️" if kalan <= 7 else "📅"
         text += (
-            f"{icon} *{isim}*\\n"
-            f"  Tarih : `{tarih.strftime('%d.%m.%Y')}`\\n"
-            f"  Kalan : `{kalan} gün`\\n"
-            f"  _{aciklama}_\\n\\n"
+            f"{icon} <b>{isim}</b>\n"
+            f"  Tarih : <code>{tarih.strftime('%d.%m.%Y')}</code>\n"
+            f"  Kalan : <code>{kalan} gün</code>\n"
+            f"  <i>{aciklama}</i>\n\n"
         )
-
-    text += "_Makro veriler kripto volatilitesini artırabilir._"
-    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+    text += "<i>Makro veriler kripto volatilitesini artırabilir.</i>"
+    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1719,37 +1629,32 @@ async def brief_command(update: Update, context):
     user_id = update.effective_user.id
     args = context.args or []
 
-    # Zamanlama ayarı: /brief saat 08:00
     if args and args[0].lower() == "saat" and len(args) > 1:
         try:
             h, m = map(int, args[1].split(":"))
             async with db_pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO brief_ayar(user_id,saat,dakika,active)
-                    VALUES($1,$2,$3,1)
-                    ON CONFLICT(user_id) DO UPDATE SET saat=$2,dakika=$3,active=1
-                """, user_id, h, m)
+                await conn.execute(
+                    "INSERT INTO brief_ayar(user_id,saat,dakika,active) VALUES($1,$2,$3,1) ON CONFLICT(user_id) DO UPDATE SET saat=$2,dakika=$3,active=1",
+                    user_id, h, m)
             await send_temp(context.bot, update.effective_chat.id,
-                f"⏰ Günlük brief her gün `{h:02d}:{m:02d}` UTC'de gönderilecek!",
-                parse_mode="Markdown"); return
+                f"⏰ Günlük brief her gün <code>{h:02d}:{m:02d}</code> UTC'de gönderilecek!",
+                parse_mode="HTML")
+            return
         except:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Format: `/brief saat 08:00`", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Format: <code>/brief saat 08:00</code>", parse_mode="HTML")
+            return
 
     if args and args[0].lower() == "kapat":
         async with db_pool.acquire() as conn:
             await conn.execute("UPDATE brief_ayar SET active=0 WHERE user_id=$1", user_id)
-        await send_temp(context.bot, update.effective_chat.id,
-            "⏹ Günlük brief kapatıldı.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "⏹ Günlük brief kapatıldı.", parse_mode="HTML")
+        return
 
-    # Manuel brief gönder
     await _send_brief(context.bot, user_id, update.effective_chat.id)
 
 
 async def _send_brief(bot, user_id, chat_id):
-    """Brief içeriğini oluşturur ve gönderir."""
     try:
-        # Piyasa durumu
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 tickers = await resp.json()
@@ -1759,47 +1664,35 @@ async def _send_brief(bot, user_id, chat_id):
         btc  = next((t for t in usdt if t["symbol"]=="BTCUSDT"), None)
         eth  = next((t for t in usdt if t["symbol"]=="ETHUSDT"), None)
         mood = "🐂 Boğa" if avg > 1 else "🐻 Ayı" if avg < -1 else "😐 Yatay"
-
-        # Kazananlar/kaybedenler
         top3 = sorted(usdt, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:3]
         bot3 = sorted(usdt, key=lambda x: float(x.get("priceChangePercent",0)))[:3]
 
-        # Kişisel alarmlar
         async with db_pool.acquire() as conn:
-            alarmlar = await conn.fetch(
-                "SELECT symbol, threshold FROM user_alarms WHERE user_id=$1 AND active=1", user_id)
-            hedefler = await conn.fetch(
-                "SELECT symbol, target_price FROM price_targets WHERE user_id=$1 AND active=1", user_id)
-            pozisyonlar = await conn.fetch(
-                "SELECT symbol, amount, buy_price FROM kar_pozisyonlar WHERE user_id=$1", user_id)
+            alarmlar    = await conn.fetch("SELECT symbol FROM user_alarms WHERE user_id=$1 AND active=1", user_id)
+            hedefler    = await conn.fetch("SELECT symbol FROM price_targets WHERE user_id=$1 AND active=1", user_id)
+            pozisyonlar = await conn.fetch("SELECT symbol, amount, buy_price FROM kar_pozisyonlar WHERE user_id=$1", user_id)
 
         now = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
         text = (
-            f"☀️ *Günlük Brief — {now} (TR)*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"📊 *Piyasa:* {mood} `{avg:+.2f}%`\\n"
+            f"☀️ <b>Günlük Brief — {now} TR</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Piyasa:</b> {mood} <code>{avg:+.2f}%</code>\n"
         )
+        if btc: text += f"₿ BTC: <code>{format_price(float(btc['lastPrice']))}</code> <code>{float(btc['priceChangePercent']):+.2f}%</code>\n"
+        if eth: text += f"Ξ ETH: <code>{format_price(float(eth['lastPrice']))}</code> <code>{float(eth['priceChangePercent']):+.2f}%</code>\n"
 
-        if btc:
-            text += f"₿ BTC: `{format_price(float(btc['lastPrice']))}` `{float(btc['priceChangePercent']):+.2f}%`\\n"
-        if eth:
-            text += f"Ξ ETH: `{format_price(float(eth['lastPrice']))}` `{float(eth['priceChangePercent']):+.2f}%`\\n"
-
-        text += "\\n🚀 *Günün Liderleri:*\\n"
+        text += "\n🚀 <b>Günün Liderleri:</b>\n"
         for t in top3:
-            text += f"  🟢 `{t['symbol']:<12}` `{float(t['priceChangePercent']):+.2f}%`\\n"
-
-        text += "\\n📉 *Günün Kayıpları:*\\n"
+            text += f"  🟢 <code>{t['symbol']:<12}</code> <code>{float(t['priceChangePercent']):+.2f}%</code>\n"
+        text += "\n📉 <b>Günün Kayıpları:</b>\n"
         for t in bot3:
-            text += f"  🔴 `{t['symbol']:<12}` `{float(t['priceChangePercent']):+.2f}%`\\n"
+            text += f"  🔴 <code>{t['symbol']:<12}</code> <code>{float(t['priceChangePercent']):+.2f}%</code>\n"
 
-        if alarmlar:
-            text += f"\\n🔔 *Aktif Alarmların:* `{len(alarmlar)}` adet\\n"
-        if hedefler:
-            text += f"🎯 *Aktif Hedeflerin:* `{len(hedefler)}` adet\\n"
+        if alarmlar:    text += f"\n🔔 <b>Aktif Alarmların:</b> <code>{len(alarmlar)}</code> adet\n"
+        if hedefler:    text += f"🎯 <b>Aktif Hedeflerin:</b> <code>{len(hedefler)}</code> adet\n"
 
         if pozisyonlar:
-            text += "\\n💼 *Portföy Özeti:*\\n"
+            text += "\n💼 <b>Portföy Özeti:</b>\n"
             semboller = [r["symbol"] for r in pozisyonlar]
             canli = await _hedef_canli_fiyat(semboller)
             toplam_yat = toplam_gun = 0.0
@@ -1811,25 +1704,22 @@ async def _send_brief(bot, user_id, chat_id):
             pnl_pct = pnl / toplam_yat * 100 if toplam_yat else 0
             icon = "🟢" if pnl >= 0 else "🔴"
             text += (
-                f"  Yatırım: `${toplam_yat:,.2f}`\\n"
-                f"  Güncel : `${toplam_gun:,.2f}`\\n"
-                f"  {icon} P&L: `${pnl:+,.2f}` `({pnl_pct:+.1f}%)`\\n"
+                f"  Yatırım: <code>${toplam_yat:,.2f}</code>\n"
+                f"  Güncel : <code>${toplam_gun:,.2f}</code>\n"
+                f"  {icon} P&amp;L: <code>${pnl:+,.2f}</code> <code>({pnl_pct:+.1f}%)</code>\n"
             )
 
-        text += "\\n_İyi işlemler! 🎯_"
-
-        await bot.send_message(chat_id, text, parse_mode="Markdown")
+        text += "\n<i>İyi işlemler! 🎯</i>"
+        await bot.send_message(chat_id, text, parse_mode="HTML")
     except Exception as e:
         log.error(f"brief: {e}")
 
 
 async def brief_job(context):
-    """Zamanlanmış brief gönderim."""
     try:
         now = datetime.utcnow()
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT user_id, saat, dakika FROM brief_ayar WHERE active=1")
+            rows = await conn.fetch("SELECT user_id, saat, dakika FROM brief_ayar WHERE active=1")
         for row in rows:
             if row["saat"] == now.hour and row["dakika"] == now.minute:
                 key = f"brief_{row['user_id']}_{now.date()}"
@@ -1855,73 +1745,72 @@ async def watchlist_command(update: Update, context):
 
     if not args or args[0].lower() == "liste":
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT symbol, not_text FROM watchlist WHERE user_id=$1 ORDER BY symbol", user_id)
+            rows = await conn.fetch("SELECT symbol, not_text FROM watchlist WHERE user_id=$1 ORDER BY symbol", user_id)
         if not rows:
             await send_temp(context.bot, update.effective_chat.id,
-                "👀 *Watchlist*\\n━━━━━━━━━━━━━━━━━━\\n"
-                "Watchlist boş.\\n\\n"
-                "Ekle: `/watchlist ekle BTCUSDT`\\n"
-                "Ekle (notlu): `/watchlist ekle ETHUSDT DCA yapıyorum`\\n"
-                "Sil: `/watchlist sil BTCUSDT`\\n"
-                "Rapor: `/watchlist rapor`",
-                parse_mode="Markdown"); return
+                "<b>👀 Watchlist</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "Watchlist boş.\n\n"
+                "Ekle: <code>/watchlist ekle BTCUSDT</code>\n"
+                "Ekle (notlu): <code>/watchlist ekle ETHUSDT DCA yapıyorum</code>\n"
+                "Sil: <code>/watchlist sil BTCUSDT</code>\n"
+                "Rapor: <code>/watchlist rapor</code>",
+                parse_mode="HTML")
+            return
 
-        # Anlık fiyatları çek
         semboller = [r["symbol"] for r in rows]
         canli = await _hedef_canli_fiyat(semboller)
-
         async with aiohttp.ClientSession() as session:
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 tickers_all = await resp.json()
         ticker_map = {t["symbol"]: float(t.get("priceChangePercent",0)) for t in tickers_all}
 
-        text = "👀 *Watchlist*\\n━━━━━━━━━━━━━━━━━━\\n"
+        text = "<b>👀 Watchlist</b>\n━━━━━━━━━━━━━━━━━━\n"
         for r in rows:
             price = canli.get(r["symbol"], 0)
             ch24  = ticker_map.get(r["symbol"], 0)
             icon  = "🟢" if ch24 >= 0 else "🔴"
-            not_str = f" _{r['not_text']}_" if r["not_text"] else ""
-            text += f"{icon} `{r['symbol']:<14}` `{format_price(price)}` `{ch24:+.2f}%`{not_str}\\n"
-        text += "\\n`/watchlist rapor` — detaylı rapor"
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown"); return
+            not_str = f" <i>{r['not_text']}</i>" if r["not_text"] else ""
+            text += f"{icon} <code>{r['symbol']:<14}</code> <code>{format_price(price)}</code> <code>{ch24:+.2f}%</code>{not_str}\n"
+        text += "\n<code>/watchlist rapor</code> — detaylı rapor"
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
+        return
 
     if args[0].lower() == "ekle":
         if len(args) < 2:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Kullanım: `/watchlist ekle BTCUSDT`", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Kullanım: <code>/watchlist ekle BTCUSDT</code>", parse_mode="HTML")
+            return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         not_text = " ".join(args[2:]) if len(args) > 2 else ""
         async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO watchlist(user_id, symbol, not_text)
-                VALUES($1,$2,$3) ON CONFLICT(user_id,symbol) DO UPDATE SET not_text=$3
-            """, user_id, symbol, not_text)
+            await conn.execute(
+                "INSERT INTO watchlist(user_id,symbol,not_text) VALUES($1,$2,$3) ON CONFLICT(user_id,symbol) DO UPDATE SET not_text=$3",
+                user_id, symbol, not_text)
         await send_temp(context.bot, update.effective_chat.id,
-            f"✅ `{symbol}` watchlist'e eklendi.", parse_mode="Markdown"); return
+            f"✅ <code>{symbol}</code> watchlist'e eklendi.", parse_mode="HTML")
+        return
 
     if args[0].lower() == "sil":
         if len(args) < 2:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Kullanım: `/watchlist sil BTCUSDT`", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Kullanım: <code>/watchlist sil BTCUSDT</code>", parse_mode="HTML")
+            return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM watchlist WHERE user_id=$1 AND symbol=$2", user_id, symbol)
         await send_temp(context.bot, update.effective_chat.id,
-            f"🗑 `{symbol}` watchlist'ten silindi.", parse_mode="Markdown"); return
+            f"🗑 <code>{symbol}</code> watchlist'ten silindi.", parse_mode="HTML")
+        return
 
     if args[0].lower() == "rapor":
         async with db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT symbol FROM watchlist WHERE user_id=$1", user_id)
+            rows = await conn.fetch("SELECT symbol FROM watchlist WHERE user_id=$1", user_id)
         if not rows:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Watchlist boş.", parse_mode="Markdown"); return
-        wait = await send_temp(context.bot, update.effective_chat.id,
-            "📊 Watchlist raporu hazırlanıyor...", parse_mode="Markdown")
-        text = "📊 *Watchlist Raporu*\\n━━━━━━━━━━━━━━━━━━\\n"
+            await send_temp(context.bot, update.effective_chat.id, "Watchlist boş.", parse_mode="HTML")
+            return
+        wait = await send_temp(context.bot, update.effective_chat.id, "📊 Watchlist raporu hazırlanıyor...", parse_mode="HTML")
+        text = "<b>📊 Watchlist Raporu</b>\n━━━━━━━━━━━━━━━━━━\n"
         for r in rows:
             try:
                 async with aiohttp.ClientSession() as session:
@@ -1931,17 +1820,17 @@ async def watchlist_command(update: Update, context):
                 ch24_val = calc_change(k1h[-24:]) if len(k1h) >= 24 else 0
                 icon = "🟢" if ch24_val >= 0 else "🔴"
                 macd_ic = "⬆" if macd_hist > 0 else "⬇"
-                text += f"{icon} `{r['symbol']:<14}` `{ch24_val:+.2f}%` RSI:`{rsi:.0f}` MACD{macd_ic}\\n"
+                text += f"{icon} <code>{r['symbol']:<14}</code> <code>{ch24_val:+.2f}%</code> RSI:<code>{rsi:.0f}</code> MACD{macd_ic}\n"
             except Exception:
-                text += f"⚪ `{r['symbol']:<14}` veri alınamadı\\n"
+                text += f"⚪ <code>{r['symbol']:<14}</code> veri alınamadı\n"
             await asyncio.sleep(0.3)
         try: await wait.delete()
         except: pass
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
         return
 
     await send_temp(context.bot, update.effective_chat.id,
-        "Kullanım: `/watchlist ekle/sil/liste/rapor`", parse_mode="Markdown")
+        "Kullanım: <code>/watchlist ekle/sil/liste/rapor</code>", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1954,24 +1843,27 @@ async def backtest_command(update: Update, context):
     args = context.args or []
     if len(args) < 2:
         await send_temp(context.bot, update.effective_chat.id,
-            "🔬 *Backtesting*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "Kullanım: `/backtest BTCUSDT rsi`\\n\\n"
-            "Stratejiler:\\n"
-            "• `rsi`  — RSI < 30 al, > 70 sat\\n"
-            "• `macd` — MACD kesişiminde al/sat\\n"
-            "• `ema`  — EMA 9/21 kesişiminde al/sat\\n\\n"
-            "_Son 90 günlük günlük verilerle test edilir._",
-            parse_mode="Markdown"); return
+            "<b>🔬 Backtesting</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/backtest BTCUSDT rsi</code>\n\n"
+            "Stratejiler:\n"
+            "• <code>rsi</code>  — RSI &lt;30 al, &gt;70 sat\n"
+            "• <code>macd</code> — MACD kesişiminde al/sat\n"
+            "• <code>ema</code>  — EMA 9/21 kesişiminde al/sat\n\n"
+            "<i>Son 90 günlük günlük verilerle test edilir.</i>",
+            parse_mode="HTML")
+        return
 
     symbol   = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     strateji = args[1].lower()
     if strateji not in ("rsi","macd","ema"):
         await send_temp(context.bot, update.effective_chat.id,
-            "Geçersiz strateji. `rsi` | `macd` | `ema`", parse_mode="Markdown"); return
+            "Geçersiz strateji. <code>rsi</code> | <code>macd</code> | <code>ema</code>", parse_mode="HTML")
+        return
 
     wait = await send_temp(context.bot, update.effective_chat.id,
-        f"🔬 `{symbol}` — `{strateji}` stratejisi test ediliyor...", parse_mode="Markdown")
+        f"🔬 <code>{symbol}</code> — <code>{strateji}</code> test ediliyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             k1d = await fetch_klines(session, symbol, "1d", limit=90)
@@ -1979,12 +1871,12 @@ async def backtest_command(update: Update, context):
         if not k1d or len(k1d) < 20:
             try: await wait.delete()
             except: pass
-            await send_temp(context.bot, update.effective_chat.id,
-                "⚠️ Yeterli veri yok.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "⚠️ Yeterli veri yok.", parse_mode="HTML")
+            return
 
         closes = [float(c[4]) for c in k1d]
         islemler = []
-        pozisyon = None  # (giriş_fiyatı, giriş_idx)
+        pozisyon = None
 
         for i in range(20, len(closes)):
             pencere = k1d[:i+1]
@@ -1994,20 +1886,18 @@ async def backtest_command(update: Update, context):
                 rsi = calc_rsi(pencere, 14)
                 if rsi < 30:   giris_sinyali = True
                 elif rsi > 70: cikis_sinyali = True
-
             elif strateji == "macd":
                 _, hist_cur = calc_macd(pencere)
                 _, hist_prv = calc_macd(pencere[:-1])
                 if hist_prv < 0 and hist_cur > 0: giris_sinyali = True
                 if hist_prv > 0 and hist_cur < 0: cikis_sinyali = True
-
             elif strateji == "ema":
                 ema9  = calc_ema(pencere, 9)
                 ema21 = calc_ema(pencere, 21)
-                ema9_prv  = calc_ema(pencere[:-1], 9)
-                ema21_prv = calc_ema(pencere[:-1], 21)
-                if ema9_prv < ema21_prv and ema9 > ema21: giris_sinyali = True
-                if ema9_prv > ema21_prv and ema9 < ema21: cikis_sinyali = True
+                ema9p = calc_ema(pencere[:-1], 9)
+                e21p  = calc_ema(pencere[:-1], 21)
+                if ema9p < e21p and ema9 > ema21: giris_sinyali = True
+                if ema9p > e21p and ema9 < ema21: cikis_sinyali = True
 
             if giris_sinyali and not pozisyon:
                 pozisyon = (closes[i], i)
@@ -2016,7 +1906,6 @@ async def backtest_command(update: Update, context):
                 islemler.append(("AL→SAT", pozisyon[0], closes[i], kar))
                 pozisyon = None
 
-        # Açık pozisyon varsa kapat
         if pozisyon:
             kar = (closes[-1] - pozisyon[0]) / pozisyon[0] * 100
             islemler.append(("Açık", pozisyon[0], closes[-1], kar))
@@ -2026,55 +1915,48 @@ async def backtest_command(update: Update, context):
 
         if not islemler:
             await send_temp(context.bot, update.effective_chat.id,
-                f"🔬 `{symbol}` — `{strateji}`: 90 günde sinyal üretilmedi.",
-                parse_mode="Markdown"); return
+                f"🔬 <code>{symbol}</code> — <code>{strateji}</code>: 90 günde sinyal üretilmedi.", parse_mode="HTML")
+            return
 
-        kazanc = sum(i[3] for i in islemler if i[3] > 0)
-        kayip  = sum(i[3] for i in islemler if i[3] < 0)
-        toplam = sum(i[3] for i in islemler)
+        kazanc  = sum(i[3] for i in islemler if i[3] > 0)
+        kayip   = sum(i[3] for i in islemler if i[3] < 0)
+        toplam  = sum(i[3] for i in islemler)
         kazanan = sum(1 for i in islemler if i[3] > 0)
-        basari = kazanan / len(islemler) * 100 if islemler else 0
-        icon   = "🟢" if toplam >= 0 else "🔴"
+        basari  = kazanan / len(islemler) * 100 if islemler else 0
+        icon    = "🟢" if toplam >= 0 else "🔴"
 
         text = (
-            f"🔬 *Backtest — {symbol} / {strateji.upper()}*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"📅 Dönem     : Son 90 gün (1G mumlar)\\n"
-            f"📊 İşlem sayısı: `{len(islemler)}`\\n"
-            f"✅ Kazanan   : `{kazanan}` (`%{basari:.0f}`)\\n"
-            f"❌ Kaybeden  : `{len(islemler)-kazanan}`\\n"
-            f"\\n"
-            f"💰 Toplam kazanç: `%{kazanc:+.1f}`\\n"
-            f"💸 Toplam kayıp : `%{kayip:+.1f}`\\n"
-            f"{icon} *Net Sonuç   : `%{toplam:+.1f}`*\\n"
-            f"\\n"
+            f"🔬 <b>Backtest — {symbol} / {strateji.upper()}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Dönem      : Son 90 gün\n"
+            f"📊 İşlem sayısı: <code>{len(islemler)}</code>\n"
+            f"✅ Kazanan    : <code>{kazanan}</code> (<code>%{basari:.0f}</code>)\n"
+            f"❌ Kaybeden   : <code>{len(islemler)-kazanan}</code>\n\n"
+            f"💰 Toplam kazanç: <code>%{kazanc:+.1f}</code>\n"
+            f"💸 Toplam kayıp : <code>%{kayip:+.1f}</code>\n"
+            f"{icon} <b>Net Sonuç: %{toplam:+.1f}</b>\n\n"
+            f"📋 <b>Son İşlemler:</b>\n"
         )
-
-        # Son 3 işlemi göster
-        text += "📋 *Son İşlemler:*\\n"
         for tip, giris, cikis, kar in islemler[-3:]:
             ic = "🟢" if kar >= 0 else "🔴"
-            text += f"  {ic} `{format_price(giris)}` → `{format_price(cikis)}` `{kar:+.1f}%`\\n"
+            text += f"  {ic} <code>{format_price(giris)}</code> → <code>{format_price(cikis)}</code> <code>{kar:+.1f}%</code>\n"
+        text += "\n<i>Geçmiş performans gelecek sonuçları garanti etmez.</i>"
 
-        text += "\\n⚠️ _Geçmiş performans gelecek sonuçları garanti etmez._"
-
-        # Kaydet
         user_id = update.effective_user.id
         try:
             async with db_pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO backtest_gecmis(user_id,symbol,strateji,sonuc)
-                    VALUES($1,$2,$3,$4)
-                """, user_id, symbol, strateji, f"%{toplam:+.1f}")
+                await conn.execute(
+                    "INSERT INTO backtest_gecmis(user_id,symbol,strateji,sonuc) VALUES($1,$2,$3,$4)",
+                    user_id, symbol, strateji, f"%{toplam:+.1f}")
         except Exception:
             pass
 
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"backtest: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Hata oluştu.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2082,112 +1964,90 @@ async def backtest_command(update: Update, context):
 # ═══════════════════════════════════════════════════════════
 
 async def anket_command(update: Update, context):
-    chat = update.effective_chat
+    chat    = update.effective_chat
     user_id = update.effective_user.id
-    args = context.args or []
+    args    = context.args or []
 
-    # Admin kontrolü (admin DM veya grup admini)
     is_admin_user = False
     if chat.type == "private":
         try:
             member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
             is_admin_user = member.status in ("administrator","creator")
-        except Exception:
-            pass
+        except Exception: pass
     else:
         is_admin_user = await is_group_admin(context.bot, chat.id, user_id)
 
-    # Oy kullanma: /anket oy <id> <secim>
     if args and args[0].lower() == "oy":
         if len(args) < 3:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanım: `/anket oy <id> <seçim_no>`", parse_mode="Markdown"); return
+                "Kullanım: <code>/anket oy &lt;id&gt; &lt;seçim_no&gt;</code>", parse_mode="HTML")
+            return
         try:
-            anket_id = int(args[1])
-            secim    = int(args[2]) - 1
+            anket_id = int(args[1]); secim = int(args[2]) - 1
         except:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Hatalı format.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Hatalı format.", parse_mode="HTML")
+            return
         async with db_pool.acquire() as conn:
-            anket = await conn.fetchrow(
-                "SELECT * FROM anketler WHERE id=$1 AND aktif=1", anket_id)
+            anket = await conn.fetchrow("SELECT * FROM anketler WHERE id=$1 AND aktif=1", anket_id)
             if not anket:
-                await send_temp(context.bot, update.effective_chat.id,
-                    "Anket bulunamadı veya sona erdi.", parse_mode="Markdown"); return
+                await send_temp(context.bot, update.effective_chat.id, "Anket bulunamadı veya sona erdi.", parse_mode="HTML")
+                return
             secenekler = anket["secenekler"].split("|")
             if secim < 0 or secim >= len(secenekler):
                 await send_temp(context.bot, update.effective_chat.id,
-                    f"Geçersiz seçim. 1-{len(secenekler)} arası girin.", parse_mode="Markdown"); return
-            try:
-                await conn.execute("""
-                    INSERT INTO anket_oylar(anket_id,user_id,secim)
-                    VALUES($1,$2,$3) ON CONFLICT(anket_id,user_id) DO UPDATE SET secim=$3
-                """, anket_id, user_id, secim)
-                await send_temp(context.bot, update.effective_chat.id,
-                    f"✅ Oyun `{secenekler[secim]}` için kaydedildi!", parse_mode="Markdown")
-            except Exception as e:
-                await send_temp(context.bot, update.effective_chat.id,
-                    "⚠️ Oy kaydedilemedi.", parse_mode="Markdown")
+                    f"Geçersiz seçim. 1-{len(secenekler)} arası girin.", parse_mode="HTML")
+                return
+            await conn.execute(
+                "INSERT INTO anket_oylar(anket_id,user_id,secim) VALUES($1,$2,$3) ON CONFLICT(anket_id,user_id) DO UPDATE SET secim=$3",
+                anket_id, user_id, secim)
+        await send_temp(context.bot, update.effective_chat.id,
+            f"✅ Oyun <b>{secenekler[secim]}</b> için kaydedildi!", parse_mode="HTML")
         return
 
-    # Sonuçları gör: /anket sonuc <id>
     if args and args[0].lower() == "sonuc":
-        anket_id = int(args[1]) if len(args) > 1 else None
         async with db_pool.acquire() as conn:
+            anket_id = int(args[1]) if len(args) > 1 else None
             if anket_id:
                 anket = await conn.fetchrow("SELECT * FROM anketler WHERE id=$1", anket_id)
             else:
-                anket = await conn.fetchrow(
-                    "SELECT * FROM anketler WHERE chat_id=$1 ORDER BY id DESC LIMIT 1", GROUP_CHAT_ID)
+                anket = await conn.fetchrow("SELECT * FROM anketler WHERE chat_id=$1 ORDER BY id DESC LIMIT 1", GROUP_CHAT_ID)
         if not anket:
-            await send_temp(context.bot, update.effective_chat.id,
-                "Anket bulunamadı.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Anket bulunamadı.", parse_mode="HTML")
+            return
         async with db_pool.acquire() as conn:
-            oylar = await conn.fetch(
-                "SELECT secim, COUNT(*) cnt FROM anket_oylar WHERE anket_id=$1 GROUP BY secim", anket["id"])
+            oylar = await conn.fetch("SELECT secim, COUNT(*) cnt FROM anket_oylar WHERE anket_id=$1 GROUP BY secim", anket["id"])
         secenekler = anket["secenekler"].split("|")
         toplam = sum(r["cnt"] for r in oylar)
-        text = f"📊 *Anket Sonuçları*\\n━━━━━━━━━━━━━━━━━━\\n*{anket['soru']}*\\n\\n"
         oy_map = {r["secim"]: r["cnt"] for r in oylar}
+        text = f"📊 <b>Anket Sonuçları</b>\n━━━━━━━━━━━━━━━━━━\n<b>{anket['soru']}</b>\n\n"
         for i, sec in enumerate(secenekler):
             cnt = oy_map.get(i, 0)
             pct = cnt / toplam * 100 if toplam else 0
             bar = "█" * int(pct/10) + "░" * (10 - int(pct/10))
-            text += f"`{i+1}.` {sec}\\n   `{bar}` `{pct:.0f}%` ({cnt} oy)\\n"
-        text += f"\\n_Toplam oy: {toplam}_"
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown"); return
+            text += f"<code>{i+1}.</code> {sec}\n   <code>{bar}</code> <code>{pct:.0f}%</code> ({cnt} oy)\n"
+        text += f"\n<i>Toplam oy: {toplam}</i>"
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
+        return
 
-    # Admin: Anket oluştur
     if not is_admin_user:
         await send_temp(context.bot, update.effective_chat.id,
-            "🚫 Anket oluşturmak için grup admini olmalısın.\\n\\n"
-            "Oy kullanmak için: `/anket oy <id> <seçim_no>`\\n"
-            "Sonuç görmek için: `/anket sonuc`",
-            parse_mode="Markdown"); return
+            "📊 <b>Anket Sistemi</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "<b>Üye komutları:</b>\n"
+            "<code>/anket oy &lt;id&gt; &lt;no&gt;</code> — oy ver\n"
+            "<code>/anket sonuc</code> — sonuçları gör",
+            parse_mode="HTML")
+        return
 
-    if not args or args[0].lower() not in ("olustur","oluştur","ac","aç"):
-        await send_temp(context.bot, update.effective_chat.id,
-            "📊 *Anket Sistemi*\\n━━━━━━━━━━━━━━━━━━\\n"
-            "*Admin komutları:*\\n"
-            "`/anket olustur` — yeni anket\\n"
-            "`/anket kapat <id>` — anketi kapat\\n\\n"
-            "*Üye komutları:*\\n"
-            "`/anket oy <id> <no>` — oy ver\\n"
-            "`/anket sonuc` — sonuçları gör",
-            parse_mode="Markdown"); return
-
-    # Anket oluşturma sihirbazı
     await send_temp(context.bot, update.effective_chat.id,
-        "📊 *Yeni Anket Oluştur*\\n━━━━━━━━━━━━━━━━━━\\n"
-        "Anket sorusunu ve seçeneklerini şu formatta yaz:\\n\\n"
-        "`/anket_yeni BTC bu hafta nereye gider? | 📈 Yükselir | 📉 Düşer | ➡️ Yatay kalır`\\n\\n"
-        "_Soru ve seçenekleri `|` ile ayır_",
-        parse_mode="Markdown")
+        "📊 <b>Anket Sistemi (Admin)</b>\n━━━━━━━━━━━━━━━━━━\n"
+        "<b>Admin komutları:</b>\n"
+        "<code>/anket_yeni Soru? | Seç1 | Seç2</code> — yeni anket\n"
+        "<code>/anket sonuc</code> — sonuçları gör",
+        parse_mode="HTML")
 
 
 async def anket_yeni_command(update: Update, context):
-    """Yeni anket oluştur: /anket_yeni Soru | Seçenek1 | Seçenek2 | ..."""
-    chat = update.effective_chat
+    chat    = update.effective_chat
     user_id = update.effective_user.id
 
     is_admin_user = False
@@ -2200,38 +2060,38 @@ async def anket_yeni_command(update: Update, context):
         is_admin_user = await is_group_admin(context.bot, chat.id, user_id)
 
     if not is_admin_user:
-        await send_temp(context.bot, update.effective_chat.id,
-            "🚫 Sadece adminler anket oluşturabilir.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "🚫 Sadece adminler anket oluşturabilir.", parse_mode="HTML")
+        return
 
     if not context.args:
         await send_temp(context.bot, update.effective_chat.id,
-            "Kullanım: `/anket_yeni BTC nereye gider? | 📈 Yükselir | 📉 Düşer | ➡️ Yatay`",
-            parse_mode="Markdown"); return
+            "Kullanım: <code>/anket_yeni BTC nereye gider? | 📈 Yükselir | 📉 Düşer | ➡️ Yatay</code>",
+            parse_mode="HTML")
+        return
 
-    raw = " ".join(context.args)
+    raw     = " ".join(context.args)
     parcalar = [p.strip() for p in raw.split("|")]
     if len(parcalar) < 3:
         await send_temp(context.bot, update.effective_chat.id,
-            "En az 1 soru + 2 seçenek gerekli. `|` ile ayırın.", parse_mode="Markdown"); return
+            "En az 1 soru + 2 seçenek gerekli. <code>|</code> ile ayırın.", parse_mode="HTML")
+        return
 
-    soru = parcalar[0]
+    soru      = parcalar[0]
     secenekler = parcalar[1:]
-    sec_str = "|".join(secenekler)
+    sec_str   = "|".join(secenekler)
 
     async with db_pool.acquire() as conn:
-        anket_id = await conn.fetchval("""
-            INSERT INTO anketler(chat_id, soru, secenekler, aktif)
-            VALUES($1,$2,$3,1) RETURNING id
-        """, GROUP_CHAT_ID, soru, sec_str)
+        anket_id = await conn.fetchval(
+            "INSERT INTO anketler(chat_id,soru,secenekler,aktif) VALUES($1,$2,$3,1) RETURNING id",
+            GROUP_CHAT_ID, soru, sec_str)
 
-    # Gruba anket gönder
-    text = f"📊 *Anket #{anket_id}*\\n━━━━━━━━━━━━━━━━━━\\n*{soru}*\\n\\n"
+    text = f"📊 <b>Anket #{anket_id}</b>\n━━━━━━━━━━━━━━━━━━\n<b>{soru}</b>\n\n"
     for i, sec in enumerate(secenekler):
-        text += f"`{i+1}.` {sec}\\n"
+        text += f"<code>{i+1}.</code> {sec}\n"
     text += (
-        f"\\n_Oy vermek için:_\\n"
-        f"`/anket oy {anket_id} <seçim_no>`\\n"
-        f"Sonuçlar: `/anket sonuc {anket_id}`"
+        f"\n<i>Oy vermek için:</i>\n"
+        f"<code>/anket oy {anket_id} &lt;seçim_no&gt;</code>\n"
+        f"Sonuçlar: <code>/anket sonuc {anket_id}</code>"
     )
 
     kb = InlineKeyboardMarkup([
@@ -2239,10 +2099,9 @@ async def anket_yeni_command(update: Update, context):
         for i, sec in enumerate(secenekler)
     ] + [[InlineKeyboardButton("📊 Sonuçları Gör", callback_data=f"anket_sonuc_{anket_id}")]])
 
-    await context.bot.send_message(GROUP_CHAT_ID, text, parse_mode="Markdown", reply_markup=kb)
+    await context.bot.send_message(GROUP_CHAT_ID, text, parse_mode="HTML", reply_markup=kb)
     if chat.type == "private":
-        await context.bot.send_message(chat.id,
-            f"✅ Anket #{anket_id} gruba gönderildi!", parse_mode="Markdown")
+        await context.bot.send_message(chat.id, f"✅ Anket #{anket_id} gruba gönderildi!", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2250,15 +2109,12 @@ async def anket_yeni_command(update: Update, context):
 # ═══════════════════════════════════════════════════════════
 
 async def yorum_command(update: Update, context):
-    """Claude API ile piyasa yorumu üretir."""
-    chat = update.effective_chat
-    # Grupta herkes kullanabilir, DM'de de çalışır
-    args = context.args or []
+    args   = context.args or []
     symbol = args[0].upper().replace("#","").replace("/","") if args else "BTCUSDT"
     if not symbol.endswith("USDT"): symbol += "USDT"
 
     wait = await send_temp(context.bot, update.effective_chat.id,
-        f"🤖 `{symbol}` için AI yorumu hazırlanıyor...", parse_mode="Markdown")
+        f"🤖 <code>{symbol}</code> için AI yorumu hazırlanıyor...", parse_mode="HTML")
     try:
         async with aiohttp.ClientSession() as session:
             ticker_r, k1h, k4h = await asyncio.gather(
@@ -2271,8 +2127,8 @@ async def yorum_command(update: Update, context):
         if "code" in ticker:
             try: await wait.delete()
             except: pass
-            await send_temp(context.bot, update.effective_chat.id,
-                f"⚠️ `{symbol}` bulunamadı.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, f"⚠️ <code>{symbol}</code> bulunamadı.", parse_mode="HTML")
+            return
 
         price  = float(ticker.get("lastPrice", 0))
         ch24   = float(ticker.get("priceChangePercent", 0))
@@ -2283,21 +2139,21 @@ async def yorum_command(update: Update, context):
         ema9   = calc_ema(k1h, 9)
         ema21  = calc_ema(k1h, 21)
 
-        # Claude API çağrısı
         ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
         if not ANTHROPIC_API_KEY:
             try: await wait.delete()
             except: pass
             await send_temp(context.bot, update.effective_chat.id,
-                "⚠️ ANTHROPIC_API_KEY ayarlanmamış.", parse_mode="Markdown"); return
+                "⚠️ ANTHROPIC_API_KEY ayarlanmamış.\nRailway Variables bölümüne ekleyin.", parse_mode="HTML")
+            return
 
         prompt = (
-            f"Kripto para analisti olarak {symbol} için kısa Türkçe piyasa yorumu yap.\\n"
+            f"Kripto para analisti olarak {symbol} için kısa Türkçe piyasa yorumu yap.\n"
             f"Veriler: Fiyat={format_price(price)} USDT, 24s değişim={ch24:+.2f}%, "
             f"RSI(1h)={rsi:.0f}, RSI(4h)={rsi_4h:.0f}, "
             f"MACD histogram={'pozitif' if macd_hist > 0 else 'negatif'}, "
             f"EMA9 {'>' if ema9 > ema21 else '<'} EMA21, "
-            f"Hacim={vol24/1_000_000:.1f}M USDT.\\n\\n"
+            f"Hacim={vol24/1_000_000:.1f}M USDT.\n\n"
             f"Maksimum 4 cümle. Teknik analiz ağırlıklı, sade ve anlaşılır yaz. "
             f"Son cümlede AL/SAT/BEKLE yönlendirmesi yap. Yatırım tavsiyesi değil ibaresini ekle."
         )
@@ -2320,22 +2176,21 @@ async def yorum_command(update: Update, context):
                 data = await resp.json()
 
         ai_yorum = data.get("content", [{}])[0].get("text", "Yorum alınamadı.")
-
         try: await wait.delete()
         except: pass
 
         text = (
-            f"🤖 *AI Piyasa Yorumu — {symbol}*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"💵 `{format_price(price)} USDT` | `{ch24:+.2f}%`\\n\\n"
+            f"🤖 <b>AI Piyasa Yorumu — {symbol}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 <code>{format_price(price)} USDT</code> | <code>{ch24:+.2f}%</code>\n\n"
             f"{ai_yorum}"
         )
-        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
     except Exception as e:
         try: await wait.delete()
         except: pass
         log.error(f"yorum: {e}")
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Yorum alınamadı.", parse_mode="Markdown")
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Yorum alınamadı.", parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2343,11 +2198,9 @@ async def yorum_command(update: Update, context):
 # ═══════════════════════════════════════════════════════════
 
 async def portfolyo_alarm_job(context):
-    """Portföydeki coinlerde büyük hareket olunca DM at."""
     try:
         async with db_pool.acquire() as conn:
-            pozlar = await conn.fetch(
-                "SELECT user_id, symbol, buy_price, amount FROM kar_pozisyonlar")
+            pozlar = await conn.fetch("SELECT user_id, symbol, buy_price, amount FROM kar_pozisyonlar")
         if not pozlar: return
 
         async with aiohttp.ClientSession() as session:
@@ -2358,12 +2211,11 @@ async def portfolyo_alarm_job(context):
 
         now = datetime.utcnow()
         for row in pozlar:
-            user_id  = row["user_id"]
-            symbol   = row["symbol"]
-            ch24     = ticker_map.get(symbol, 0)
+            user_id   = row["user_id"]
+            symbol    = row["symbol"]
+            ch24      = ticker_map.get(symbol, 0)
             cur_price = price_map.get(symbol, 0)
-
-            if abs(ch24) < 5: continue  # %5'ten az hareket
+            if abs(ch24) < 5: continue
 
             key = f"portfoy_{user_id}_{symbol}"
             if key in cooldowns and now - cooldowns[key] < timedelta(hours=4): continue
@@ -2372,16 +2224,15 @@ async def portfolyo_alarm_job(context):
             pnl_pct = (cur_price - row["buy_price"]) / row["buy_price"] * 100 if row["buy_price"] else 0
             pnl_val = (cur_price - row["buy_price"]) * row["amount"]
             icon    = "🟢" if ch24 >= 0 else "🔴"
-
             try:
                 await context.bot.send_message(user_id,
-                    f"💼 *Portföy Alarmı — {symbol}*\\n"
-                    f"━━━━━━━━━━━━━━━━━━\\n"
-                    f"{icon} 24s değişim: `{ch24:+.2f}%`\\n"
-                    f"💵 Güncel fiyat: `{format_price(cur_price)} USDT`\\n"
-                    f"📊 Alış fiyatı: `{format_price(row['buy_price'])} USDT`\\n"
-                    f"{'🟢' if pnl_val >= 0 else '🔴'} Pozisyon P&L: `{pnl_pct:+.1f}%` (`{pnl_val:+.2f} USDT`)",
-                    parse_mode="Markdown")
+                    f"💼 <b>Portföy Alarmı — {symbol}</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"{icon} 24s: <code>{ch24:+.2f}%</code>\n"
+                    f"💵 Güncel: <code>{format_price(cur_price)} USDT</code>\n"
+                    f"📊 Alış  : <code>{format_price(row['buy_price'])} USDT</code>\n"
+                    f"{'🟢' if pnl_val >= 0 else '🔴'} P&amp;L: <code>{pnl_pct:+.1f}%</code> (<code>{pnl_val:+.2f} USDT</code>)",
+                    parse_mode="HTML")
             except Exception:
                 pass
     except Exception as e:
@@ -2393,11 +2244,9 @@ async def portfolyo_alarm_job(context):
 # ═══════════════════════════════════════════════════════════
 
 async def haftalik_rapor_job(context):
-    """Her Pazartesi sabah gruba haftalık rapor gönder."""
     now = datetime.utcnow()
-    if now.weekday() != 0: return  # Sadece Pazartesi
+    if now.weekday() != 0: return
     if now.hour != 8 or now.minute > 5: return
-
     key = f"haftalik_{now.date()}"
     if key in cooldowns: return
     cooldowns[key] = now
@@ -2407,7 +2256,8 @@ async def haftalik_rapor_job(context):
             async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 tickers = await resp.json()
 
-        usdt = [t for t in tickers if t["symbol"].endswith("USDT")
+        usdt = [t for t in tickers
+                if t["symbol"].endswith("USDT")
                 and float(t.get("quoteVolume",0)) > 1_000_000
                 and not any(x in t["symbol"] for x in ["UP","DOWN","BULL","BEAR"])]
 
@@ -2418,21 +2268,20 @@ async def haftalik_rapor_job(context):
         tarih = now.strftime("%d.%m.%Y")
 
         text = (
-            f"📅 *Haftalık Kripto Raporu*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"🗓 {tarih} · {mood}\\n"
-            f"📊 Genel ortalama: `{avg:+.2f}%`\\n\\n"
-            f"🚀 *En Çok Yükselenler*\\n"
+            f"📅 <b>Haftalık Kripto Raporu</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🗓 {tarih} · {mood}\n"
+            f"📊 Genel ortalama: <code>{avg:+.2f}%</code>\n\n"
+            f"🚀 <b>En Çok Yükselenler</b>\n"
         )
         for i, c in enumerate(top5, 1):
-            text += f"{get_number_emoji(i)} `{c['symbol']:<14}` 🟢 `{float(c['priceChangePercent']):+.2f}%`\\n"
-
-        text += "\\n📉 *En Çok Düşenler*\\n"
+            text += f"{get_number_emoji(i)} <code>{c['symbol']:<14}</code> 🟢 <code>{float(c['priceChangePercent']):+.2f}%</code>\n"
+        text += "\n📉 <b>En Çok Düşenler</b>\n"
         for i, c in enumerate(bot5, 1):
-            text += f"{get_number_emoji(i)} `{c['symbol']:<14}` 🔴 `{float(c['priceChangePercent']):+.2f}%`\\n"
+            text += f"{get_number_emoji(i)} <code>{c['symbol']:<14}</code> 🔴 <code>{float(c['priceChangePercent']):+.2f}%</code>\n"
+        text += "\n<i>İyi haftalar! 🎯</i>"
 
-        text += "\\n_İyi haftalar! 🎯_"
-        await context.bot.send_message(GROUP_CHAT_ID, text, parse_mode="Markdown")
+        await context.bot.send_message(GROUP_CHAT_ID, text, parse_mode="HTML")
     except Exception as e:
         log.error(f"haftalik_rapor: {e}")
 
@@ -3811,6 +3660,8 @@ async def kar_command(update: Update, context):
 # ================= GELİŞMİŞ MTF ANALİZ =================
 
 async def mtf_command(update: Update, context):
+    if not await check_group_access(update, context, "MTF Analiz"):
+        return
     # args: komuttan veya callback'ten gelebilir
     args = context.args or []
     # Eğer args boşsa ve mesaj varsa, mesaj metninden sembol almayı dene
@@ -4233,17 +4084,17 @@ async def start(update: Update, context):
 
     keyboard = InlineKeyboardMarkup(base_buttons)
     welcome_text = (
-        "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
+        "👋 <b>Kripto Analiz Asistanı</b>\n━━━━━━━━━━━━━━━━━━\n"
         "7/24 piyasayı izliyorum.\n\n"
-        "📡 Sinyal: `/sinyal BTCUSDT`\n"
-        "🤖 AI Yorum: `/yorum BTCUSDT`\n"
-        "📐 Pattern: `/pattern BTCUSDT`\n"
-        "🔬 Backtest: `/backtest BTCUSDT rsi`\n"
-        "📊 Sektör: `/sektor`\n"
-        "⚖️ Risk/Ödül: `/rr 100 95 115`\n"
-        "💹 DCA: `/dca BTCUSDT 100 12`\n"
-        "🔔 Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
-        "🎯 Hedef: `/hedef BTCUSDT 70000`"
+        "📡 Sinyal: <code>/sinyal BTCUSDT</code>\n"
+        "🤖 AI Yorum: <code>/yorum BTCUSDT</code>\n"
+        "📐 Pattern: <code>/pattern BTCUSDT</code>\n"
+        "🔬 Backtest: <code>/backtest BTCUSDT rsi</code>\n"
+        "📊 Sektör: <code>/sektor</code>\n"
+        "⚖️ Risk/Ödül: <code>/rr 100 95 115</code>\n"
+        "💹 DCA: <code>/dca BTCUSDT 100 12</code>\n"
+        "🔔 Alarm: <code>/alarm_ekle BTCUSDT 3.5</code>\n"
+        "🎯 Hedef: <code>/hedef BTCUSDT 70000</code>"
     )
 
     if in_group:
@@ -4255,12 +4106,12 @@ async def start(update: Update, context):
             chat_id=chat.id,
             text=welcome_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
     else:
-        await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+        await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="HTML")
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
@@ -4452,58 +4303,55 @@ async def button_handler(update: Update, context):
 
     await q.answer()
 
-    # ── Yeni özellik yardım butonları ──
+    # ── Yeni özellik butonları ──
     if q.data == "sinyal_help":
         await q.message.reply_text(
-            "📡 *Sinyal Sistemi*\n━━━━━━━━━━━━━━━━━━\n"
-            "Kullanım: `/sinyal BTCUSDT`\n"
-            "Geçmiş: `/sinyal_gecmis`\n\n"
-            "RSI + MACD + EMA kombinasyonu ile\n"
-            "🟢 AL / 🔴 SAT / 🟡 BEKLE sinyali",
-            parse_mode="Markdown")
+            "<b>📡 Sinyal Sistemi</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/sinyal BTCUSDT</code>\n"
+            "Geçmiş: /sinyal_gecmis\n\n"
+            "🟢 AL / 🔴 SAT / 🟡 BEKLE",
+            parse_mode="HTML")
     elif q.data == "watchlist_help":
         await q.message.reply_text(
-            "👀 *Watchlist*\n━━━━━━━━━━━━━━━━━━\n"
-            "`/watchlist ekle BTCUSDT`\n"
-            "`/watchlist liste`\n"
-            "`/watchlist rapor` — RSI/MACD özeti\n"
-            "`/watchlist sil BTCUSDT`",
-            parse_mode="Markdown")
+            "<b>👀 Watchlist</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "<code>/watchlist ekle BTCUSDT</code>\n"
+            "<code>/watchlist liste</code>\n"
+            "<code>/watchlist rapor</code>\n"
+            "<code>/watchlist sil BTCUSDT</code>",
+            parse_mode="HTML")
     elif q.data == "pattern_help":
         await q.message.reply_text(
-            "📐 *Pattern Tanıma*\n━━━━━━━━━━━━━━━━━━\n"
-            "Kullanım: `/pattern BTCUSDT`\n\n"
-            "Tespit edilen formasyonlar:\n"
+            "<b>📐 Pattern Tanıma</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/pattern BTCUSDT</code>\n\n"
             "Çift Dip/Tepe, Kanal, Bull Flag",
-            parse_mode="Markdown")
+            parse_mode="HTML")
     elif q.data == "sektor_help":
         await sektor_command(update, context)
     elif q.data == "makro_help":
         await makro_command(update, context)
     elif q.data == "yorum_help":
         await q.message.reply_text(
-            "🤖 *AI Piyasa Yorumu*\n━━━━━━━━━━━━━━━━━━\n"
-            "Kullanım: `/yorum BTCUSDT`\n\n"
-            "Claude AI ile teknik analiz yorumu\n"
-            "AL/SAT/BEKLE yönlendirmesi",
-            parse_mode="Markdown")
+            "<b>🤖 AI Piyasa Yorumu</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "Kullanım: <code>/yorum BTCUSDT</code>\n\n"
+            "Claude AI teknik analiz yorumu",
+            parse_mode="HTML")
     elif q.data == "anket_help":
         await q.message.reply_text(
-            "📊 *Anket Sistemi (Admin)*\n━━━━━━━━━━━━━━━━━━\n"
-            "Yeni anket: `/anket_yeni Soru? | Seç1 | Seç2`\n"
-            "Sonuç: `/anket sonuc`",
-            parse_mode="Markdown")
+            "<b>📊 Anket Sistemi</b>\n━━━━━━━━━━━━━━━━━━\n"
+            "Yeni anket: <code>/anket_yeni Soru? | Seç1 | Seç2</code>\n"
+            "Sonuç: <code>/anket sonuc</code>",
+            parse_mode="HTML")
     elif q.data.startswith("anket_oy_"):
         try:
-            _, _, anket_id_s, secim_s = q.data.split("_", 3)
-            anket_id = int(anket_id_s); secim = int(secim_s)
+            parts = q.data.split("_")
+            anket_id = int(parts[2]); secim = int(parts[3])
             async with db_pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO anket_oylar(anket_id,user_id,secim) VALUES($1,$2,$3) ON CONFLICT(anket_id,user_id) DO UPDATE SET secim=$3",
                     anket_id, q.from_user.id, secim)
             await q.answer("✅ Oyun kaydedildi!", show_alert=False)
         except Exception as e:
-            log.error(f"anket_oy: {e}")
+            log.error(f"anket_oy cb: {e}")
             await q.answer("⚠️ Hata oluştu.", show_alert=True)
     elif q.data.startswith("anket_sonuc_"):
         try:
@@ -4514,16 +4362,16 @@ async def button_handler(update: Update, context):
             secenekler = anket["secenekler"].split("|")
             toplam = sum(r["cnt"] for r in oylar)
             oy_map = {r["secim"]: r["cnt"] for r in oylar}
-            text = f"📊 *Anket #{anket_id} Sonuçları*\n━━━━━━━━━━━━━━━━━━\n*{anket['soru']}*\n\n"
+            text = f"📊 <b>Anket #{anket_id}</b>\n━━━━━━━━━━━━━━━━━━\n<b>{anket['soru']}</b>\n\n"
             for i, sec in enumerate(secenekler):
                 cnt = oy_map.get(i, 0)
                 pct = cnt / toplam * 100 if toplam else 0
-                bar = "█" * int(pct/10) + "░" * (10-int(pct/10))
-                text += f"`{i+1}.` {sec}\n   `{bar}` `{pct:.0f}%` ({cnt} oy)\n"
-            text += f"\n_Toplam: {toplam} oy_"
-            await q.message.reply_text(text, parse_mode="Markdown")
+                bar = "█" * int(pct/10) + "░" * (10 - int(pct/10))
+                text += f"<code>{i+1}.</code> {sec}\n   <code>{bar}</code> <code>{pct:.0f}%</code> ({cnt} oy)\n"
+            text += f"\n<i>Toplam: {toplam} oy</i>"
+            await q.message.reply_text(text, parse_mode="HTML")
         except Exception as e:
-            log.error(f"anket_sonuc: {e}")
+            log.error(f"anket_sonuc cb: {e}")
     # ── Market & genel ──
     elif q.data == "market":
         await market(update, context)
