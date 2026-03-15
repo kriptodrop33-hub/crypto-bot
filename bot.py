@@ -1019,11 +1019,10 @@ GROUP_ALLOWED_CMDS = {"start", "top5", "top24", "mtf"}
 
 async def check_group_access(update: Update, context, feature_name: str = None) -> bool:
     """
-    Grupta çalıştırılan bir komutun üye tarafından kullanılıp kullanılamayacağını kontrol eder.
-    - Admin/creator → her zaman True
-    - Private chat  → her zaman True
-    - Grup üyesi + izin verilen komut → True
-    - Grup üyesi + yasak komut → DM yönlendirme mesajı gönderir, False döner
+    Hem komut hem callback_query için grup üyesi kısıtlaması.
+    - Private chat / Admin → True
+    - Grup üyesi + izinli komut → True  
+    - Grup üyesi + yasak → gruba uyarı mesajı gönder, False döndür
     """
     chat = update.effective_chat
     if not chat or chat.type not in ("group", "supergroup"):
@@ -1037,7 +1036,7 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     if await is_group_admin(context.bot, chat.id, user_id):
         return True
 
-    # İzin verilen komutları kontrol et
+    # Komut bazlı izin (sadece mesaj varsa)
     if update.message and update.message.text:
         cmd = update.message.text.lstrip("/").split("@")[0].split()[0].lower()
         if cmd in GROUP_ALLOWED_CMDS:
@@ -1045,12 +1044,22 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
 
     # Üye → yasak → yönlendir
     fname = feature_name or "Bu özellik"
-    msg_id = update.message.message_id if update.message else None
-    if msg_id:
+
+    # Komut mesajını sil
+    if update.message:
         try:
-            await context.bot.delete_message(chat_id=chat.id, message_id=msg_id)
+            await context.bot.delete_message(chat_id=chat.id, message_id=update.message.message_id)
         except Exception:
             pass
+
+    # Callback query ise answer() çağır (yüklenme animasyonunu durdur)
+    if update.callback_query:
+        try:
+            await update.callback_query.answer()
+        except Exception:
+            pass
+
+    # Gruba yönlendirme mesajı gönder
     try:
         redir = await context.bot.send_message(
             chat_id=chat.id,
@@ -1060,7 +1069,7 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
             ),
             parse_mode="Markdown"
         )
-        asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 15))
+        asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
     except Exception:
         pass
     return False
@@ -2766,6 +2775,7 @@ async def button_handler(update: Update, context):
     # Grup üyesi kısıtlaması: sadece belirli butonlar izinli
     chat = q.message.chat if q.message else None
     is_group_chat = chat and chat.type in ("group", "supergroup")
+    is_adm = False
     if is_group_chat:
         is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
         # Grup üyesi için sadece top24, top5, mtf_help izinli
@@ -2868,17 +2878,22 @@ async def button_handler(update: Update, context):
 
     # ── Zamanla ──
     elif q.data == "zamanla_help":
-        await q.message.reply_text(
-            "⏰ *Zamanlanmış Görevler*\n━━━━━━━━━━━━━━━━━━\n"
-            "Coin analizi: `/zamanla analiz BTCUSDT 09:00`\n"
-            "Haftalık rapor: `/zamanla rapor 08:00`\n"
-            "Liste: `/zamanla liste`\n"
-            "Sil: `/zamanla sil`",
-            parse_mode="Markdown"
-        )
-
-    # ── Fiyat Hedefi ──
-    # Hedef butonları grup kısıtlamasından muaf — her yerden DM'e yönlendirir
+        if is_group_chat and not is_adm:
+            redir = await context.bot.send_message(
+                chat_id=chat.id,
+                text="🔒 *Zamanla* grupta kullanılamaz.\nLütfen botu DM üzerinden kullanın 👉 @KriptoDrop_alertbot",
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
+        else:
+            await q.message.reply_text(
+                "⏰ *Zamanlanmış Görevler*\n━━━━━━━━━━━━━━━━━━\n"
+                "Coin analizi: `/zamanla analiz BTCUSDT 09:00`\n"
+                "Haftalık rapor: `/zamanla rapor 08:00`\n"
+                "Liste: `/zamanla liste`\n"
+                "Sil: `/zamanla sil`",
+                parse_mode="Markdown"
+            )
     elif q.data in ("hedef_liste", "hedef_gecmis", "hedef_add_help") or \
          q.data.startswith("hedef_sil_id_") or q.data.startswith("hedef_sil_hepsi_"):
 
@@ -2953,14 +2968,22 @@ async def button_handler(update: Update, context):
 
     # ── Kar/Zarar ──
     elif q.data == "kar_help":
-        await q.message.reply_text(
-            "💰 *Kar/Zarar Hesabı*\n━━━━━━━━━━━━━━━━━━\n"
-            "Hızlı hesap: `/kar BTCUSDT 0.5 60000`\n"
-            "  miktar: 0.5 BTC, alış: 60000 USDT\n\n"
-            "Pozisyon kaydet/takip: `/kar liste`\n"
-            "Sil: `/kar sil BTCUSDT`",
-            parse_mode="Markdown"
-        )
+        if is_group_chat and not is_adm:
+            redir = await context.bot.send_message(
+                chat_id=chat.id,
+                text="🔒 *Kar/Zarar* grupta kullanılamaz.\nLütfen botu DM üzerinden kullanın 👉 @KriptoDrop_alertbot",
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
+        else:
+            await q.message.reply_text(
+                "💰 *Kar/Zarar Hesabı*\n━━━━━━━━━━━━━━━━━━\n"
+                "Hızlı hesap: `/kar BTCUSDT 0.5 60000`\n"
+                "  miktar: 0.5 BTC, alış: 60000 USDT\n\n"
+                "Pozisyon kaydet/takip: `/kar liste`\n"
+                "Sil: `/kar sil BTCUSDT`",
+                parse_mode="Markdown"
+            )
     elif q.data.startswith("kar_kaydet_"):
         parts = q.data.split("_")
         try:
