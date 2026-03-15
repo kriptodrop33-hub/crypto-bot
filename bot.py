@@ -36,7 +36,7 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 COOLDOWN_MINUTES  = 15
 DEFAULT_THRESHOLD = 5.0
 DEFAULT_MODE      = "both"
-MAX_SYMBOLS       = 500
+MAX_SYMBOLS       = 1000
 
 logging.basicConfig(
     level=logging.INFO,
