@@ -1037,13 +1037,13 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     if await is_group_admin(context.bot, chat.id, user_id):
         return True
 
-    # İzin verilen komutları kontrol et (üyeler bunları grupta kullanabilir)
+    # İzin verilen komutları kontrol et
     if update.message and update.message.text:
         cmd = update.message.text.lstrip("/").split("@")[0].split()[0].lower()
         if cmd in GROUP_ALLOWED_CMDS:
             return True
 
-    # Üye → yasak → mesajı sil + grupta uyarı + False döndür
+    # Üye → yasak → yönlendir
     fname = feature_name or "Bu özellik"
     msg_id = update.message.message_id if update.message else None
     if msg_id:
@@ -2659,27 +2659,20 @@ async def top24(update: Update, context):
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
     MIN_VOL = 1_000_000
-
     def safe_pct(c):
         try:
-            op = float(c["openPrice"])
-            lp = float(c["lastPrice"])
+            op = float(c["openPrice"]); lp = float(c["lastPrice"])
             return ((lp - op) / op) * 100 if op > 0 else None
-        except Exception:
-            return None
-
+        except Exception: return None
     filtered = []
     for c in data:
         if not c["symbol"].endswith("USDT"): continue
-        try:
-            vol = float(c.get("quoteVolume", 0))
-        except Exception:
-            vol = 0
+        try: vol = float(c.get("quoteVolume", 0))
+        except Exception: vol = 0
         if vol < MIN_VOL: continue
         pct = safe_pct(c)
         if pct is None: continue
         filtered.append((c, pct))
-
     usdt = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
     for i, (c, pct) in enumerate(usdt, 1):
@@ -2770,20 +2763,31 @@ async def button_handler(update: Update, context):
         await set_callback(update, context)
         return
 
-    # Grup üyesi kısıtlaması — q.answer() henüz çağrılmadı, bir kez çağrılacak
+    # Grup üyesi kısıtlaması: sadece belirli butonlar izinli
     chat = q.message.chat if q.message else None
     is_group_chat = chat and chat.type in ("group", "supergroup")
     if is_group_chat:
         is_adm = await is_group_admin(context.bot, chat.id, q.from_user.id)
-        GROUP_OK_CALLBACKS = {"top24", "top5", "mtf_help", "market", "status"}
-        GROUP_SELF_HANDLED = {"hedef_liste", "hedef_gecmis", "hedef_add_help"}
-        if not is_adm and q.data not in GROUP_OK_CALLBACKS and q.data not in GROUP_SELF_HANDLED                 and not q.data.startswith("hedef_sil_"):
-            # Gruba yönlendirme mesajı gönder
+        # Grup üyesi için sadece top24, top5, mtf_help izinli
+        # Grup üyesi için izin verilen callback'ler (grupta çalışanlar)
+        # Grupta üyeler için izin verilen callback'ler
+        # my_alarm, fav_liste vb. kendi içinde check_group_access ile DM'e yönlendirir
+        GROUP_OK_CALLBACKS = {
+            "top24", "top5", "mtf_help", "market", "status",
+            "my_alarm", "fav_liste", "zamanla_help", "kar_help",
+            "hedef_liste", "hedef_gecmis", "hedef_add_help",
+            "alarm_guide", "alarm_history",
+        }
+        if not is_adm and q.data not in GROUP_OK_CALLBACKS \
+                and not q.data.startswith("hedef_sil_") \
+                and not q.data.startswith("fav_") \
+                and not q.data.startswith("mtf_") \
+                and not q.data.startswith("kar_") \
+                and not q.data.startswith("alarm_"):
             redir = await context.bot.send_message(
                 chat_id=chat.id,
                 text=(
-                    "🔒 Bu özellik grupta kullanılamaz.\n"
-                    "👉 @KriptoDrop_alertbot adresinden botu DM'den kullanın."
+                    "🔒 Bu özellik için botu DM'den kullanın 👉 @KriptoDrop_alertbot"
                 ),
                 parse_mode="Markdown"
             )
