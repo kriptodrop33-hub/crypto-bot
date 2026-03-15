@@ -1037,7 +1037,7 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     if await is_group_admin(context.bot, chat.id, user_id):
         return True
 
-    # İzin verilen komutlar listesini kontrol et
+    # İzin verilen komutları kontrol et
     if update.message and update.message.text:
         cmd = update.message.text.lstrip("/").split("@")[0].split()[0].lower()
         if cmd in GROUP_ALLOWED_CMDS:
@@ -1055,8 +1055,8 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
         redir = await context.bot.send_message(
             chat_id=chat.id,
             text=(
-                f"🔒 *{fname}* grupta yalnızca adminler tarafından kullanılabilir.\n"
-                f"Lütfen botu özel mesaj (DM) üzerinden kullanın. 👇\n"
+                f"🔒 *{fname}* grupta kullanılamaz.\n"
+                f"Lütfen botu DM üzerinden kullanın 👇\n"
                 f"@KriptoDrop_alertbot"
             ),
             parse_mode="Markdown"
@@ -2596,23 +2596,28 @@ async def start(update: Update, context):
     if in_group and user_id:
         admin_in_group = await is_group_admin(context.bot, chat.id, user_id)
 
-    dm_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Market",          callback_data="market"),
-         InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
-        [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
-         InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
-        [InlineKeyboardButton("🔔 Alarmlarım",      callback_data="my_alarm"),
-         InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
-        [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
-         InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
-        [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
-         InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-    ])
-    dm_text = (
+    # Ortak klavye ve metin (admin için set butonu eklenecek)
+    base_buttons = [
+        [InlineKeyboardButton("📊 Market",        callback_data="market"),
+         InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
+        [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
+         InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
+        [InlineKeyboardButton("🔔 Alarmlarım",    callback_data="my_alarm"),
+         InlineKeyboardButton("⭐ Favorilerim",   callback_data="fav_liste")],
+        [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help"),
+         InlineKeyboardButton("📅 Zamanla",       callback_data="zamanla_help")],
+        [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
+         InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
+    ]
+
+    if in_group and admin_in_group:
+        base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
+
+    keyboard = InlineKeyboardMarkup(base_buttons)
+    welcome_text = (
         "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
         "7/24 piyasayı izliyorum.\n\n"
-        "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
-        "📊 Detaylı analiz: `/mtf BTCUSDT`\n"
+        "💡 Analiz: `BTCUSDT` yaz\n"
         "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
         "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
         "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
@@ -2620,67 +2625,22 @@ async def start(update: Update, context):
         "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
     )
 
-    if in_group and not admin_in_group:
-        # Grup üyesi: DM'e menü gönder, grupta kısa yönlendirme bırak
-        dm_sent = False
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=dm_text,
-                reply_markup=dm_keyboard,
-                parse_mode="Markdown"
-            )
-            dm_sent = True
-        except Exception:
-            pass
+    if in_group:
+        # Grup üyesinin /start mesajını sil, cevabı grupta göster, sonra auto_delete
         try:
             await update.message.delete()
         except Exception:
             pass
-        if dm_sent:
-            grp_msg = await context.bot.send_message(
-                chat_id=chat.id,
-                text="✅ Menü DM'ine gönderildi! @KriptoDrop_alertbot",
-                parse_mode="Markdown"
-            )
-        else:
-            grp_msg = await context.bot.send_message(
-                chat_id=chat.id,
-                text="👋 Botu kullanmak için önce DM'den başlatın:\n👉 @KriptoDrop_alertbot → /start",
-                parse_mode="Markdown"
-            )
-        asyncio.create_task(auto_delete(context.bot, chat.id, grp_msg.message_id, 15))
-        return
-
-    if in_group and admin_in_group:
-        admin_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📊 Market",          callback_data="market"),
-             InlineKeyboardButton("⚡ 5dk Flashlar",    callback_data="top5")],
-            [InlineKeyboardButton("📈 24s Liderleri",   callback_data="top24"),
-             InlineKeyboardButton("⚙️ Durum",           callback_data="status")],
-            [InlineKeyboardButton("🔔 Alarmlarım",      callback_data="my_alarm"),
-             InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste")],
-            [InlineKeyboardButton("📊 MTF Analiz",      callback_data="mtf_help"),
-             InlineKeyboardButton("📅 Zamanla",         callback_data="zamanla_help")],
-            [InlineKeyboardButton("🎯 Fiyat Hedefi",    callback_data="hedef_liste"),
-             InlineKeyboardButton("💰 Kar/Zarar",       callback_data="kar_help")],
-            [InlineKeyboardButton("🛠 Admin Ayarları",  callback_data="set_open")]
-        ])
-        admin_text = (
-            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
-            "7/24 piyasayı izliyorum.\n\n"
-            "💡 Analiz: `BTCUSDT` yaz\n"
-            "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
-            "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
-            "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
-            "⭐ Favori: `/favori ekle BTCUSDT`\n"
-            "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
+        msg = await context.bot.send_message(
+            chat_id=chat.id,
+            text=welcome_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
         )
-        await update.message.reply_text(admin_text, reply_markup=admin_keyboard, parse_mode="Markdown")
-        return
-
-    # DM: tam menü
-    await update.message.reply_text(dm_text, reply_markup=dm_keyboard, parse_mode="Markdown")
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+    else:
+        await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
@@ -2702,38 +2662,13 @@ async def top24(update: Update, context):
     async with aiohttp.ClientSession() as session:
         async with session.get(BINANCE_24H, timeout=aiohttp.ClientTimeout(total=8)) as resp:
             data = await resp.json()
-
-    MIN_VOLUME_USDT = 1_000_000  # En az 1M USDT günlük hacim — ghost/stale coinleri filtrele
-
-    def safe_pct(c):
-        try:
-            open_price = float(c["openPrice"])
-            last_price = float(c["lastPrice"])
-            if open_price <= 0:
-                return None
-            return ((last_price - open_price) / open_price) * 100
-        except Exception:
-            return None
-
-    filtered = []
-    for c in data:
-        if not c["symbol"].endswith("USDT"):
-            continue
-        try:
-            vol = float(c.get("quoteVolume", 0))
-        except Exception:
-            vol = 0
-        if vol < MIN_VOLUME_USDT:
-            continue
-        pct = safe_pct(c)
-        if pct is None:
-            continue
-        filtered.append((c, pct))
-
-    usdt = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
+    usdt = sorted(
+        [x for x in data if x["symbol"].endswith("USDT")],
+        key=lambda x: float(x["priceChangePercent"]), reverse=True
+    )[:10]
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-    for i, (c, pct) in enumerate(usdt, 1):
-        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{pct:+6.2f}`\n"
+    for i, c in enumerate(usdt, 1):
+        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{float(c['priceChangePercent']):+6.2f}`\n"
 
     target = update.callback_query.message if is_cb else update.message
     msg = await target.reply_text(text, parse_mode="Markdown")
