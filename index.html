@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Kripto Drop Dashboard</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:      #0d1117;
+    --card:    #161b22;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --green:   #00e676;
+    --red:     #ff1744;
+    --yellow:  #ffd700;
+    --blue:    #1e90ff;
+    --accent:  #238636;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 80px;
+  }
+  /* ── Header ── */
+  .header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 16px; font-weight: 700; }
+  .header .subtitle { font-size: 11px; color: var(--muted); }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+    display: inline-block; margin-right: 6px;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:.3; }
+  }
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: all .2s;
+  }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  /* ── Content ── */
+  .page { display: none; padding: 12px; }
+  .page.active { display: block; }
+  /* ── Cards ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  /* ── Market Overview ── */
+  .market-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .stat-value { font-size: 18px; font-weight: 700; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .up   { color: var(--green); }
+  .down { color: var(--red); }
+  .neutral { color: var(--yellow); }
+  /* ── Coin List ── */
+  .coin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .coin-row:last-child { border-bottom: none; }
+  .coin-info { display: flex; align-items: center; gap: 10px; }
+  .coin-rank {
+    font-size: 10px;
+    color: var(--muted);
+    width: 20px;
+    text-align: right;
+  }
+  .coin-name { font-size: 13px; font-weight: 600; }
+  .coin-vol  { font-size: 10px; color: var(--muted); }
+  .coin-pct  { font-size: 14px; font-weight: 700; }
+  .coin-price { font-size: 11px; color: var(--muted); text-align: right; margin-top: 1px; }
+  /* ── Search ── */
+  .search-box {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .search-box input {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .search-box input:focus { border-color: var(--blue); }
+  .search-box input::placeholder { color: var(--muted); }
+  .btn {
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn:active { opacity: .8; }
+  /* ── Chart Container ── */
+  .chart-wrap {
+    position: relative;
+    height: 200px;
+    margin: 8px 0;
+  }
+  /* ── Analysis Result ── */
+  .analysis-block {
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 10px;
+    margin-top: 8px;
+  }
+  .analysis-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .analysis-row:last-child { border-bottom: none; }
+  .analysis-key   { color: var(--muted); }
+  .analysis-value { font-weight: 600; }
+  /* ── FIB ── */
+  .fib-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin: 8px 0;
+    position: relative;
+    overflow: visible;
+  }
+  .fib-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    border-radius: 1px;
+    transform: translateX(-50%);
+  }
+  .fib-current {
+    position: absolute;
+    top: -6px;
+    width: 4px;
+    height: 18px;
+    background: var(--text);
+    border-radius: 2px;
+    transform: translateX(-50%);
+  }
+  /* ── Loading ── */
+  .loader {
+    text-align: center;
+    padding: 30px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .spinner {
+    width: 24px; height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    margin: 0 auto 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* ── Badge ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .badge-green  { background: rgba(0,230,118,.15); color: var(--green); }
+  .badge-red    { background: rgba(255,23,68,.15);  color: var(--red); }
+  .badge-yellow { background: rgba(255,215,0,.15);  color: var(--yellow); }
+  /* ── Bottom Nav ── */
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    display: flex;
+    z-index: 200;
+  }
+  .nav-btn {
+    flex: 1;
+    padding: 10px 4px 8px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 9px;
+    color: var(--muted);
+    border: none;
+    background: none;
+    transition: color .2s;
+  }
+  .nav-btn .icon { font-size: 18px; display: block; margin-bottom: 2px; }
+  .nav-btn.active { color: var(--blue); }
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 20px;
+    font-size: 12px; opacity: 0; transition: opacity .3s;
+    pointer-events: none; white-space: nowrap; z-index: 999;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <h1>🪙 Kripto Drop</h1>
+    <div class="subtitle"><span class="live-dot"></span>Canlı Dashboard</div>
+  </div>
+  <div id="lastUpdate" style="font-size:10px;color:var(--muted)"></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('market')">📊 Market</div>
+  <div class="tab" onclick="switchTab('top')">🏆 Liderler</div>
+  <div class="tab" onclick="switchTab('analyse')">🔍 Analiz</div>
+  <div class="tab" onclick="switchTab('fib')">📐 Fibonacci</div>
+  <div class="tab" onclick="switchTab('sentiment')">🧠 Sentiment</div>
+  <div class="tab" onclick="switchTab('calendar')">📅 Takvim</div>
+</div>
+
+<!-- Pages -->
+<div id="page-market" class="page active">
+  <div class="market-grid" id="marketStats">
+    <div class="loader"><div class="spinner"></div>Yükleniyor...</div>
+  </div>
+  <div class="card" style="margin-top:10px">
+    <div class="card-title">📈 BTC / ETH Fiyat</div>
+    <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">🌡️ Piyasa Duyarlılığı</div>
+    <div id="moodDisplay" class="loader"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<div id="page-top" class="page">
+  <div class="card">
+    <div class="card-title">🟢 24s En Çok Yükselen (Top 10)</div>
+    <div id="topGainers"><div class="loader"><div class="spinner"></div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">🔴 24s En Çok Düşen (Top 10)</div>
+    <div id="topLosers"><div class="loader"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<div id="page-analyse" class="page">
+  <div class="search-box">
+    <input type="text" id="analyseInput" placeholder="BTCUSDT, ETHUSDT..." maxlength="20"
+           onkeydown="if(event.key==='Enter')runAnalysis()">
+    <button class="btn" onclick="runAnalysis()">Analiz</button>
+  </div>
+  <div id="analyseResult"></div>
+</div>
+
+<div id="page-fib" class="page">
+  <div class="search-box">
+    <input type="text" id="fibInput" placeholder="BTCUSDT" maxlength="20"
+           onkeydown="if(event.key==='Enter')runFib()">
+    <select id="fibInterval" style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text);font-size:13px">
+      <option value="1h">1 Saat</option>
+      <option value="4h" selected>4 Saat</option>
+      <option value="1d">Günlük</option>
+      <option value="1w">Haftalık</option>
+    </select>
+    <button class="btn" onclick="runFib()">Çiz</button>
+  </div>
+  <div id="fibResult"></div>
+</div>
+
+<div id="page-sentiment" class="page">
+  <div class="search-box">
+    <input type="text" id="sentInput" placeholder="BTC, ETH, SOL..." maxlength="20"
+           onkeydown="if(event.key==='Enter')runSentiment()">
+    <button class="btn" onclick="runSentiment()">Analiz</button>
+  </div>
+  <div id="sentResult"></div>
+</div>
+
+<div id="page-calendar" class="page">
+  <div id="calendarResult"><div class="loader"><div class="spinner"></div>Takvim yükleniyor...</div></div>
+</div>
+
+<!-- Bottom Nav -->
+<div class="bottom-nav">
+  <button class="nav-btn active" onclick="switchTab('market')"><span class="icon">📊</span>Market</button>
+  <button class="nav-btn" onclick="switchTab('top')"><span class="icon">🏆</span>Liderler</button>
+  <button class="nav-btn" onclick="switchTab('analyse')"><span class="icon">🔍</span>Analiz</button>
+  <button class="nav-btn" onclick="switchTab('fib')"><span class="icon">📐</span>Fib</button>
+  <button class="nav-btn" onclick="switchTab('sentiment')"><span class="icon">🧠</span>Duygu</button>
+  <button class="nav-btn" onclick="switchTab('calendar')"><span class="icon">📅</span>Takvim</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Telegram WebApp Init ──
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  document.body.style.backgroundColor = tg.colorScheme === 'dark' ? '#0d1117' : '#f6f8fa';
+}
+
+const BINANCE_API = 'https://api.binance.com/api/v3';
+const COINGECKO   = 'https://api.coingecko.com/api/v3';
+
+let priceChartInst = null;
+let currentTab     = 'market';
+
+// ── Tab Switcher ──
+function switchTab(tab) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + tab).classList.add('active');
+  const tabs = ['market','top','analyse','fib','sentiment','calendar'];
+  const idx  = tabs.indexOf(tab);
+  if (idx >= 0) {
+    document.querySelectorAll('.tab')[idx].classList.add('active');
+    document.querySelectorAll('.nav-btn')[idx].classList.add('active');
+  }
+  currentTab = tab;
+  if (tab === 'top' && !document.querySelector('#topGainers .coin-row')) loadTop();
+  if (tab === 'calendar') loadCalendar();
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── Format Helpers ──
+function fmtPrice(p) {
+  p = parseFloat(p);
+  if (p >= 1000) return p.toLocaleString('tr-TR', {maximumFractionDigits: 2});
+  if (p >= 1)    return p.toFixed(4);
+  return p.toFixed(8);
+}
+function fmtVol(v) {
+  v = parseFloat(v);
+  if (v >= 1e9) return (v/1e9).toFixed(1) + 'B$';
+  if (v >= 1e6) return (v/1e6).toFixed(1) + 'M$';
+  return v.toFixed(0) + '$';
+}
+function pctClass(p) { return p > 0 ? 'up' : (p < 0 ? 'down' : 'neutral'); }
+function pctBadge(p) {
+  const cl = p > 0 ? 'badge-green' : (p < 0 ? 'badge-red' : 'badge-yellow');
+  const sign = p > 0 ? '+' : '';
+  return `<span class="badge ${cl}">${sign}${p.toFixed(2)}%</span>`;
+}
+
+// ── Market Overview ──
+async function loadMarket() {
+  try {
+    const [ticker24, klines_btc, klines_eth] = await Promise.all([
+      fetch(`${BINANCE_API}/ticker/24hr`).then(r => r.json()),
+      fetch(`${BINANCE_API}/klines?symbol=BTCUSDT&interval=1h&limit=24`).then(r => r.json()),
+      fetch(`${BINANCE_API}/klines?symbol=ETHUSDT&interval=1h&limit=24`).then(r => r.json()),
+    ]);
+
+    const usdt   = ticker24.filter(x => x.symbol.endsWith('USDT'));
+    const btc    = usdt.find(x => x.symbol === 'BTCUSDT');
+    const eth    = usdt.find(x => x.symbol === 'ETHUSDT');
+    const changes= usdt.map(x => parseFloat(x.priceChangePercent));
+    const avg    = changes.reduce((a,b)=>a+b,0) / changes.length;
+    const rising = changes.filter(x=>x>0).length;
+    const total  = usdt.length;
+    const btcVol = parseFloat(btc?.quoteVolume||0);
+    const totVol = usdt.reduce((a,x)=>a+parseFloat(x.quoteVolume),0);
+    const btcDom = ((btcVol/totVol)*100).toFixed(1);
+
+    document.getElementById('marketStats').innerHTML = `
+      <div class="stat-box">
+        <div class="stat-value ${pctClass(parseFloat(btc?.priceChangePercent||0))}">
+          $${fmtPrice(btc?.lastPrice||0)}
+        </div>
+        <div class="stat-label">₿ BTC Fiyatı</div>
+        <div style="font-size:11px;margin-top:3px">${pctBadge(parseFloat(btc?.priceChangePercent||0))}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value ${pctClass(parseFloat(eth?.priceChangePercent||0))}">
+          $${fmtPrice(eth?.lastPrice||0)}
+        </div>
+        <div class="stat-label">Ξ ETH Fiyatı</div>
+        <div style="font-size:11px;margin-top:3px">${pctBadge(parseFloat(eth?.priceChangePercent||0))}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">${btcDom}%</div>
+        <div class="stat-label">BTC Dominans</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value ${avg>=0?'up':'down'}">${avg>=0?'+':''}${avg.toFixed(2)}%</div>
+        <div class="stat-label">Market Ort.</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value up">${rising}</div>
+        <div class="stat-label">Yükselen Coin</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value down">${total-rising}</div>
+        <div class="stat-label">Düşen Coin</div>
+      </div>
+    `;
+
+    // Mood
+    const mood = avg > 1.5 ? '🐂 Boğa Piyasası' : avg < -1.5 ? '🐻 Ayı Piyasası' : '😐 Yatay Piyasa';
+    const moodColor = avg > 1.5 ? 'var(--green)' : avg < -1.5 ? 'var(--red)' : 'var(--yellow)';
+    document.getElementById('moodDisplay').innerHTML = `
+      <div style="text-align:center;padding:10px">
+        <div style="font-size:28px;margin-bottom:6px">${mood.split(' ')[0]}</div>
+        <div style="font-size:16px;font-weight:700;color:${moodColor}">${mood.substring(2)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Ortalama değişim: ${avg>=0?'+':''}${avg.toFixed(2)}% • ${rising}/${total} coin yükseliyor
+        </div>
+      </div>
+    `;
+
+    // BTC/ETH Chart
+    const labels    = klines_btc.map(k => {
+      const d = new Date(k[0]);
+      return d.getHours() + ':00';
+    });
+    const btcPrices = klines_btc.map(k => parseFloat(k[4]));
+    const ethPrices = klines_eth.map(k => parseFloat(k[4]));
+    // Normalize ETH to BTC scale
+    const ethNorm   = ethPrices.map(p => p * (btcPrices[0] / ethPrices[0]));
+
+    if (priceChartInst) priceChartInst.destroy();
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    priceChartInst = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'BTC', data: btcPrices, borderColor: '#ffd700', borderWidth: 1.5,
+            pointRadius: 0, tension: 0.4,
+            fill: true, backgroundColor: 'rgba(255,215,0,0.05)' },
+          { label: 'ETH (normaliz)', data: ethNorm, borderColor: '#1e90ff', borderWidth: 1.5,
+            pointRadius: 0, tension: 0.4,
+            fill: true, backgroundColor: 'rgba(30,144,255,0.05)' },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#8b949e', font: {size:10} } } },
+        scales: {
+          x: { ticks: { color:'#8b949e', font:{size:9}, maxTicksLimit:6 }, grid:{color:'#21262d'} },
+          y: { ticks: { color:'#8b949e', font:{size:9},
+                        callback: v => '$' + (v>=1000?(v/1000).toFixed(0)+'K':v.toFixed(0)) },
+               grid:{color:'#21262d'} }
+        }
+      }
+    });
+
+    document.getElementById('lastUpdate').textContent =
+      '🕐 ' + new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit'});
+  } catch(e) {
+    document.getElementById('marketStats').innerHTML =
+      `<div class="loader">⚠️ Veri alınamadı: ${e.message}</div>`;
+  }
+}
+
+// ── Top Gainers / Losers ──
+async function loadTop() {
+  try {
+    const data = await fetch(`${BINANCE_API}/ticker/24hr`).then(r => r.json());
+    const usdt = data.filter(x => x.symbol.endsWith('USDT') && parseFloat(x.quoteVolume) > 1e6);
+    usdt.sort((a,b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+
+    const gainers = usdt.slice(0, 10);
+    const losers  = usdt.slice(-10).reverse();
+
+    function renderList(items, el) {
+      el.innerHTML = items.map((c,i) => {
+        const pct = parseFloat(c.priceChangePercent);
+        return `<div class="coin-row">
+          <div class="coin-info">
+            <span class="coin-rank">${i+1}</span>
+            <div>
+              <div class="coin-name">${c.symbol.replace('USDT','')}</div>
+              <div class="coin-vol">${fmtVol(c.quoteVolume)}</div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="coin-pct ${pctClass(pct)}">${pct>0?'+':''}${pct.toFixed(2)}%</div>
+            <div class="coin-price">$${fmtPrice(c.lastPrice)}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    renderList(gainers, document.getElementById('topGainers'));
+    renderList(losers,  document.getElementById('topLosers'));
+  } catch(e) {
+    document.getElementById('topGainers').innerHTML = `<div class="loader">⚠️ ${e.message}</div>`;
+  }
+}
+
+// ── Analysis ──
+async function runAnalysis() {
+  let sym = document.getElementById('analyseInput').value.toUpperCase().trim();
+  if (!sym) { showToast('Sembol girin!'); return; }
+  if (!sym.endsWith('USDT')) sym += 'USDT';
+
+  const el = document.getElementById('analyseResult');
+  el.innerHTML = '<div class="loader"><div class="spinner"></div>Analiz yapılıyor...</div>';
+
+  try {
+    const [ticker, klines1h, klines4h, klines1d] = await Promise.all([
+      fetch(`${BINANCE_API}/ticker/24hr?symbol=${sym}`).then(r=>r.json()),
+      fetch(`${BINANCE_API}/klines?symbol=${sym}&interval=1h&limit=50`).then(r=>r.json()),
+      fetch(`${BINANCE_API}/klines?symbol=${sym}&interval=4h&limit=50`).then(r=>r.json()),
+      fetch(`${BINANCE_API}/klines?symbol=${sym}&interval=1d&limit=50`).then(r=>r.json()),
+    ]);
+
+    if (ticker.code) { el.innerHTML = `<div class="loader">❌ ${sym} bulunamadı.</div>`; return; }
+
+    const price  = parseFloat(ticker.lastPrice);
+    const pct24  = parseFloat(ticker.priceChangePercent);
+    const vol24  = parseFloat(ticker.quoteVolume);
+    const high24 = parseFloat(ticker.highPrice);
+    const low24  = parseFloat(ticker.lowPrice);
+
+    // RSI
+    function calcRsi(klines, period=14) {
+      const closes = klines.map(k=>parseFloat(k[4]));
+      let gains=0, losses=0;
+      for(let i=closes.length-period; i<closes.length; i++) {
+        const d = closes[i]-closes[i-1];
+        if(d>0) gains+=d; else losses-=d;
+      }
+      const rs = gains/period / (losses/period || .0001);
+      return 100 - 100/(1+rs);
+    }
+
+    // EMA
+    function calcEma(klines, period) {
+      const closes = klines.map(k=>parseFloat(k[4]));
+      const k2 = 2/(period+1);
+      let ema = closes.slice(0, period).reduce((a,b)=>a+b,0)/period;
+      for(let i=period; i<closes.length; i++) ema = closes[i]*k2 + ema*(1-k2);
+      return ema;
+    }
+
+    const rsi1h = calcRsi(klines1h);
+    const rsi4h = calcRsi(klines4h);
+    const ema20_1h  = calcEma(klines1h, 20);
+    const ema50_1h  = calcEma(klines1h, 50);
+    const ema200_1d = calcEma(klines1d, 50);
+
+    const rsiLabel = (r) => r>70?'🔴 Aşırı Alım':r<30?'🟢 Aşırı Satım':'🟡 Nötr';
+    const trendLabel = price>ema200_1d?'🟢 Yükseliş':'🔴 Düşüş';
+
+    // Sinyal skoru
+    let score = 0;
+    if(rsi1h < 35) score+=2; else if(rsi1h > 65) score-=2;
+    if(rsi4h < 35) score+=2; else if(rsi4h > 65) score-=2;
+    if(price > ema20_1h) score+=1;
+    if(price > ema50_1h) score+=1;
+    if(price > ema200_1d) score+=2;
+    if(pct24 > 0) score+=1;
+    const scoreLabel = score >= 4 ? '🟢 AL' : score <= -2 ? '🔴 SAT' : '🟡 BEKLE';
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div style="font-size:18px;font-weight:700">${sym}</div>
+            <div style="font-size:22px;font-weight:700;color:${pct24>=0?'var(--green)':'var(--red)'}">
+              $${fmtPrice(price)}
+            </div>
+          </div>
+          <div style="text-align:right">
+            ${pctBadge(pct24)}
+            <div style="margin-top:6px;font-size:14px;font-weight:700">${scoreLabel}</div>
+            <div style="font-size:10px;color:var(--muted)">Sinyal</div>
+          </div>
+        </div>
+        <div class="analysis-block">
+          <div class="analysis-row">
+            <span class="analysis-key">24s Hacim</span>
+            <span class="analysis-value">${fmtVol(vol24)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">24s En Yüksek</span>
+            <span class="analysis-value up">$${fmtPrice(high24)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">24s En Düşük</span>
+            <span class="analysis-value down">$${fmtPrice(low24)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">RSI (1s)</span>
+            <span class="analysis-value">${rsi1h.toFixed(1)} ${rsiLabel(rsi1h)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">RSI (4s)</span>
+            <span class="analysis-value">${rsi4h.toFixed(1)} ${rsiLabel(rsi4h)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">EMA 20 (1s)</span>
+            <span class="analysis-value">${price>=ema20_1h?'🟢':'🔴'} $${fmtPrice(ema20_1h)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">EMA 50 (1s)</span>
+            <span class="analysis-value">${price>=ema50_1h?'🟢':'🔴'} $${fmtPrice(ema50_1h)}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">Uzun Vade Trendi</span>
+            <span class="analysis-value">${trendLabel}</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">Sinyal Skoru</span>
+            <span class="analysis-value">${score > 0?'+':''}${score} / 8</span>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="loader">⚠️ Hata: ${e.message}</div>`;
+  }
+}
+
+// ── Fibonacci ──
+async function runFib() {
+  let sym = document.getElementById('fibInput').value.toUpperCase().trim();
+  if (!sym) { showToast('Sembol girin!'); return; }
+  if (!sym.endsWith('USDT')) sym += 'USDT';
+  const interval = document.getElementById('fibInterval').value;
+
+  const el = document.getElementById('fibResult');
+  el.innerHTML = '<div class="loader"><div class="spinner"></div>Fibonacci hesaplanıyor...</div>';
+
+  try {
+    const klines = await fetch(
+      `${BINANCE_API}/klines?symbol=${sym}&interval=${interval}&limit=100`
+    ).then(r => r.json());
+
+    if (!Array.isArray(klines) || klines.length < 20) {
+      el.innerHTML = '<div class="loader">❌ Yeterli veri yok.</div>'; return;
+    }
+
+    const highs  = klines.map(k => parseFloat(k[2]));
+    const lows   = klines.map(k => parseFloat(k[3]));
+    const closes = klines.map(k => parseFloat(k[4]));
+    const high   = Math.max(...highs);
+    const low    = Math.min(...lows);
+    const cur    = closes[closes.length-1];
+    const diff   = high - low;
+    const trendUp = cur > closes[0];
+
+    const FIB_LEVELS  = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+    const FIB_COLORS  = ['#FFD700','#FF8C00','#FF4500','#00CED1','#1E90FF','#9370DB','#32CD32'];
+    const FIB_LABELS  = ['0%','23.6%','38.2%','50%','61.8%','78.6%','100%'];
+
+    const fibPrices = FIB_LEVELS.map(lvl =>
+      trendUp ? high - diff * lvl : low + diff * lvl
+    );
+
+    const nearest = fibPrices.reduce((best, p, i) =>
+      Math.abs(p-cur) < Math.abs(fibPrices[best]-cur) ? i : best, 0);
+
+    const priceToPercent = p => Math.max(0, Math.min(100, ((p-low)/(high-low))*100));
+    const curPct         = priceToPercent(cur);
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div style="font-size:16px;font-weight:700">${sym}</div>
+            <div style="font-size:11px;color:var(--muted)">${interval} • ${klines.length} mum</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:18px;font-weight:700">$${fmtPrice(cur)}</div>
+            <div style="font-size:11px;color:var(--muted)">${trendUp?'📈 Yükseliş':'📉 Düşüş'} trendi</div>
+          </div>
+        </div>
+
+        <!-- Visual Bar -->
+        <div style="margin:16px 0">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px">
+            <span>$${fmtPrice(low)}</span><span>$${fmtPrice(high)}</span>
+          </div>
+          <div class="fib-bar">
+            ${FIB_LEVELS.map((lvl,i) => {
+              const pct = priceToPercent(fibPrices[i]);
+              return `<div class="fib-marker" style="left:${pct}%;background:${FIB_COLORS[i]};opacity:0.8"></div>`;
+            }).join('')}
+            <div class="fib-current" style="left:${curPct}%"></div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">
+            ▲ Mevcut fiyat konumu
+          </div>
+        </div>
+
+        <!-- Levels -->
+        <div class="analysis-block">
+          ${FIB_LEVELS.map((lvl,i) => {
+            const p   = fibPrices[i];
+            const isN = i === nearest;
+            return `<div class="analysis-row" style="${isN?'background:rgba(30,144,255,0.08);border-radius:4px;padding:4px':''}">
+              <span class="analysis-key">
+                <span style="color:${FIB_COLORS[i]};font-weight:700">${FIB_LABELS[i]}</span>
+                ${isN ? ' ◀ En Yakın' : ''}
+              </span>
+              <span class="analysis-value" style="color:${p<cur?'var(--green)':p>cur?'var(--red)':'var(--text)'}">
+                $${fmtPrice(p)}
+              </span>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+          📈 Swing High: $${fmtPrice(high)} &nbsp;|&nbsp; 📉 Swing Low: $${fmtPrice(low)}
+        </div>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="loader">⚠️ ${e.message}</div>`;
+  }
+}
+
+// ── Sentiment ──
+async function runSentiment() {
+  let sym = document.getElementById('sentInput').value.toUpperCase().trim();
+  if (!sym) { showToast('Sembol girin!'); return; }
+  const base = sym.replace('USDT','');
+
+  const el = document.getElementById('sentResult');
+  el.innerHTML = '<div class="loader"><div class="spinner"></div>Haber analizi yapılıyor...</div>';
+
+  try {
+    // CoinGecko community sentiment
+    const cgMap = {BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',
+                   ADA:'cardano',XRP:'ripple',DOT:'polkadot',DOGE:'dogecoin',
+                   AVAX:'avalanche-2',MATIC:'matic-network',LINK:'chainlink'};
+    const cgId  = cgMap[base] || base.toLowerCase();
+
+    const cg = await fetch(
+      `${COINGECKO}/coins/${cgId}?localization=false&tickers=false&market_data=true&community_data=true`
+    ).then(r=>r.json()).catch(()=>null);
+
+    let upPct = 50, downPct = 50, price = 0, pct24 = 0;
+    if (cg && !cg.error) {
+      upPct   = cg.sentiment_votes_up_percentage || 50;
+      downPct = cg.sentiment_votes_down_percentage || 50;
+      price   = cg.market_data?.current_price?.usd || 0;
+      pct24   = cg.market_data?.price_change_percentage_24h || 0;
+    }
+
+    const score    = upPct / 100;
+    const barFill  = Math.round(score * 10);
+    const bar      = '🟩'.repeat(barFill) + '⬜'.repeat(10-barFill);
+    const label    = upPct>55 ? '🟢 Pozitif' : upPct<45 ? '🔴 Negatif' : '🟡 Nötr';
+    const labelColor = upPct>55?'var(--green)':upPct<45?'var(--red)':'var(--yellow)';
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div style="font-size:16px;font-weight:700">${base}</div>
+            <div style="font-size:11px;color:var(--muted)">Topluluk Sentiment</div>
+          </div>
+          <div style="text-align:right">
+            ${price ? `<div style="font-size:18px;font-weight:700">$${fmtPrice(price)}</div>
+            <div>${pctBadge(pct24)}</div>` : ''}
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:12px 0">
+          <div style="font-size:32px;margin-bottom:4px">${label.split(' ')[0]}</div>
+          <div style="font-size:18px;font-weight:700;color:${labelColor}">${label.substring(2)}</div>
+          <div style="font-size:24px;letter-spacing:2px;margin:8px 0">${bar}</div>
+          <div style="font-size:12px;color:var(--muted)">${score.toFixed(2)} / 1.00</div>
+        </div>
+
+        <div class="analysis-block">
+          <div class="analysis-row">
+            <span class="analysis-key">🟢 Yükseliş Beklentisi</span>
+            <span class="analysis-value up">${upPct.toFixed(1)}%</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">🔴 Düşüş Beklentisi</span>
+            <span class="analysis-value down">${downPct.toFixed(1)}%</span>
+          </div>
+          <div class="analysis-row">
+            <span class="analysis-key">Kaynak</span>
+            <span class="analysis-value">CoinGecko Topluluk</span>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:var(--muted);text-align:center">
+          Daha detaylı analiz için botta /sentiment ${base} kullanın
+        </div>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="loader">⚠️ ${e.message}</div>`;
+  }
+}
+
+// ── Calendar ──
+async function loadCalendar() {
+  const el = document.getElementById('calendarResult');
+  if (el.querySelector('.coin-row')) return; // Zaten yüklendi
+
+  // Statik makro takvim (bot ile aynı)
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+
+  const events = [
+    { title: '🏦 FOMC Toplantısı', day: 18, importance: 'high',
+      desc: 'ABD Fed faiz kararı. Kripto için kritik.' },
+    { title: '📊 ABD CPI Verisi', day: 12, importance: 'high',
+      desc: 'Enflasyon verisi. Yüksekse kripto baskı altında.' },
+    { title: '💼 NFP İstihdam', day: 7, importance: 'medium',
+      desc: 'Tarım dışı istihdam raporu.' },
+    { title: '📈 PCE Fiyat Endeksi', day: 28, importance: 'high',
+      desc: "Fed'in tercih ettiği enflasyon göstergesi." },
+  ].map(ev => {
+    let date = new Date(year, month, ev.day);
+    if (date < now) date = new Date(year, month+1, ev.day);
+    return { ...ev, date };
+  }).sort((a,b) => a.date - b.date);
+
+  const impColor = { high:'var(--red)', medium:'var(--yellow)', low:'var(--green)' };
+  const impLabel = { high:'🔴 Yüksek', medium:'🟡 Orta', low:'🟢 Düşük' };
+
+  el.innerHTML = events.map(ev => {
+    const diff  = Math.ceil((ev.date - now) / 86400000);
+    const when  = diff === 0 ? '⚡ BUGÜN' : diff === 1 ? '🔜 Yarın' : `📆 ${diff} gün sonra`;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700">${ev.title}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">${ev.desc}</div>
+        </div>
+        <div style="text-align:right;margin-left:10px;flex-shrink:0">
+          <div style="font-size:12px;color:${impColor[ev.importance]};font-weight:700">${when}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">
+            ${ev.date.toLocaleDateString('tr-TR')}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:6px">${pctBadge = () => ''; impLabel[ev.importance]}</div>
+    </div>`;
+  }).join('') +
+  `<div class="card" style="border-color:var(--blue)">
+    <div style="font-size:12px;color:var(--muted);text-align:center">
+      📅 Detaylı takvim ve bildirimler için botta <strong>/takvim</strong> kullanın
+    </div>
+  </div>`;
+}
+
+// ── Init ──
+loadMarket();
+// Her 60sn market güncelle
+setInterval(() => { if(currentTab === 'market') loadMarket(); }, 60000);
+</script>
+</body>
+</html>

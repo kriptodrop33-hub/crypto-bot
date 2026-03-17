@@ -11,7 +11,7 @@ import mplfinance as mpf
 import matplotlib
 matplotlib.use("Agg")
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 from collections import defaultdict
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, BotCommand
@@ -31,6 +31,9 @@ GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
 DATABASE_URL  = os.getenv("DATABASE_URL")
 ADMIN_ID      = int(os.getenv("ADMIN_ID", "0"))        # Bot sahibinin Telegram ID'si
 BOT_USERNAME  = os.getenv("BOT_USERNAME", "botunuz")   # Örnek: KriptoDrop_alertbot (@ olmadan)
+GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")     # Groq ücretsiz GPT (llama3)
+CRYPTOPANIC_KEY    = os.getenv("CRYPTOPANIC_KEY", "")  # CryptoPanic ücretsiz API
+MINIAPP_URL        = os.getenv("MINIAPP_URL", "")       # Mini App URL (Railway deploy sonrası)
 
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -187,6 +190,21 @@ async def init_db():
                 last_active  TIMESTAMPTZ DEFAULT NOW(),
                 command_count INTEGER DEFAULT 1,
                 chat_type    TEXT DEFAULT 'private'
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS sentiment_cache (
+                symbol      TEXT PRIMARY KEY,
+                score       REAL,
+                label       TEXT,
+                summary     TEXT,
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS takvim_subscribers (
+                user_id  BIGINT PRIMARY KEY,
+                active   INTEGER DEFAULT 1
             )
         """)
 
@@ -481,6 +499,451 @@ async def generate_candlestick_chart(symbol: str):
     except Exception as e:
         log.error(f"Grafik hatasi ({symbol}): {e}")
         return None
+
+
+# ================= FİBONACCİ =================
+
+FIB_LEVELS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+FIB_COLORS = ["#FFD700","#FF8C00","#FF4500","#00CED1","#1E90FF","#9370DB","#32CD32"]
+
+async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100):
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{BINANCE_KLINES}?symbol={symbol}&interval={interval}&limit={limit}",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+
+        if not data or isinstance(data, dict) or len(data) < 20:
+            return None, None
+
+        df = pd.DataFrame(data, columns=[
+            "open_time","open","high","low","close","volume",
+            "close_time","quote_volume","trades",
+            "taker_buy_base","taker_buy_quote","ignore"
+        ])
+        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
+        df.set_index("open_time", inplace=True)
+        df = df[["open","high","low","close","volume"]].astype(float)
+
+        swing_high = df["high"].max()
+        swing_low  = df["low"].min()
+        diff       = swing_high - swing_low
+        trend_up   = df["close"].iloc[-1] > df["close"].iloc[0]
+
+        fib_prices = {}
+        for lvl in FIB_LEVELS:
+            fib_prices[lvl] = swing_high - diff * lvl if trend_up else swing_low + diff * lvl
+
+        mc = mpf.make_marketcolors(
+            up="#00e676", down="#ff1744",
+            edge="inherit", wick="inherit",
+            volume={"up":"#00e676","down":"#ff1744"},
+        )
+        style = mpf.make_mpf_style(
+            marketcolors=mc,
+            facecolor="#0d1117", edgecolor="#30363d",
+            figcolor="#0d1117", gridcolor="#21262d", gridstyle="--",
+            rc={"axes.labelcolor":"#8b949e","xtick.color":"#8b949e",
+                "ytick.color":"#8b949e","font.size":8}
+        )
+
+        fig, axes = mpf.plot(
+            df, type="candle", style=style,
+            title=f"\n{symbol} - Fibonacci Retracement ({interval})",
+            ylabel="Fiyat (USDT)", volume=True, figsize=(10, 6),
+            returnfig=True
+        )
+        ax = axes[0]
+
+        for lvl, color in zip(FIB_LEVELS, FIB_COLORS):
+            price = fib_prices[lvl]
+            ax.axhline(y=price, color=color, linewidth=1.0, linestyle="--", alpha=0.85)
+            label_price = f"{price:,.4f}" if price < 1 else f"{price:,.2f}"
+            ax.text(
+                len(df) * 0.01, price,
+                f" {lvl:.3f} — {label_price}",
+                color=color, fontsize=7, va="bottom", alpha=0.95
+            )
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=100, facecolor="#0d1117")
+        plt.close(fig)
+        buf.seek(0)
+
+        cur = df["close"].iloc[-1]
+        nearest = min(fib_prices.items(), key=lambda x: abs(x[1]-cur))
+        text = (
+            f"📐 *{symbol} — Fibonacci Retracement* ({interval})\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 *Swing High:* `{swing_high:,.4f}` USDT\n" if swing_high < 1 else
+            f"📐 *{symbol} — Fibonacci Retracement* ({interval})\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 *Swing High:* `{swing_high:,.2f}` USDT\n"
+        )
+        text += (
+            f"📉 *Swing Low:*  `{swing_low:,.2f}` USDT\n"
+            f"🎯 *Mevcut:* `{cur:,.2f}` USDT\n"
+            f"🔍 *En yakın Fib:* `{nearest[0]:.3f}` → `{nearest[1]:,.2f}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+        for lvl in FIB_LEVELS:
+            p = fib_prices[lvl]
+            marker = "◀️" if lvl == nearest[0] else "  "
+            lp = f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
+            text += f"{marker}`{lvl:.3f}` → `{lp}` USDT\n"
+
+        return buf, text
+    except Exception as e:
+        log.error(f"Fib grafik hatasi ({symbol}): {e}")
+        return None, None
+
+async def fib_command(update: Update, context):
+    chat    = update.effective_chat
+    args    = context.args or []
+    if not args:
+        await send_temp(context.bot, chat.id,
+            "📐 *Fibonacci Kullanımı:*\n"
+            "`/fib BTCUSDT` — 4 saatlik\n"
+            "`/fib BTCUSDT 1h` — 1 saatlik\n"
+            "`/fib BTCUSDT 1d` — Günlük",
+            parse_mode="Markdown")
+        return
+    await register_user(update)
+    symbol   = args[0].upper().replace("#","").replace("/","")
+    if not symbol.endswith("USDT"): symbol += "USDT"
+    interval = args[1] if len(args) > 1 else "4h"
+    if interval not in ["1h","2h","4h","6h","12h","1d","3d","1w"]: interval = "4h"
+
+    loading = await send_temp(context.bot, chat.id, f"📐 `{symbol}` Fibonacci hesaplanıyor...", parse_mode="Markdown")
+    buf, text = await generate_fib_chart(symbol, interval)
+    try: await context.bot.delete_message(chat.id, loading.message_id)
+    except Exception: pass
+
+    if buf is None:
+        await send_temp(context.bot, chat.id, f"⚠️ `{symbol}` için veri alınamadı.", parse_mode="Markdown")
+        return
+
+    is_group = chat.type in ("group", "supergroup")
+    delay    = (await get_member_delete_delay()) if is_group else None
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("1h",  callback_data=f"fib_{symbol}_1h"),
+        InlineKeyboardButton("4h",  callback_data=f"fib_{symbol}_4h"),
+        InlineKeyboardButton("1d",  callback_data=f"fib_{symbol}_1d"),
+        InlineKeyboardButton("1w",  callback_data=f"fib_{symbol}_1w"),
+    ]])
+    msg = await context.bot.send_photo(chat_id=chat.id, photo=buf, caption=text,
+                                        parse_mode="Markdown", reply_markup=keyboard)
+    if is_group and delay:
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+
+# ================= SENTIMENT ANALİZİ =================
+
+async def fetch_sentiment(symbol: str) -> dict:
+    base = symbol.replace("USDT","")
+    news_items = []
+
+    if CRYPTOPANIC_KEY:
+        try:
+            url = f"https://cryptopanic.com/api/v1/posts/?auth_token={CRYPTOPANIC_KEY}&currencies={base}&kind=news&public=true"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for item in (data.get("results") or [])[:10]:
+                            title = item.get("title","")
+                            votes = item.get("votes",{})
+                            if title:
+                                news_items.append({
+                                    "title": title,
+                                    "positive": votes.get("positive",0),
+                                    "negative": votes.get("negative",0),
+                                })
+        except Exception as e:
+            log.warning(f"CryptoPanic hata: {e}")
+
+    if not news_items:
+        try:
+            cg_sym = base.lower()
+            url = f"https://api.coingecko.com/api/v3/coins/{cg_sym}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        up_pct   = data.get("sentiment_votes_up_percentage") or 50
+                        down_pct = data.get("sentiment_votes_down_percentage") or 50
+                        score    = round(up_pct / 100, 2)
+                        label    = "🟢 Pozitif" if up_pct > 55 else ("🔴 Negatif" if up_pct < 45 else "🟡 Nötr")
+                        return {"score": score, "label": label,
+                                "summary": f"Topluluk: %{up_pct:.1f} yükseliş / %{down_pct:.1f} düşüş beklentisi.",
+                                "news_count": 0, "source": "CoinGecko"}
+        except Exception as e:
+            log.warning(f"CoinGecko sentiment hata: {e}")
+        return {"score": 0.5, "label": "🟡 Veri Yok", "summary": "Yeterli haber bulunamadı.",
+                "news_count": 0, "source": "-"}
+
+    if GROQ_API_KEY and news_items:
+        try:
+            headlines = "\n".join([f"- {n['title']}" for n in news_items[:8]])
+            prompt = (
+                f"{base} kripto parası hakkindaki haberleri analiz et.\n"
+                f"Yalnizca su formatta yanit ver (baska hicbir sey yazma):\n"
+                f"SKOR: 0.0-1.0\nETIKET: Pozitif/Negatif/Notr\nOZET: (Turkce max 2 cumle)\n\n"
+                f"Haberler:\n{headlines}"
+            )
+            headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+            payload = {"model": "llama3-8b-8192", "messages": [{"role":"user","content":prompt}],
+                       "max_tokens": 200, "temperature": 0.3}
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://api.groq.com/openai/v1/chat/completions",
+                                        headers=headers, json=payload,
+                                        timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        result  = await resp.json()
+                        content = result["choices"][0]["message"]["content"]
+                        lines   = content.strip().split("\n")
+                        score, label_raw, ozet = 0.5, "Notr", "-"
+                        for line in lines:
+                            if line.startswith("SKOR:"):
+                                try: score = float(line.split(":",1)[1].strip())
+                                except: pass
+                            elif line.startswith("ETIKET:"):
+                                label_raw = line.split(":",1)[1].strip()
+                            elif line.startswith("OZET:"):
+                                ozet = line.split(":",1)[1].strip()
+                        if "Pozitif" in label_raw or "pozitif" in label_raw: label = "🟢 Pozitif"
+                        elif "Negatif" in label_raw or "negatif" in label_raw: label = "🔴 Negatif"
+                        else: label = "🟡 Nötr"
+                        return {"score": score, "label": label, "summary": ozet,
+                                "news_count": len(news_items), "source": "CryptoPanic + Groq AI"}
+        except Exception as e:
+            log.warning(f"Groq hata: {e}")
+
+    total_pos = sum(n["positive"] for n in news_items)
+    total_neg = sum(n["negative"] for n in news_items)
+    total     = total_pos + total_neg or 1
+    score     = round(total_pos / total, 2)
+    label     = "🟢 Pozitif" if score > 0.55 else ("🔴 Negatif" if score < 0.45 else "🟡 Nötr")
+    return {"score": score, "label": label,
+            "summary": f"{len(news_items)} haber tarandı. {total_pos} olumlu / {total_neg} olumsuz oy.",
+            "news_count": len(news_items), "source": "CryptoPanic"}
+
+async def sentiment_command(update: Update, context):
+    chat = update.effective_chat
+    args = context.args or []
+    if not args:
+        await send_temp(context.bot, chat.id,
+            "🧠 *Sentiment Kullanımı:*\n`/sentiment BTCUSDT`\n`/sentiment ETH`",
+            parse_mode="Markdown")
+        return
+    await register_user(update)
+    symbol = args[0].upper().replace("#","").replace("/","")
+    if not symbol.endswith("USDT"): symbol += "USDT"
+
+    loading = await send_temp(context.bot, chat.id,
+        f"🧠 `{symbol}` haber analizi yapılıyor...", parse_mode="Markdown")
+    result  = await fetch_sentiment(symbol)
+    try: await context.bot.delete_message(chat.id, loading.message_id)
+    except Exception: pass
+
+    bar = "🟩" * int(result["score"]*10) + "⬜" * (10 - int(result["score"]*10))
+    text = (
+        f"🧠 *{symbol} — Sentiment Analizi*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💭 *Genel Duygu:* {result['label']}\n"
+        f"📊 *Skor:* `{result['score']:.2f}` / 1.00\n"
+        f"{bar}\n"
+        f"📰 *Haber Sayısı:* `{result['news_count']}`\n"
+        f"🔍 *Kaynak:* `{result['source']}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💬 _{result['summary']}_\n"
+        f"⏰ _{datetime.utcnow().strftime('%H:%M UTC')}_"
+    )
+    is_group = chat.type in ("group", "supergroup")
+    delay    = (await get_member_delete_delay()) if is_group else None
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔄 Yenile",  callback_data=f"sent_{symbol}"),
+        InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
+    ]])
+    msg = await context.bot.send_message(chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
+    if is_group and delay:
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+
+# ================= TERİM SÖZLÜĞÜ =================
+
+SOZLUK = {
+    "macd": "📘 *MACD — Moving Average Convergence Divergence*\n━━━━━━━━━━━━━━━━━━━━━\n12 ve 26 günlük EMA farkından üretilen momentum göstergesi.\n\n📌 *Yorumu:*\n• MACD sinyal çizgisini yukarı keser → 🟢 Alım\n• MACD sinyal çizgisini aşağı keser → 🔴 Satım\n• Histogram (+) → Yükseliş momentum\n• Histogram (-) → Düşüş momentum",
+    "rsi": "📘 *RSI — Relative Strength Index*\n━━━━━━━━━━━━━━━━━━━━━\n0-100 arası osilatör. Aşırı alım/satım bölgelerini gösterir.\n\n📌 *Seviyeleri:*\n• RSI > 70 → 🔴 Aşırı alım\n• RSI < 30 → 🟢 Aşırı satım\n• RSI = 50 → Nötr\n\n⚠️ Güçlü trendlerde uzun süre aşırı bölgede kalabilir.",
+    "bollinger": "📘 *Bollinger Bantları*\n━━━━━━━━━━━━━━━━━━━━━\n20 günlük SMA ±2 standart sapma ile çizilen 3 bant.\n\n📌 *Yorumu:*\n• Üst banda temas → 🔴 Aşırı alım\n• Alt banda temas → 🟢 Aşırı satım\n• Bantlar daralıyor → ⚡ Büyük hareket yaklaşıyor",
+    "ema": "📘 *EMA — Exponential Moving Average*\n━━━━━━━━━━━━━━━━━━━━━\nSon fiyatlara daha fazla ağırlık veren hareketli ortalama.\n\n📌 *Kullanım:*\n• EMA 9/21 → Kısa vade sinyal\n• EMA 50/200 kesişimi → Altın/Ölüm Çarpazı\n• Fiyat EMA200 üstünde → 🟢 Uzun vade yükseliş",
+    "sma": "📘 *SMA — Simple Moving Average*\n━━━━━━━━━━━━━━━━━━━━━\nKapanış fiyatlarının aritmetik ortalaması.\n\n📌 *Kullanım:*\n• Destek/direnç olarak işlev görür\n• SMA50 ve SMA200 en yaygın\n• Fiyat SMA üstündeyse → Trend yukarı",
+    "fibonacci": "📘 *Fibonacci Retracement*\n━━━━━━━━━━━━━━━━━━━━━\nTrendin geri çekileceği olası seviyeleri gösteren yatay çizgiler.\n\n📌 *Kritik Seviyeler:*\n• %23.6 — Hafif geri çekilme\n• %38.2 — Orta düzey\n• %50.0 — Psikolojik yarı\n• %61.8 — 🏆 Altın oran (en kritik)\n• %78.6 — Derin geri çekilme\n\n📐 Kullanmak için: `/fib BTCUSDT`",
+    "whale": "📘 *Whale (Balina)*\n━━━━━━━━━━━━━━━━━━━━━\nPiyasayı etkileyebilecek büyük miktarda kripto tutan varlık.\n\n📌 *Önemi:*\n• Borsa girişi → Satış baskısı sinyali\n• Borsa çıkışı → Uzun vade tutma sinyali\n• On-chain veriden takip edilir",
+    "funding": "📘 *Funding Rate*\n━━━━━━━━━━━━━━━━━━━━━\nPerpetual futures'ta long/short arasında 8 saatte bir ödenen ücret.\n\n📌 *Yorumu:*\n• Pozitif → 🔴 Long'lar öder, aşırı iyimserlik\n• Negatif → 🟢 Short'lar öder, aşırı kötümserlik\n• Yüksek pozitif funding → Düzeltme riski",
+    "liquidation": "📘 *Likidaasyon*\n━━━━━━━━━━━━━━━━━━━━━\nKaldıraçlı işlemde teminat yetersiz kalınca pozisyonun zorla kapatılması.\n\n📌 *Örnek:*\n• 10x long, fiyat %10 düşerse → Likide edilir\n• Büyük likidasyonlar ani fiyat düşüşü yaratır",
+    "dca": "📘 *DCA — Dollar Cost Averaging*\n━━━━━━━━━━━━━━━━━━━━━\nSabit aralıklarla sabit miktarda yatırım yapma stratejisi.\n\n📌 *Avantajları:*\n• Zamanlama riskini azaltır\n• Düşüşlerde daha fazla coin alınır\n• Duygusal kararları engeller",
+    "dominans": "📘 *BTC Dominansı*\n━━━━━━━━━━━━━━━━━━━━━\nBitcoin'in toplam kripto market cap içindeki yüzde payı.\n\n📌 *Yorumu:*\n• Dominans yükseliyor → 🟠 Altcoinler zayıf\n• Dominans düşüyor → 🟢 Altcoin sezonu olabilir\n• %40 altı → Güçlü altseason sinyali",
+    "altseason": "📘 *Altseason*\n━━━━━━━━━━━━━━━━━━━━━\nBTC dominansının düştüğü, altcoinlerin BTC'den iyi performans gösterdiği dönem.\n\n📌 *İşaretleri:*\n• BTC dominansı %40 altına iner\n• Küçük cap coinler hızla yükselir\n• Yüksek market geneli hacim",
+    "support": "📘 *Destek (Support)*\n━━━━━━━━━━━━━━━━━━━━━\nFiyatın düşerken duraksadığı veya geri döndüğü bölge.\n\n📌 *Kurallar:*\n• Destek kırılırsa yeni destek arar\n• Tutunursa → 🟢 Alım fırsatı olabilir\n• Kırılan eski destek → Yeni direnç olur",
+    "resistance": "📘 *Direnç (Resistance)*\n━━━━━━━━━━━━━━━━━━━━━\nFiyatın yükselirken zorlandığı veya geri döndüğü bölge.\n\n📌 *Kurallar:*\n• Direnç kırılırsa → 🟢 Yeni hedef arar\n• Tekrar test güçlendirir\n• Kırılan eski direnç → Yeni destek",
+    "marketcap": "📘 *Piyasa Değeri (Market Cap)*\n━━━━━━━━━━━━━━━━━━━━━\nDolaşımdaki coin × fiyat formülüyle hesaplanır.\n\n📌 *Kategoriler:*\n• Large Cap → +10B$\n• Mid Cap → 1-10B$\n• Small Cap → 100M-1B$\n• Micro Cap → -100M$\n\n⚠️ Düşük mcap = Yüksek manipülasyon riski",
+    "stoploss": "📘 *Stop Loss*\n━━━━━━━━━━━━━━━━━━━━━\nBelirli fiyata ulaşınca pozisyonu kapatarak zararı sınırlayan emir.\n\n📌 *Kullanım:*\n• 100$ aldıysan 90$'a stop koy → Maks %10 kayıp\n• Trailing stop → Fiyat yükselirken stop da yükselir",
+    "fomc": "📘 *FOMC — Federal Open Market Committee*\n━━━━━━━━━━━━━━━━━━━━━\nABD Merkez Bankası (Fed) para politikası kurulu. Yılda 8 kez toplanır.\n\n📌 *Kripto Etkisi:*\n• Faiz artırımı → 🔴 Risk varlıkları düşer\n• Faiz indirimi → 🟢 Risk iştahı artar\n• Beklentiden sürpriz → Yüksek volatilite",
+    "cpi": "📘 *CPI — Consumer Price Index*\n━━━━━━━━━━━━━━━━━━━━━\nTüketici fiyat endeksi. Her ay ABD İstatistik Bürosu yayınlar.\n\n📌 *Kripto Etkisi:*\n• Yüksek CPI → Fed şahinleşir → 🔴 Risk varlıkları baskı\n• Düşük CPI → Fed güvercin → 🟢 Risk iştahı artar",
+    "halving": "📘 *Bitcoin Halving*\n━━━━━━━━━━━━━━━━━━━━━\nYaklaşık 4 yılda bir BTC madenci ödülünü yarıya indiren event.\n\n📌 *Önemi:*\n• Arz azalır → Tarihsel olarak yükseliş dönemleriyle örtüşür\n• 2024 Halving: Nisan 2024\n• Bir sonraki: ~2028",
+}
+
+SOZLUK_ALIAS = {
+    "bb": "bollinger", "boll": "bollinger", "fib": "fibonacci", "fibo": "fibonacci",
+    "destek": "support", "direnc": "resistance", "direnç": "resistance",
+    "sl": "stoploss", "stop": "stoploss", "mcap": "marketcap",
+    "alt": "altseason", "dom": "dominans", "liq": "liquidation",
+    "likidaasyon": "liquidation", "fed": "fomc", "enflasyon": "cpi",
+}
+
+async def ne_command(update: Update, context):
+    await register_user(update)
+    chat = update.effective_chat
+    args = context.args or []
+
+    if not args:
+        terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
+        await send_temp(context.bot, chat.id,
+            f"📚 *Kripto Terim Sözlüğü*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Kullanım: `/ne MACD`\n\n📖 *Terimler:*\n{terimler}",
+            parse_mode="Markdown")
+        return
+
+    arama = " ".join(args).lower().strip()
+    arama = SOZLUK_ALIAS.get(arama, arama)
+
+    if arama in SOZLUK:
+        text = SOZLUK[arama]
+    else:
+        eslesme = [k for k in SOZLUK if arama in k or k in arama]
+        if eslesme:
+            text = SOZLUK[eslesme[0]]
+        else:
+            terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
+            text = f"❓ `{arama}` bulunamadı.\n\nMevcut terimler:\n{terimler}"
+
+    is_group = chat.type in ("group", "supergroup")
+    delay    = (await get_member_delete_delay()) if is_group else None
+    msg      = await context.bot.send_message(chat.id, text, parse_mode="Markdown")
+    if is_group and delay:
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+
+# ================= EKONOMİK TAKVİM =================
+
+COINMARKETCAL_KEY = os.getenv("COINMARKETCAL_KEY", "")
+
+async def fetch_crypto_calendar() -> list:
+    events = []
+    if COINMARKETCAL_KEY:
+        try:
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            end   = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+            url   = (f"https://developers.coinmarketcal.com/v1/events"
+                     f"?dateRangeStart={today}&dateRangeEnd={end}&sortBy=importance&page=1&max=20")
+            headers = {"x-api-key": COINMARKETCAL_KEY, "Accept-Encoding": "deflate, gzip"}
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for item in (data.get("body") or []):
+                            title    = item.get("title",{}).get("en","")
+                            date_str = (item.get("date_event","") or "")[:10]
+                            coins    = ", ".join(c.get("symbol","") for c in (item.get("coins") or [])[:3])
+                            if title and date_str:
+                                events.append({"title": title, "date": date_str, "coins": coins,
+                                               "importance": item.get("percent",0), "source": "CoinMarketCal"})
+        except Exception as e:
+            log.warning(f"CoinMarketCal hata: {e}")
+
+    now = datetime.utcnow()
+    y, m = now.year, now.month
+    static = [
+        {"title": "🏦 FOMC Toplantısı — Fed Faiz Kararı", "day": 18,
+         "desc": "ABD Merkez Bankası faiz kararı. Kripto için kritik makro olay."},
+        {"title": "📊 ABD CPI Enflasyon Verisi", "day": 12,
+         "desc": "Yüksek CPI → Fed şahinleşir → Risk varlıkları baskı altında."},
+        {"title": "💼 ABD NFP İstihdam Raporu", "day": 7,
+         "desc": "Güçlü rapor → Dolar güçlenir → Kripto kısa vadeli baskı."},
+        {"title": "📈 ABD PCE Fiyat Endeksi", "day": 28,
+         "desc": "Fed'in tercih ettiği enflasyon göstergesi."},
+    ]
+    for ev in static:
+        try:
+            ev_dt = datetime(y, m, ev["day"])
+            if ev_dt < now:
+                ev_dt = datetime(y, m+1 if m < 12 else 1, ev["day"])
+                if m == 12: ev_dt = datetime(y+1, 1, ev["day"])
+            events.append({"title": ev["title"], "date": ev_dt.strftime("%Y-%m-%d"),
+                           "coins": "BTC, ETH, Tüm Piyasa", "importance": 90,
+                           "desc": ev.get("desc",""), "source": "Makro Takvim"})
+        except Exception:
+            pass
+
+    events.sort(key=lambda x: x["date"])
+    return events[:15]
+
+async def takvim_command(update: Update, context):
+    await register_user(update)
+    chat = update.effective_chat
+    loading = await send_temp(context.bot, chat.id, "📅 Ekonomik takvim yükleniyor...", parse_mode="Markdown")
+    events  = await fetch_crypto_calendar()
+    try: await context.bot.delete_message(chat.id, loading.message_id)
+    except Exception: pass
+
+    now = datetime.utcnow()
+    text = "📅 *Ekonomik & Kripto Takvim*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    for ev in events[:8]:
+        try:
+            ev_dt  = datetime.strptime(ev["date"], "%Y-%m-%d")
+            diff   = (ev_dt.date() - now.date()).days
+            zamanl = "⚡ *BUGÜN*" if diff==0 else ("🔜 Yarın" if diff==1 else (f"📆 {diff}g sonra" if diff<7 else f"📆 {ev['date']}"))
+            imp    = ev.get("importance", 0)
+            imp_str= "🔴" if imp>=80 else ("🟡" if imp>=50 else "🟢")
+            coins  = f" `{ev['coins']}`" if ev.get("coins") else ""
+            text  += f"\n{imp_str} {zamanl}\n📌 {ev['title']}{coins}\n"
+            if ev.get("desc"):
+                text += f"   _{ev['desc']}_\n"
+        except Exception:
+            pass
+    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n⏰ _{now.strftime('%d.%m.%Y %H:%M')} UTC_"
+
+    is_group = chat.type in ("group", "supergroup")
+    delay    = (await get_member_delete_delay()) if is_group else None
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔔 Bildirim Aç/Kapat", callback_data="takvim_toggle"),
+        InlineKeyboardButton("🔄 Yenile",             callback_data="takvim_refresh"),
+    ]])
+    msg = await context.bot.send_message(chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
+    if is_group and delay:
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
+
+async def takvim_job(context):
+    try:
+        events     = await fetch_crypto_calendar()
+        bugun      = datetime.utcnow().strftime("%Y-%m-%d")
+        bugun_evs  = [e for e in events if e["date"]==bugun and e.get("importance",0)>=70]
+        if not bugun_evs: return
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT user_id FROM takvim_subscribers WHERE active=1")
+        text = "📅 *Bugünkü Önemli Ekonomik Olaylar*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        for ev in bugun_evs:
+            text += f"\n🔴 *{ev['title']}*\n"
+            if ev.get("desc"): text += f"_{ev['desc']}_\n"
+        text += "\n💡 _Kapatmak için /takvim → 'Bildirim Kapat'_"
+        for row in rows:
+            try: await context.bot.send_message(row["user_id"], text, parse_mode="Markdown")
+            except Exception: pass
+    except Exception as e:
+        log.warning(f"takvim_job hata: {e}")
 
 # ================= ANALİZ =================
 
@@ -2663,14 +3126,21 @@ async def start(update: Update, context):
     chat    = update.effective_chat
     user_id = update.effective_user.id if update.effective_user else None
     in_group = chat and chat.type in ("group", "supergroup")
-    admin_in_group = False
-    if in_group and user_id:
-        admin_in_group = await is_group_admin(context.bot, chat.id, user_id)
 
-    # Kullanıcıyı kaydet/güncelle
     await register_user(update)
 
-    base_buttons = [
+    # ── Grup butonları (herkes görür) ──
+    group_buttons = [
+        [InlineKeyboardButton("📊 Market",        callback_data="market"),
+         InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
+        [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
+         InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
+        [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
+         InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
+    ]
+
+    # ── DM butonları (tam menü) ──
+    dm_buttons = [
         [InlineKeyboardButton("📊 Market",        callback_data="market"),
          InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
         [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
@@ -2681,65 +3151,76 @@ async def start(update: Update, context):
          InlineKeyboardButton("📅 Zamanla",       callback_data="zamanla_help")],
         [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
          InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
+        [InlineKeyboardButton("📐 Fibonacci",      callback_data="fib_help"),
+         InlineKeyboardButton("🧠 Sentiment",      callback_data="sent_help")],
+        [InlineKeyboardButton("📅 Ekonomik Takvim",callback_data="takvim_refresh"),
+         InlineKeyboardButton("📚 Terim Sözlüğü", callback_data="ne_help")],
+        [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
+         InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
     ]
 
-    # Admin Ayarları ve İstatistik butonları SADECE DM'de görünür
+    # Mini App butonu varsa ekle
+    if MINIAPP_URL:
+        dm_buttons.insert(-1, [InlineKeyboardButton(
+            "🖥 Dashboard Mini App", web_app={"url": MINIAPP_URL}
+        )])
+
+    # Admin / Bot sahibi DM butonları
     if not in_group and user_id:
         if is_bot_admin(user_id):
-            # Bot sahibi: her iki panel de açık
-            base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
-            base_buttons.append([InlineKeyboardButton("📊 İstatistikler",  callback_data="stat_refresh")])
+            dm_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open"),
+                                InlineKeyboardButton("📊 İstatistikler",  callback_data="stat_refresh")])
         else:
-            # Grup admini DM'den gelirse sadece admin ayarları
             try:
                 member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
                 if member.status in ("administrator", "creator"):
-                    base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
+                    dm_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
             except Exception:
                 pass
 
-    # Grup ve kanal katılım butonlarını en alta ekle (herkese göster)
-    base_buttons.append([
-        InlineKeyboardButton("💬 Gruba Katıl",  url="https://t.me/kriptodroptr"),
-        InlineKeyboardButton("📢 Kanala Katıl", url="https://t.me/kriptodropduyuru"),
-    ])
-
-    keyboard = InlineKeyboardMarkup(base_buttons)
-    welcome_text = (
-        "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
-        "7/24 piyasayı izliyorum.\n\n"
-        "💡 Analiz: `BTCUSDT` yaz\n"
-        "🔔 % Alarm: `/alarm_ekle BTCUSDT 3.5`\n"
-        "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
-        "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
-        "⭐ Favori: `/favori ekle BTCUSDT`\n"
-        "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "📢 *Topluluğumuza katıl:*\n"
-        "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
-        "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
-    )
-
     if in_group:
+        keyboard    = InlineKeyboardMarkup(group_buttons)
+        welcome_text = (
+            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayı izliyorum.\n\n"
+            "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
+            "📌 Tüm özellikler için bota *DM* yaz!\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
+            "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
+        )
         try:
             await update.message.delete()
         except Exception:
             pass
         msg = await context.bot.send_message(
-            chat_id=chat.id,
-            text=welcome_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown",
+            chat_id=chat.id, text=welcome_text,
+            reply_markup=keyboard, parse_mode="Markdown",
             disable_web_page_preview=True
         )
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
     else:
+        keyboard    = InlineKeyboardMarkup(dm_buttons)
+        welcome_text = (
+            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayı izliyorum.\n\n"
+            "💡 *Analiz:* `BTCUSDT` yaz\n"
+            "🔔 *Alarm:* `/alarm_ekle BTCUSDT 3.5`\n"
+            "🎯 *Hedef:* `/hedef BTCUSDT 70000`\n"
+            "📐 *Fibonacci:* `/fib BTCUSDT`\n"
+            "🧠 *Sentiment:* `/sentiment BTCUSDT`\n"
+            "📅 *Takvim:* `/takvim`\n"
+            "📚 *Sözlük:* `/ne MACD`\n"
+            "💰 *Kar/Zarar:* `/kar BTCUSDT 0.5 60000`\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "📢 *Topluluğumuza katıl:*\n"
+            "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
+            "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
+        )
         await update.message.reply_text(
-            welcome_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown",
-            disable_web_page_preview=True
+            welcome_text, reply_markup=keyboard,
+            parse_mode="Markdown", disable_web_page_preview=True
         )
 
 async def market(update: Update, context):
@@ -3031,6 +3512,120 @@ async def button_handler(update: Update, context):
         elif q.data.startswith("stat_users_"):
             page = int(q.data.split("_")[-1])
             await send_user_list(q.message, context, page)
+        return
+
+    # Fibonacci callback
+    if q.data.startswith("fib_"):
+        await q.answer()
+        parts  = q.data.split("_")   # fib_BTCUSDT_4h
+        if len(parts) >= 3:
+            symbol   = parts[1]
+            interval = parts[2]
+            loading_msg = await q.message.reply_text(f"📐 `{symbol}` {interval} Fibonacci hesaplanıyor...")
+            buf, text = await generate_fib_chart(symbol, interval)
+            try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
+            except Exception: pass
+            if buf:
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("1h", callback_data=f"fib_{symbol}_1h"),
+                    InlineKeyboardButton("4h", callback_data=f"fib_{symbol}_4h"),
+                    InlineKeyboardButton("1d", callback_data=f"fib_{symbol}_1d"),
+                    InlineKeyboardButton("1w", callback_data=f"fib_{symbol}_1w"),
+                ]])
+                await context.bot.send_photo(
+                    chat_id=q.message.chat.id, photo=buf,
+                    caption=text, parse_mode="Markdown", reply_markup=keyboard
+                )
+        elif q.data == "fib_help":
+            await q.message.reply_text(
+                "📐 *Fibonacci Retracement*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Kullanım: `/fib BTCUSDT`\n"
+                "Zaman dilimleri: `1h` `4h` `1d` `1w`\n\n"
+                "Fibonacci seviyeleri destek/direnç tahmini için kullanılır.\n"
+                "📖 Detaylı bilgi: `/ne fibonacci`",
+                parse_mode="Markdown"
+            )
+        return
+
+    # Sentiment callback
+    if q.data.startswith("sent_"):
+        await q.answer()
+        if q.data == "sent_help":
+            await q.message.reply_text(
+                "🧠 *Sentiment Analizi*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Kullanım: `/sentiment BTCUSDT`\n\n"
+                "Haber ve topluluk verilerinden coin duygu analizi yapılır.\n"
+                "Groq AI + CryptoPanic entegrasyonu ile çalışır.",
+                parse_mode="Markdown"
+            )
+        elif q.data.startswith("sent_") and len(q.data) > 5:
+            symbol = q.data[5:]
+            loading_msg = await q.message.reply_text(f"🧠 `{symbol}` analiz ediliyor...")
+            result = await fetch_sentiment(symbol)
+            try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
+            except Exception: pass
+            bar  = "🟩" * int(result["score"]*10) + "⬜" * (10 - int(result["score"]*10))
+            text = (
+                f"🧠 *{symbol} — Sentiment Analizi*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💭 *Genel Duygu:* {result['label']}\n"
+                f"📊 *Skor:* `{result['score']:.2f}` / 1.00\n{bar}\n"
+                f"📰 *Haber:* `{result['news_count']}`  🔍 *Kaynak:* `{result['source']}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n💬 _{result['summary']}_"
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Yenile", callback_data=f"sent_{symbol}"),
+                InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
+            ]])
+            await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
+    # Takvim callback
+    if q.data.startswith("takvim_"):
+        await q.answer()
+        if q.data == "takvim_refresh":
+            events = await fetch_crypto_calendar()
+            now    = datetime.utcnow()
+            text   = "📅 *Ekonomik & Kripto Takvim*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            for ev in events[:8]:
+                try:
+                    ev_dt  = datetime.strptime(ev["date"], "%Y-%m-%d")
+                    diff   = (ev_dt.date() - now.date()).days
+                    zamanl = "⚡ *BUGÜN*" if diff==0 else ("🔜 Yarın" if diff==1 else f"📆 {diff}g sonra")
+                    imp    = ev.get("importance", 0)
+                    text  += f"\n{'🔴' if imp>=80 else '🟡'} {zamanl}\n📌 {ev['title']}\n"
+                    if ev.get("desc"): text += f"   _{ev['desc']}_\n"
+                except Exception: pass
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔔 Bildirim Aç/Kapat", callback_data="takvim_toggle"),
+                InlineKeyboardButton("🔄 Yenile",             callback_data="takvim_refresh"),
+            ]])
+            try:
+                await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            except Exception:
+                await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        elif q.data == "takvim_toggle":
+            user_id = q.from_user.id
+            async with db_pool.acquire() as conn:
+                existing = await conn.fetchrow("SELECT active FROM takvim_subscribers WHERE user_id=$1", user_id)
+                if existing:
+                    new_val = 0 if existing["active"] else 1
+                    await conn.execute("UPDATE takvim_subscribers SET active=$1 WHERE user_id=$2", new_val, user_id)
+                    status = "açıldı ✅" if new_val else "kapatıldı ❌"
+                else:
+                    await conn.execute("INSERT INTO takvim_subscribers(user_id, active) VALUES($1,1)", user_id)
+                    status = "açıldı ✅"
+            await q.answer(f"📅 Takvim bildirimleri {status}", show_alert=True)
+        return
+
+    # Terim sözlüğü help callback
+    if q.data == "ne_help":
+        await q.answer()
+        terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
+        await q.message.reply_text(
+            f"📚 *Kripto Terim Sözlüğü*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Kullanım: `/ne MACD`\n\n📖 *Mevcut Terimler:*\n{terimler}",
+            parse_mode="Markdown"
+        )
         return
 
     chat = q.message.chat if q.message else None
@@ -3460,6 +4055,14 @@ async def post_init(app):
     # Bot restart sonrası bekleyen silme işlemlerini yeniden zamanla
     await replay_pending_deletes(app.bot)
 
+    # Mini App web sunucusunu başlat
+    try:
+        from miniapp.server import start_web_server
+        asyncio.create_task(start_web_server())
+        log.info("Mini App sunucu başlatıldı.")
+    except Exception as e:
+        log.warning(f"Mini App sunucu başlatılamadı: {e}")
+
     from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
 
     # ── Private chat komutları (tüm kullanıcılar) ──
@@ -3473,6 +4076,10 @@ async def post_init(app):
         BotCommand("alarm_gecmis",   "Alarm geçmişi"),
         BotCommand("favori",         "Favori coinler"),
         BotCommand("mtf",            "Gelişmiş MTF analiz"),
+        BotCommand("fib",            "Fibonacci retracement analizi"),
+        BotCommand("sentiment",      "Coin sentiment / duygu analizi"),
+        BotCommand("takvim",         "Ekonomik takvim & FOMC/CPI takibi"),
+        BotCommand("ne",             "Kripto terim sözlüğü"),
         BotCommand("zamanla",        "Zamanlanmış görev"),
         BotCommand("kar",            "Kar/zarar hesabı"),
         BotCommand("top24",          "24s liderleri"),
@@ -3496,6 +4103,8 @@ def main():
     app.job_queue.run_repeating(scheduled_job,        interval=60,   first=10)
     app.job_queue.run_repeating(hedef_job,            interval=30,   first=45)
     app.job_queue.run_repeating(marketcap_refresh_job,interval=600,  first=5)
+    # Her gün 08:00 UTC - ekonomik takvim bildirimi
+    app.job_queue.run_daily(takvim_job, time=dtime(8, 0))
 
     app.add_handler(CommandHandler("start",          start))
     app.add_handler(CommandHandler("istatistik",     istatistik))
@@ -3514,6 +4123,11 @@ def main():
     app.add_handler(CommandHandler("zamanla",        zamanla_command))
     app.add_handler(CommandHandler("hedef",          hedef_command))
     app.add_handler(CommandHandler("kar",            kar_command))
+    # Yeni komutlar
+    app.add_handler(CommandHandler("fib",            fib_command))
+    app.add_handler(CommandHandler("sentiment",      sentiment_command))
+    app.add_handler(CommandHandler("ne",             ne_command))
+    app.add_handler(CommandHandler("takvim",         takvim_command))
 
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_symbol))
