@@ -5081,7 +5081,7 @@ function openChart(sym){
 const TSYMS=['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','AVAX','LINK','DOT'];
 async function loadTicker(){
   try{
-    const d=await fetch(`${API}/ticker/24hr`).then(r=>r.json());
+    const d=await safeFetch(`${API}/ticker/24hr`,10000);
     TSYMS.forEach(s=>{
       const c=d.find(x=>x.symbol===s+'USDT');if(!c)return;
       const p=parseFloat(c.priceChangePercent);
@@ -5094,66 +5094,72 @@ async function loadTicker(){
 }
 
 // ══════════════════════════════════════════
+//  GÜVENLİ FETCH (timeout + hata yönetimi)
+// ══════════════════════════════════════════
+function safeFetch(url, ms=8000){
+  return new Promise((resolve)=>{
+    const timer=setTimeout(()=>resolve(null), ms);
+    fetch(url)
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{clearTimeout(timer);resolve(d);})
+      .catch(()=>{clearTimeout(timer);resolve(null);});
+  });
+}
+
+// ══════════════════════════════════════════
 //  ANA SAYFA
 // ══════════════════════════════════════════
 async function loadHome(){
-  try{
-    const[t24,fg]=await Promise.all([
-      fetch(`${API}/ticker/24hr`).then(r=>r.json()),
-      fetch('https://api.alternative.me/fng/?limit=2').then(r=>r.json()).catch(()=>null),
-    ]);
-    const u=t24.filter(x=>x.symbol.endsWith('USDT'));
-    const btc=u.find(x=>x.symbol==='BTCUSDT');
-    const eth=u.find(x=>x.symbol==='ETHUSDT');
-    const bv=parseFloat(btc?.quoteVolume||0);
-    const tv=u.reduce((a,x)=>a+parseFloat(x.quoteVolume),0);
-    const dom=((bv/tv)*100);
-    const chs=u.map(x=>parseFloat(x.priceChangePercent));
-    const avg=chs.reduce((a,b)=>a+b,0)/chs.length;
-    const ri=chs.filter(x=>x>0).length;
-    const bp=parseFloat(btc?.priceChangePercent||0);
-    const ep=parseFloat(eth?.priceChangePercent||0);
+  // Binance verisi — zorunlu
+  const t24=await safeFetch(`${API}/ticker/24hr`, 10000);
+  if(!t24||!Array.isArray(t24)){
+    // Hata durumunda kısa mesaj göster, spinner'ı kaldır
+    ['hBtcP','hEthP'].forEach(id=>{const e=$(id);if(e)e.textContent='--';});
+    $('hNabiz').innerHTML=`<div style="text-align:center;font-size:10px;color:var(--muted);padding:10px">
+      ⚠️ Bağlantı hatası — <span onclick="loadHome()" style="color:var(--b);cursor:pointer">Yenile</span></div>`;
+    $('hGainers').innerHTML=`<div style="text-align:center;font-size:10px;color:var(--muted);padding:8px">⚠️ Yüklenemedi</div>`;
+    return;
+  }
 
-    $('hBtcP').textContent='$'+fp(btc?.lastPrice||0);
+  try{
+    const u=t24.filter(x=>x.symbol.endsWith('USDT'));
+    const btc=u.find(x=>x.symbol==='BTCUSDT')||{};
+    const eth=u.find(x=>x.symbol==='ETHUSDT')||{};
+    const bv=parseFloat(btc.quoteVolume||0);
+    const tv=u.reduce((a,x)=>a+parseFloat(x.quoteVolume||0),0);
+    const dom=(tv>0?(bv/tv)*100:0);
+    const chs=u.map(x=>parseFloat(x.priceChangePercent||0));
+    const avg=chs.length?chs.reduce((a,b)=>a+b,0)/chs.length:0;
+    const ri=chs.filter(x=>x>0).length;
+    const bp=parseFloat(btc.priceChangePercent||0);
+    const ep=parseFloat(eth.priceChangePercent||0);
+
+    // BTC / ETH kartları
+    $('hBtcP').textContent='$'+fp(btc.lastPrice||0);
     $('hBtcP').className='sv '+(bp>=0?'up':'dn');
     $('hBtcB').innerHTML=pb(bp)+`<span style="font-size:9px;color:var(--muted);margin-left:5px">24s</span>`;
-    $('hBtcV').textContent='Vol: '+fv(btc?.quoteVolume||0);
-    $('hEthP').textContent='$'+fp(eth?.lastPrice||0);
+    $('hBtcV').textContent='Vol: '+fv(btc.quoteVolume||0);
+    $('hEthP').textContent='$'+fp(eth.lastPrice||0);
     $('hEthP').className='sv '+(ep>=0?'up':'dn');
     $('hEthB').innerHTML=pb(ep)+`<span style="font-size:9px;color:var(--muted);margin-left:5px">24s</span>`;
-    $('hEthV').textContent='Vol: '+fv(eth?.quoteVolume||0);
+    $('hEthV').textContent='Vol: '+fv(eth.quoteVolume||0);
 
-    // Mini sparklines için BTC/ETH klines
-    drawSparkline('spBTC',btc,true);
-    drawSparkline('spETH',eth,false);
+    // Sparkline
+    drawSparkline('spBTC',btc);
+    drawSparkline('spETH',eth);
 
+    // 4 mini stat
     $('hDom').textContent=dom.toFixed(1)+'%';
     $('hAvg').innerHTML=`<span class="${pc(avg)}">${avg>=0?'+':''}${avg.toFixed(1)}%</span>`;
     $('hUp').textContent=ri;
     $('hDn').textContent=u.length-ri;
 
-    // Fear & Greed ring
-    if(fg?.data?.[0]){
-      const f=fg.data[0],f1=fg.data[1];
-      const val=parseInt(f.value);
-      const lbl=f.value_classification;
-      const cols={'Extreme Fear':'#ff3d6b','Fear':'#ff8c42','Neutral':'#f0c040','Greed':'#00e5a0','Extreme Greed':'#00ffb3'};
-      const col=cols[lbl]||'var(--muted)';
-      const arc=$('fgArc');
-      const circ=2*Math.PI*36;
-      arc.style.strokeDashoffset=circ-(val/100)*circ;
-      arc.style.stroke=col;
-      $('fgN').textContent=val;$('fgN').style.color=col;
-      $('fgL').textContent=lbl;
-      $('fgY').textContent=`Dün: ${f1?.value} — ${f1?.value_classification||''}`;
-    }
-
-    // Nabız bar
-    const pct=((ri/u.length)*100).toFixed(0);
+    // Nabız bar (Binance verisiyle — bağımsız)
+    const pct=u.length?((ri/u.length)*100).toFixed(0):50;
     const mood=avg>3?'🐂 Çok Güçlü':avg>1?'🐂 Boğa':avg<-3?'🐻 Çok Zayıf':avg<-1?'🐻 Ayı':'😐 Yatay';
     const mc=avg>1?'var(--g)':avg<-1?'var(--r)':'var(--y)';
     $('hNabiz').innerHTML=`
-      <div style="font-size:18px;font-weight:900;color:${mc};margin-bottom:8px">${mood}</div>
+      <div style="font-size:17px;font-weight:900;color:${mc};margin-bottom:7px">${mood}</div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px">
         <span>🔴 ${u.length-ri} düşen</span><span>🟢 ${ri} yükselen</span>
       </div>
@@ -5162,26 +5168,26 @@ async function loadHome(){
       </div>
       <div style="display:flex;justify-content:space-between">
         <div style="text-align:center">
-          <div style="font-size:14px;font-weight:800;color:var(--t)">${dom.toFixed(1)}%</div>
+          <div style="font-size:13px;font-weight:800;color:var(--t)">${dom.toFixed(1)}%</div>
           <div style="font-size:9px;color:var(--muted)">BTC Dom.</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:14px;font-weight:800;color:var(--b)">${fv(tv)}</div>
+          <div style="font-size:13px;font-weight:800;color:var(--b)">${fv(tv)}</div>
           <div style="font-size:9px;color:var(--muted)">24s Hacim</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:14px;font-weight:800;color:${mc}">${avg>=0?'+':''}${avg.toFixed(1)}%</div>
+          <div style="font-size:13px;font-weight:800;color:${mc}">${avg>=0?'+':''}${avg.toFixed(1)}%</div>
           <div style="font-size:9px;color:var(--muted)">Ort. Değ.</div>
         </div>
       </div>`;
 
     // Top gainers
-    const gainers=[...u].filter(x=>parseFloat(x.quoteVolume)>2e6)
+    const gainers=[...u].filter(x=>parseFloat(x.quoteVolume||0)>2e6)
       .sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent)).slice(0,5);
     const medals=['🥇','🥈','🥉','④','⑤'];
     $('hGainers').innerHTML=gainers.map((c,i)=>{
       const sym=c.symbol.replace('USDT','');
-      const p=parseFloat(c.priceChangePercent);
+      const p=parseFloat(c.priceChangePercent||0);
       return`<div class="cr" onclick="openChart('${c.symbol}')">
         <span style="font-size:${i<3?'16':'11'}px;width:22px;text-align:center;flex-shrink:0">${medals[i]}</span>
         ${cIco(sym)}
@@ -5190,35 +5196,69 @@ async function loadHome(){
             <span class="c-sym">${sym}</span>
             <span class="copy-btn" onclick="event.stopPropagation();copy('${sym}')">📋</span>
           </div>
-          <div class="c-name">${fv(c.quoteVolume)}</div>
+          <div class="c-name">${fv(c.quoteVolume||0)}</div>
         </div>
         <div class="c-r">
           <div class="c-pct ${pc(p)}">${p>0?'+':''}${p.toFixed(2)}%</div>
-          <div class="c-price">$${fp(c.lastPrice)}</div>
+          <div class="c-price">$${fp(c.lastPrice||0)}</div>
         </div>
       </div>`;}).join('');
 
-    loadHomeFav();
-    loadHomeAlarms();
-    loadHomeNews();
     homeLoaded=true;
-  }catch(e){console.error('home:',e);}
+  }catch(e){console.error('home render:',e);}
+
+  // Bağımsız olarak yükle (ana veriyi bloklamasın)
+  loadFearGreed();
+  loadHomeFav();
+  loadHomeAlarms();
+  loadHomeNews();
 }
 
-function drawSparkline(id,ticker,isGreen){
-  // 24s basit sparkline — sadece son fiyat rengi
+// Fear & Greed ayrı yüklenir — ana sayfayı bloklamaz
+async function loadFearGreed(){
+  try{
+    const fg=await safeFetch('https://api.alternative.me/fng/?limit=2', 6000);
+    if(fg?.data?.[0]){
+      const f=fg.data[0],f1=fg.data[1];
+      const val=parseInt(f.value);
+      const lbl=f.value_classification;
+      const cols={'Extreme Fear':'#ff3d6b','Fear':'#ff8c42','Neutral':'#f0c040','Greed':'#00e5a0','Extreme Greed':'#00ffb3'};
+      const col=cols[lbl]||'var(--muted)';
+      const arc=$('fgArc');
+      if(arc){
+        const circ=2*Math.PI*36;
+        arc.style.strokeDashoffset=circ-(val/100)*circ;
+        arc.style.stroke=col;
+      }
+      if($('fgN')){$('fgN').textContent=val;$('fgN').style.color=col;}
+      if($('fgL'))$('fgL').textContent=lbl;
+      if($('fgY'))$('fgY').textContent=`Dün: ${f1?.value||'--'} — ${f1?.value_classification||''}`;
+    }else{
+      if($('fgN'))$('fgN').textContent='N/A';
+      if($('fgL'))$('fgL').textContent='Veri yok';
+    }
+  }catch(e){
+    if($('fgN'))$('fgN').textContent='--';
+  }
+}
+
+function drawSparkline(id,ticker){
   const cv=$(id);if(!cv)return;
   const ctx=cv.getContext('2d');
   const p=parseFloat(ticker?.priceChangePercent||0);
   const col=p>=0?'#00e5a0':'#ff3d6b';
-  // Simulated spark (gerçek veri için klines gerekli, burada placeholder)
-  const pts=[0.3,0.5,0.2,0.7,0.4,0.6,0.5,0.8,0.6,p>=0?0.9:0.1].map(x=>x*28+2);
+  // Eğilimi simüle eden noktalar
+  const base=p>=0
+    ?[0.3,0.25,0.4,0.35,0.5,0.45,0.6,0.7,0.65,0.85]
+    :[0.85,0.7,0.75,0.6,0.65,0.5,0.4,0.45,0.3,0.2];
+  const pts=base.map(x=>x*26+2);
   ctx.clearRect(0,0,60,32);
   ctx.beginPath();ctx.moveTo(0,32-pts[0]);
-  pts.forEach((y,i)=>{if(i>0)ctx.lineTo(i*6,32-y);});
+  pts.forEach((y,i)=>{if(i>0)ctx.lineTo(i*(54/9),32-y);});
   ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
-  ctx.lineTo(54,32);ctx.lineTo(0,32);ctx.closePath();
-  ctx.fillStyle=col+'18';ctx.fill();
+  const lastX=54,lastY=32-pts[9];
+  ctx.lineTo(lastX,32);ctx.lineTo(0,32);ctx.closePath();
+  ctx.fillStyle=col+'15';ctx.fill();
 }
 
 async function loadHomeFav(){
@@ -5226,50 +5266,55 @@ async function loadHomeFav(){
   if(!UID){
     el.innerHTML=`<div style="text-align:center;padding:10px 8px;font-size:10px;color:var(--muted)">
       🔒 Favoriler için Telegram üzerinden açın<br>
-      <span style="font-size:9px">Botta <strong>/favori</strong> ile ekleyin</span></div>`;return;
+      <span style="font-size:9px">Botta <strong>/favori</strong> ile ekleyin</span></div>`;
+    return;
   }
   try{
-    const r=await fetch(`/api/favorites?uid=${UID}`).then(x=>x.json()).catch(()=>null);
+    const r=await safeFetch(`/api/favorites?uid=${UID}`, 5000);
     const favs=r?.favorites||[];
     if(!favs.length){
       el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">
-        ⭐ Favori coinleriniz yok<br><span style="font-size:9px">Botta /favori ekle BTCUSDT yazın</span></div>`;return;
+        ⭐ Favori coinleriniz yok<br><span style="font-size:9px">Botta /favori ekle BTCUSDT yazın</span></div>`;
+      return;
     }
-    const prices=await Promise.all(favs.slice(0,6).map(sym=>
-      fetch(`${API}/ticker/24hr?symbol=${sym}`).then(x=>x.json()).catch(()=>({symbol:sym,error:true}))
-    ));
-    el.innerHTML=prices.map(c=>{
-      if(c.error){const s=c.symbol.replace('USDT','');return`<div class="cr">${cIco(s)}<div class="c-info"><div class="c-sym">${s}</div></div><span class="bdg by">--</span></div>`;}
-      const sym=c.symbol.replace('USDT','');const p=parseFloat(c.priceChangePercent);
+    // Favori fiyatlarını tek batch çağrıyla al
+    const allData=await safeFetch(`${API}/ticker/24hr`, 8000);
+    if(!allData){el.innerHTML=`<div style="text-align:center;padding:8px;font-size:10px;color:var(--muted)">⚠️ Fiyatlar alınamadı</div>`;return;}
+    el.innerHTML=favs.slice(0,6).map(sym=>{
+      const c=Array.isArray(allData)?allData.find(x=>x.symbol===sym):null;
+      if(!c){const s=sym.replace('USDT','');return`<div class="cr">${cIco(s)}<div class="c-info"><div class="c-sym">${s}</div></div><span class="bdg by">--</span></div>`;}
+      const s=c.symbol.replace('USDT','');const p=parseFloat(c.priceChangePercent||0);
       return`<div class="cr" onclick="openChart('${c.symbol}')">
-        ${cIco(sym)}
+        ${cIco(s)}
         <div class="c-info">
           <div style="display:flex;align-items:center;gap:5px">
-            <span class="c-sym">${sym}</span>
-            <span class="copy-btn" onclick="event.stopPropagation();copy('${sym}')">📋</span>
+            <span class="c-sym">${s}</span>
+            <span class="copy-btn" onclick="event.stopPropagation();copy('${s}')">📋</span>
           </div>
-          <div class="c-name">${fv(c.quoteVolume)}</div>
+          <div class="c-name">${fv(c.quoteVolume||0)}</div>
         </div>
         <div class="c-r">
           <div class="c-pct ${pc(p)}">${p>0?'+':''}${p.toFixed(2)}%</div>
-          <div class="c-price">$${fp(c.lastPrice)}</div>
+          <div class="c-price">$${fp(c.lastPrice||0)}</div>
         </div>
       </div>`;}).join('');
-  }catch(e){el.innerHTML=`<div class="ld" style="padding:8px">⚠️ Yüklenemedi</div>`;}
+  }catch(e){el.innerHTML=`<div style="text-align:center;padding:8px;font-size:10px;color:var(--muted)">⚠️ Yüklenemedi</div>`;}
 }
 
 async function loadHomeAlarms(){
   const el=$('hAlarms');
   if(!UID){
     el.innerHTML=`<div style="text-align:center;padding:10px 8px;font-size:10px;color:var(--muted)">
-      🔒 Alarmlar için Telegram üzerinden açın</div>`;return;
+      🔒 Alarmlar için Telegram üzerinden açın</div>`;
+    return;
   }
   try{
-    const r=await fetch(`/api/alarms?uid=${UID}`).then(x=>x.json()).catch(()=>null);
+    const r=await safeFetch(`/api/alarms?uid=${UID}`, 5000);
     const alarms=(r?.alarms||[]).filter(a=>a.active).slice(0,4);
     if(!alarms.length){
       el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">
-        🔕 Aktif alarm yok<br><span style="font-size:9px">Botta /alarm_ekle yazın</span></div>`;return;
+        🔕 Aktif alarm yok<br><span style="font-size:9px">Botta /alarm_ekle yazın</span></div>`;
+      return;
     }
     const typeIco={'percent':'📊','rsi':'🔮','band':'📏','price':'🎯'};
     el.innerHTML=alarms.map(a=>{
@@ -5286,30 +5331,34 @@ async function loadHomeAlarms(){
         </div>
         <span class="bdg bg">Aktif</span>
       </div>`;}).join('');
-  }catch(e){el.innerHTML=`<div class="ld" style="padding:8px">⚠️ Yüklenemedi</div>`;}
+  }catch(e){el.innerHTML=`<div style="text-align:center;padding:8px;font-size:10px;color:var(--muted)">⚠️ Yüklenemedi</div>`;}
 }
 
 async function loadHomeNews(){
   const el=$('hNews');
   try{
-    const url=`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.coindesk.com/arc/outboundfeeds/rss/')}&count=5`;
-    const d=await fetch(url,{signal:AbortSignal.timeout(7000)}).then(r=>r.json()).catch(()=>null);
+    // rss2json proxy — timeout 8s
+    const url='https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent('https://www.coindesk.com/arc/outboundfeeds/rss/')+'&count=5';
+    const d=await safeFetch(url, 8000);
     if(d?.items?.length){
       $('hNewsT').textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
       el.innerHTML=d.items.slice(0,4).map((item,i)=>`
-        <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);${i===d.items.slice(0,4).length-1?'border-bottom:none':''}">
-          <div style="font-size:20px;font-weight:900;color:var(--border2);flex-shrink:0;line-height:1;margin-top:1px">${String(i+1).padStart(2,'0')}</div>
+        <div style="display:flex;gap:8px;padding:8px 0;${i<3?'border-bottom:1px solid var(--border)':''}">
+          <div style="font-size:18px;font-weight:900;color:var(--border2);flex-shrink:0;line-height:1.1">${String(i+1).padStart(2,'0')}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:11px;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${item.title}</div>
-            <div style="font-size:9px;color:var(--muted);margin-top:3px;display:flex;gap:5px">
-              <span style="color:var(--b);font-weight:700">CoinDesk</span>
-              <span>•</span>
-              <span>${new Date(item.pubDate).toLocaleDateString('tr-TR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+            <div style="font-size:9px;color:var(--muted);margin-top:3px;display:flex;gap:4px">
+              <span style="color:var(--b);font-weight:700">CoinDesk</span><span>•</span>
+              <span>${new Date(item.pubDate).toLocaleDateString('tr-TR',{month:'short',day:'numeric'})}</span>
             </div>
           </div>
         </div>`).join('');
-    }else{el.innerHTML=`<div class="ld" style="padding:10px">📡 Haber yüklenemedi</div>`;}
-  }catch(e){el.innerHTML=`<div class="ld" style="padding:10px">📡 Geçici hata</div>`;}
+    }else{
+      el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">📡 Haber yüklenemedi</div>`;
+    }
+  }catch(e){
+    el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">📡 Geçici bağlantı hatası</div>`;
+  }
 }
 
 // ══════════════════════════════════════════
@@ -5317,7 +5366,7 @@ async function loadHomeNews(){
 // ══════════════════════════════════════════
 async function loadMkt(){
   try{
-    const d=await fetch(`${API}/ticker/24hr`).then(r=>r.json());
+    const d=await safeFetch(`${API}/ticker/24hr`,10000);
     allCoins=d.filter(x=>{
       if(!x.symbol.endsWith('USDT'))return false;
       const vol=parseFloat(x.quoteVolume);
@@ -5792,7 +5841,7 @@ function drawGauge(id,val,col){
 // ══════════════════════════════════════════
 async function loadTop(){
   try{
-    const d=await fetch(`${API}/ticker/24hr`).then(r=>r.json());
+    const d=await safeFetch(`${API}/ticker/24hr`,10000);
     const u=d.filter(x=>{
       if(!x.symbol.endsWith('USDT'))return false;
       const b=x.symbol.replace('USDT','');
