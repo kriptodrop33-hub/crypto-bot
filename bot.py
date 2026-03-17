@@ -2698,6 +2698,12 @@ async def start(update: Update, context):
             except Exception:
                 pass
 
+    # Grup ve kanal katılım butonlarını en alta ekle (herkese göster)
+    base_buttons.append([
+        InlineKeyboardButton("💬 Gruba Katıl",  url="https://t.me/kriptodroptr"),
+        InlineKeyboardButton("📢 Kanala Katıl", url="https://t.me/kriptodropduyuru"),
+    ])
+
     keyboard = InlineKeyboardMarkup(base_buttons)
     welcome_text = (
         "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
@@ -2707,7 +2713,11 @@ async def start(update: Update, context):
         "🎯 Fiyat Hedefi: `/hedef BTCUSDT 70000`\n"
         "💰 Kar/Zarar: `/kar BTCUSDT 0.5 60000`\n"
         "⭐ Favori: `/favori ekle BTCUSDT`\n"
-        "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`"
+        "⏰ Zamanla: `/zamanla analiz BTCUSDT 09:00`\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "📢 *Topluluğumuza katıl:*\n"
+        "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
+        "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
     )
 
     if in_group:
@@ -2719,12 +2729,18 @@ async def start(update: Update, context):
             chat_id=chat.id,
             text=welcome_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            disable_web_page_preview=True
         )
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
     else:
-        await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
 
 async def market(update: Update, context):
     async with aiohttp.ClientSession() as session:
