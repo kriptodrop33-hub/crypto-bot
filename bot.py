@@ -5661,55 +5661,225 @@ async function doFib(){
   const el=document.getElementById('fOut');
   el.innerHTML='<div class="ld"><div class="spin"></div>Fibonacci hesaplanıyor...</div>';
   try{
-    const k=await sf(`${BIN}/klines?symbol=${s}&interval=${tf}&limit=100`,10000);
+    const k=await sf(`${BIN}/klines?symbol=${s}&interval=${tf}&limit=120`,10000);
     if(!Array.isArray(k)||k.length<20){el.innerHTML='<div class="ld">❌ Veri yok</div>';return;}
-    const hi=k.map(x=>parseFloat(x[2])),lo=k.map(x=>parseFloat(x[3])),cl=k.map(x=>parseFloat(x[4]));
-    const H=Math.max(...hi),L=Math.min(...lo),CUR=cl[cl.length-1],D=H-L,up=CUR>cl[0];
+
+    const opens =k.map(x=>parseFloat(x[1]));
+    const highs =k.map(x=>parseFloat(x[2]));
+    const lows  =k.map(x=>parseFloat(x[3]));
+    const closes=k.map(x=>parseFloat(x[4]));
+    const times =k.map(x=>x[0]);
+    const n=closes.length;
+
+    // Swing High/Low tespiti
+    const H=Math.max(...highs), L=Math.min(...lows);
+    const CUR=closes[n-1], D=H-L;
+    const up=CUR>closes[0];
+
     const FL=[0,.236,.382,.5,.618,.786,1];
     const FC=['#ffd700','#ff8c42','#ff3d6b','#00d4e8','#3a9fff','#9b6fff','#00e5a0'];
-    const FN=['0%','23.6%','38.2%','50%','61.8% 🏆','78.6%','100%'];
+    const FN=['0%','23.6%','38.2%','50.0%','61.8% 🏆','78.6%','100%'];
     const FP=FL.map(l=>up?H-D*l:L+D*l);
     const ni=FP.reduce((b,p,i)=>Math.abs(p-CUR)<Math.abs(FP[b]-CUR)?i:b,0);
-    const p2p=p=>Math.max(0,Math.min(100,((p-L)/(H-L))*100));
     const sym=s.replace('USDT','');
+    const pct24=(CUR-closes[0])/closes[0]*100;
+
+    // ── SVG Fibonacci Grafik ──
+    function buildFibSVG(width){
+      const W=width, H_SVG=240;
+      const padL=4, padR=52, padT=10, padB=22;
+      const cW=W-padL-padR, cH=H_SVG-padT-padB;
+
+      // Y ekseni: tüm fiyatlar + fib seviyeleri
+      const allP=[...highs,...lows,...FP];
+      const minP=Math.min(...allP)*0.9995;
+      const maxP=Math.max(...allP)*1.0005;
+      const range=maxP-minP;
+      const px=price=>padT+cH-((price-minP)/range)*cH;
+      const xPos=i=>padL+(i+0.5)*(cW/n);
+      const candleW=Math.max(1,(cW/n)*0.6);
+
+      let svg=`<svg width="${W}" height="${H_SVG}" viewBox="0 0 ${W} ${H_SVG}"
+        xmlns="http://www.w3.org/2000/svg" style="display:block;overflow:visible">`;
+
+      // ── Fibonacci arka plan bantları ──
+      for(let i=0;i<FP.length-1;i++){
+        const y1=px(Math.max(FP[i],FP[i+1]));
+        const y2=px(Math.min(FP[i],FP[i+1]));
+        const h=Math.abs(y2-y1);
+        // Hafif dolgu
+        svg+=`<rect x="${padL}" y="${y1}" width="${cW}" height="${Math.max(1,h)}"
+          fill="${FC[i]}" opacity="0.03"/>`;
+      }
+
+      // ── Grid yatay çizgiler ──
+      for(let i=0;i<=5;i++){
+        const price=minP+(range*i/5);
+        const y=px(price);
+        svg+=`<line x1="${padL}" y1="${y}" x2="${W-padR+2}" y2="${y}"
+          stroke="rgba(29,45,66,.6)" stroke-width="1"/>`;
+        svg+=`<text x="${W-padR+5}" y="${y+3}" fill="#5577aa" font-size="8"
+          font-family="monospace">${fp(price)}</text>`;
+      }
+
+      // ── X ekseni etiketleri ──
+      const step=Math.max(1,Math.floor(n/6));
+      for(let i=0;i<n;i+=step){
+        const d=new Date(times[i]);
+        const lbl=(tf==='1d'||tf==='1w')
+          ?d.toLocaleDateString('tr-TR',{month:'short',day:'numeric'})
+          :String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+        svg+=`<text x="${xPos(i)}" y="${H_SVG-5}" fill="#5577aa" font-size="8"
+          text-anchor="middle" font-family="sans-serif">${lbl}</text>`;
+      }
+
+      // ── Fibonacci yatay çizgiler (label ile) ──
+      for(let i=0;i<FP.length;i++){
+        const y=px(FP[i]);
+        const isN=i===ni;
+        const isCur=Math.abs(FP[i]-CUR)<range*0.005;
+        const sw=isN?1.5:0.8;
+        const op=isN?0.9:0.5;
+        // Çizgi
+        svg+=`<line x1="${padL}" y1="${y}" x2="${W-padR+2}" y2="${y}"
+          stroke="${FC[i]}" stroke-width="${sw}" stroke-dasharray="${isN?'':'4,3'}" opacity="${op}"/>`;
+        // Sol etiket (fib yüzde)
+        const fibLbl=FL[i]===0?'0':FL[i]===1?'1':(FL[i]*100).toFixed(1)+'%';
+        svg+=`<rect x="${padL}" y="${y-7}" width="32" height="12" rx="3"
+          fill="${FC[i]}" opacity="${isN?0.25:0.12}"/>`;
+        svg+=`<text x="${padL+16}" y="${y+2}" fill="${FC[i]}" font-size="7.5"
+          text-anchor="middle" font-weight="${isN?700:400}" font-family="monospace">${fibLbl}</text>`;
+        // Sağ tarafta fiyat
+        svg+=`<text x="${W-padR+5}" y="${y+3}" fill="${FC[i]}" font-size="7.5"
+          font-family="monospace" opacity="${isN?1:.7}">${fp(FP[i])}</text>`;
+      }
+
+      // ── Mumlar ──
+      for(let i=0;i<n;i++){
+        const x=xPos(i);
+        const o=opens[i],h=highs[i],l=lows[i],c=closes[i];
+        const isBull=c>=o;
+        const col=isBull?'#00e5a0':'#ff3d6b';
+        const bTop=px(Math.max(o,c));
+        const bBot=px(Math.min(o,c));
+        const bH=Math.max(1,bBot-bTop);
+        // Gövde
+        svg+=`<rect x="${x-candleW/2}" y="${bTop}" width="${candleW}" height="${bH}"
+          fill="${col}" opacity="0.85" rx="0.5"/>`;
+        // Üst wick
+        const wTop=px(h);
+        if(wTop<bTop)svg+=`<line x1="${x}" y1="${wTop}" x2="${x}" y2="${bTop}"
+          stroke="${col}" stroke-width="1.2" opacity="0.85"/>`;
+        // Alt wick
+        const wBot=px(l);
+        if(wBot>bBot)svg+=`<line x1="${x}" y1="${bBot}" x2="${x}" y2="${wBot}"
+          stroke="${col}" stroke-width="1.2" opacity="0.85"/>`;
+      }
+
+      // ── Mevcut fiyat yatay çizgisi ──
+      const cy=px(CUR);
+      svg+=`<line x1="${padL}" y1="${cy}" x2="${W-padR+2}" y2="${cy}"
+        stroke="white" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>`;
+      svg+=`<rect x="${W-padR+4}" y="${cy-6}" width="${padR-6}" height="12" rx="3"
+        fill="rgba(255,255,255,.15)"/>`;
+      svg+=`<text x="${W-padR+4+(padR-6)/2}" y="${cy+3}" fill="white" font-size="7.5"
+        text-anchor="middle" font-family="monospace" font-weight="700">${fp(CUR)}</text>`;
+
+      // ── Swing High / Low işaretleri ──
+      const hiIdx=highs.indexOf(H);
+      const loIdx=lows.indexOf(L);
+      svg+=`<polygon points="${xPos(hiIdx)},${px(H)-14} ${xPos(hiIdx)-5},${px(H)-7} ${xPos(hiIdx)+5},${px(H)-7}"
+        fill="#ffd700" opacity="0.8"/>`;
+      svg+=`<text x="${xPos(hiIdx)}" y="${px(H)-18}" fill="#ffd700" font-size="8"
+        text-anchor="middle">H</text>`;
+      svg+=`<polygon points="${xPos(loIdx)},${px(L)+14} ${xPos(loIdx)-5},${px(L)+7} ${xPos(loIdx)+5},${px(L)+7}"
+        fill="#00e5a0" opacity="0.8"/>`;
+      svg+=`<text x="${xPos(loIdx)}" y="${px(L)+24}" fill="#00e5a0" font-size="8"
+        text-anchor="middle">L</text>`;
+
+      svg+='</svg>';
+      return svg;
+    }
+
+    // TF butonları HTML
+    const tfBtns=['1h','4h','1d','1w'].map(t=>`
+      <button onclick="document.getElementById('fTF').value='${t}';doFib()"
+        style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+        background:${t===tf?'var(--bd)':'var(--card2)'};color:${t===tf?'var(--b2)':'var(--muted)'};
+        font-size:10px;font-weight:700;cursor:pointer">${t}</button>`).join('');
+
     el.innerHTML=`
-      <div class="card cb">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">
+      <div class="card cb" style="padding:0;overflow:hidden">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;gap:7px">
             ${cIco(sym)}
             <div>
-              <div style="display:flex;align-items:center;gap:4px">
+              <div style="display:flex;align-items:center;gap:5px">
                 <span style="font-size:14px;font-weight:800">${sym}</span>
-                <span class="cp-btn" onclick="cp('${s}')">📋</span>
+                <span class="cp-btn" onclick="cp('${s}','${s}')">📋</span>
+                <span style="font-size:9px;color:var(--muted)">/USDT • ${tf}</span>
+                <span style="font-size:9px;color:var(--muted)">• ${up?'📈 Yük.':'📉 Düş.'}</span>
               </div>
-              <div style="font-size:9px;color:var(--muted)">${tf} • ${up?'📈 Yükseliş':'📉 Düşüş'}</div>
             </div>
           </div>
-          <div style="font-size:16px;font-weight:800">$${fp(CUR)}</div>
-        </div>
-        <div style="margin:12px 0 10px">
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:5px">
-            <span>📉 $${fp(L)}</span><span>📈 $${fp(H)}</span>
+          <div style="text-align:right">
+            <div style="font-size:16px;font-weight:800;color:${pct24>=0?'var(--g)':'var(--r)'}">${fp(CUR)}</div>
+            ${pb(pct24)}
           </div>
-          <div style="height:9px;background:rgba(255,255,255,.04);border-radius:5px;position:relative;border:1px solid var(--border)">
-            <div style="position:absolute;inset:0;border-radius:5px;background:linear-gradient(90deg,var(--r),var(--y),var(--g));opacity:.12"></div>
-            ${FL.map((l,i)=>`<div style="position:absolute;top:-3px;left:${p2p(FP[i])}%;width:2px;height:15px;background:${FC[i]};border-radius:1px;transform:translateX(-50%)"></div>`).join('')}
-            <div style="position:absolute;top:-5px;left:${p2p(CUR)}%;width:3px;height:19px;background:white;border-radius:2px;transform:translateX(-50%);box-shadow:0 0 7px rgba(255,255,255,.5)"></div>
+        </div>
+
+        <!-- TF Butonları -->
+        <div style="display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--border)">${tfBtns}</div>
+
+        <!-- SVG Grafik -->
+        <div id="fibSvgWrap" style="padding:8px 6px 4px;overflow:hidden">
+          <!-- SVG buraya inject edilecek -->
+        </div>
+
+        <!-- Fib bilgi satırı -->
+        <div style="padding:8px 11px;border-top:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;margin-bottom:7px">
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--muted)">📈 Swing High</div>
+              <div style="font-size:12px;font-weight:700;color:var(--y)">$${fp(H)}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--muted)">En Yakın Seviye</div>
+              <div style="font-size:12px;font-weight:800;color:${FC[ni]}">${FN[ni]} — $${fp(FP[ni])}</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:9px;color:var(--muted)">📉 Swing Low</div>
+              <div style="font-size:12px;font-weight:700;color:var(--g)">$${fp(L)}</div>
+            </div>
           </div>
-          <div style="text-align:center;font-size:9px;color:var(--muted);margin-top:5px">▲ Mevcut konum (${p2p(CUR).toFixed(0)}%)</div>
-        </div>
-        <div style="background:var(--card2);border-radius:8px;border:1px solid var(--border);overflow:hidden">
-          ${FL.map((l,i)=>{const p=FP[i];const isN=i===ni;return`
-            <div style="display:flex;align-items:center;padding:7px 9px;${isN?'background:rgba(58,159,255,.08);border-left:3px solid var(--b);':'border-left:3px solid transparent;'}border-bottom:1px solid var(--border)">
-              <div style="width:7px;height:7px;border-radius:50%;background:${FC[i]};flex-shrink:0;margin-right:8px"></div>
-              <span style="font-size:11px;font-weight:${isN?700:400};color:${isN?'var(--b2)':'var(--muted)'};flex:1">${FN[i]}${isN?' ◀ En Yakın':''}</span>
-              <span style="font-size:11px;font-weight:700;color:${p<CUR?'var(--g)':p>CUR?'var(--r)':'var(--text)'}">$${fp(p)}</span>
-            </div>`}).join('')}
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:9px;color:var(--muted)">
-          <span>📈 High: $${fp(H)}</span><span>📉 Low: $${fp(L)}</span>
+          <!-- Seviyeler tablosu (kompakt) -->
+          <div style="background:var(--card2);border-radius:7px;border:1px solid var(--border);overflow:hidden">
+            ${FL.map((l,i)=>{const p=FP[i];const isN=i===ni;return`
+              <div style="display:flex;align-items:center;padding:5px 9px;
+                ${isN?'background:rgba(58,159,255,.1);':''}
+                border-bottom:1px solid var(--border)">
+                <div style="width:8px;height:8px;border-radius:50%;background:${FC[i]};flex-shrink:0;margin-right:7px"></div>
+                <span style="font-size:10px;color:${isN?'var(--b2)':'var(--muted)'};font-weight:${isN?700:400};flex:1">
+                  ${FN[i]}${isN?' ◀':''}</span>
+                <span style="font-size:10px;font-weight:700;color:${p<CUR?'var(--g)':p>CUR?'var(--r)':'var(--text)'}">
+                  $${fp(p)}</span>
+                <span style="font-size:9px;color:var(--muted);margin-left:6px;width:40px;text-align:right">
+                  ${p<CUR?'Destek':'Direnç'}</span>
+              </div>`}).join('')}
+          </div>
         </div>
       </div>`;
+
+    // SVG'yi inject et (genişliği DOM'dan al)
+    setTimeout(()=>{
+      const wrap=document.getElementById('fibSvgWrap');
+      if(wrap){
+        const W=Math.max(280, wrap.offsetWidth||wrap.clientWidth||300);
+        wrap.innerHTML=buildFibSVG(W);
+      }
+    }, 50);
+
   }catch(e){if(el)el.innerHTML=`<div class="ld">⚠️ ${e.message}</div>`;}
 }
 
