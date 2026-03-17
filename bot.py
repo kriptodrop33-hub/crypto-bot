@@ -3417,13 +3417,46 @@ async def start(update: Update, context):
                 pass
 
     if in_group:
-        keyboard    = InlineKeyboardMarkup(group_buttons)
+        # Grup için DM yönlendirme butonu + tüm butonlar
+        group_full_buttons = [
+            [InlineKeyboardButton("📊 Market",        callback_data="market"),
+             InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
+            [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
+             InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
+            [InlineKeyboardButton("🔔 Alarmlarım",    callback_data="my_alarm"),
+             InlineKeyboardButton("⭐ Favorilerim",   callback_data="fav_liste")],
+            [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help"),
+             InlineKeyboardButton("📅 Zamanla",       callback_data="zamanla_help")],
+            [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
+             InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
+            [InlineKeyboardButton("📐 Fibonacci",      callback_data="fib_help"),
+             InlineKeyboardButton("🧠 Sentiment",      callback_data="sent_help")],
+            [InlineKeyboardButton("📅 Ekonomik Takvim",callback_data="takvim_refresh"),
+             InlineKeyboardButton("📚 Terim Sözlüğü", callback_data="ne_help")],
+            [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
+             InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
+            [InlineKeyboardButton("➡️ Bota DM At (Tüm Özellikler)", url=f"https://t.me/{BOT_USERNAME}?start=hello")],
+        ]
+        # Mini App butonu varsa ekle (DM yönlendirme butonunun üstüne)
+        _murl_group = get_miniapp_url()
+        if _murl_group:
+            group_full_buttons.insert(-2, [InlineKeyboardButton(
+                "🖥 Dashboard Mini App", web_app={"url": _murl_group}
+            )])
+
+        keyboard    = InlineKeyboardMarkup(group_full_buttons)
         welcome_text = (
             "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
             "7/24 piyasayı izliyorum.\n\n"
-            "💡 Coin analizi için sembol yaz: `BTCUSDT`\n"
-            "📌 Tüm özellikler için bota *DM* yaz!\n"
+            "💡 *Analiz:* `BTCUSDT` yaz\n"
+            "🔔 *Alarm:* `/alarm_ekle BTCUSDT 3.5`\n"
+            "🎯 *Hedef:* `/hedef BTCUSDT 70000`\n"
+            "📐 *Fibonacci:* `/fib BTCUSDT`\n"
+            "🧠 *Sentiment:* `/sentiment BTCUSDT`\n"
+            "📅 *Takvim:* `/takvim`\n"
+            "💰 *Kar/Zarar:* `/kar BTCUSDT 0.5 60000`\n"
             "━━━━━━━━━━━━━━━━━━\n"
+            "📢 *Topluluğumuza katıl:*\n"
             "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
             "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
         )
