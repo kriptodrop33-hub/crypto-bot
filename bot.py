@@ -4616,7 +4616,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
 
 <!-- TABS -->
 <div class="tabs">
-  <div class="tab on" onclick="go('home')">🏠 Ana Sayfa</div>
+  <div class="tab on" onclick="go('home')">🏠 Ana</div>
   <div class="tab" onclick="go('mkt')">📈 Piyasa</div>
   <div class="tab" onclick="go('chart')">🕯️ Grafik</div>
   <div class="tab" onclick="go('nabiz')">🌡️ Nabız</div>
@@ -4625,7 +4625,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div class="tab" onclick="go('fib')">📐 Fibonacci</div>
   <div class="tab" onclick="go('sent')">🧠 Duygu</div>
   <div class="tab" onclick="go('alarmlar')">🔔 Alarmlar</div>
-  <div class="tab" onclick="go('takvim')">📅 Takvim</div>
 </div>
 
 <!-- SCROLL -->
@@ -4690,6 +4689,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div class="card" style="margin-bottom:8px">
     <div class="sh"><div class="sh-t">🚀 <span>LİDERLER</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
     <div id="hGain"><div class="ld" style="padding:8px"><div class="spin"></div></div></div>
+  </div>
+  <!-- Takvim Ana Sayfada -->
+  <div class="card cy" style="margin-bottom:8px">
+    <div class="sh"><div class="sh-t">📅 <span>EKONOMİK TAKVİM</span></div><span style="font-size:9px;color:var(--muted)" id="hTakT"></span></div>
+    <div id="hTak"><div class="ld" style="padding:8px"><div class="spin"></div></div></div>
   </div>
   <div class="card">
     <div class="sh"><div class="sh-t">📰 <span>SON HABERLER</span></div><span style="font-size:9px;color:var(--muted)" id="hNT">--:--</span></div>
@@ -4829,7 +4833,7 @@ const CGP=PROXY+encodeURIComponent('https://api.coingecko.com/api/v3');
 // Fear&Greed proxy üzerinden  
 const FGP=PROXY+encodeURIComponent('https://api.alternative.me/fng/?limit=2');
 
-const PAGES=['home','mkt','chart','nabiz','top','analiz','fib','sent','alarmlar','takvim'];
+const PAGES=['home','mkt','chart','nabiz','top','analiz','fib','sent','alarmlar'];
 let CUR='home';
 let allCoins=[],filtCoins=[],coinFilter='all';
 let topData={g:[],l:[],v:[]},topMode='g';
@@ -4908,7 +4912,6 @@ function go(t){
   if(t==='nabiz')loadNabiz();
   if(t==='top'&&!topData.g.length)loadTop();
   if(t==='alarmlar')loadAlarms();
-  if(t==='takvim')loadTakvim();
 }
 function openChart(sym){document.getElementById('gSym').value=sym;go('chart');drawChart();}
 
@@ -5017,6 +5020,7 @@ async function loadHome(){
   loadFG();
   loadHomeFav();
   loadHomeAlarms();
+  loadHomeTakvim();
   loadHomeNews();
 }
 
@@ -5102,33 +5106,71 @@ async function loadHomeAlarms(){
   }catch(e){el.innerHTML=`<div style="text-align:center;padding:8px;font-size:10px;color:var(--muted)">⚠️ Yüklenemedi</div>`;}
 }
 
+async function loadHomeTakvim(){
+  const el=document.getElementById('hTak');
+  if(!el)return;
+  // Statik takvim — API gerektirmez, her zaman çalışır
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const evs=[
+    {t:'🏦 FOMC',d:18,imp:'h',desc:'Fed faiz kararı'},
+    {t:'📊 CPI',d:12,imp:'h',desc:'Enflasyon verisi'},
+    {t:'💼 NFP',d:7,imp:'m',desc:'İstihdam raporu'},
+    {t:'📈 PCE',d:28,imp:'h',desc:'Fiyat endeksi'},
+  ].map(e=>{
+    let dt=new Date(y,m,e.d);
+    if(dt<now)dt=new Date(y,m>=11?0:m+1,m>=11?y+1:y,e.d);
+    // Ay taşması düzelt
+    try{dt=new Date(y,m,e.d);if(dt<now){const nm=m+1>11?0:m+1;const ny=m+1>11?y+1:y;dt=new Date(ny,nm,e.d);}}catch(ex){}
+    return{...e,dt};
+  }).sort((a,b)=>a.dt-b.dt).slice(0,3);
+  const ic={h:'var(--r)',m:'var(--y)',l:'var(--g)'};
+  el.innerHTML=evs.map(e=>{
+    const diff=Math.ceil((e.dt-now)/86400000);
+    const w=diff===0?'⚡ BUGÜN':diff===1?'🔜 YARIN':`${diff} gün`;
+    const urgent=diff<=3;
+    const col=urgent?ic[e.imp]:'var(--muted)';
+    return`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <span style="font-size:12px;font-weight:700">${e.t}</span>
+        <span style="font-size:9px;color:var(--muted);margin-left:5px">${e.desc}</span>
+      </div>
+      <span style="font-size:10px;font-weight:800;color:${col};white-space:nowrap;margin-left:8px">${w}</span>
+    </div>`;}).join('')+
+    `<div style="text-align:center;padding-top:6px;font-size:9px;color:var(--muted)">Bildirim için botta <strong>/takvim</strong></div>`;
+}
+
 async function loadHomeNews(){
   const el=document.getElementById('hNews');if(!el)return;
+  // /api/news endpoint'i üzerinden XML parse (sunucu tarafında)
   try{
-    const url='https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent('https://www.coindesk.com/arc/outboundfeeds/rss/')+'&count=5';
-    // Proxy üzerinden dene
-    const proxyUrl='/api/proxy?url='+encodeURIComponent(url);
-    let d=await sf(proxyUrl,8000);
-    if(!d?.items?.length)d=await sf(url,8000);
+    const d=await sf('/api/news',9000);
     if(d?.items?.length){
       const nt=document.getElementById('hNT');
       if(nt)nt.textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
       el.innerHTML=d.items.slice(0,4).map((item,i)=>`
         <div style="display:flex;gap:7px;padding:7px 0;${i<3?'border-bottom:1px solid var(--border)':''}">
-          <div style="font-size:16px;font-weight:900;color:var(--border2);flex-shrink:0;line-height:1.2">${String(i+1).padStart(2,'0')}</div>
+          <div style="font-size:16px;font-weight:900;color:var(--border2);flex-shrink:0;line-height:1.2;min-width:20px;text-align:center">${i+1}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:11px;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${item.title}</div>
+            <div style="font-size:11px;font-weight:600;line-height:1.4;
+              display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+              ${item.title||'--'}
+            </div>
             <div style="font-size:9px;color:var(--muted);margin-top:2px">
-              <span style="color:var(--b);font-weight:700">CoinDesk</span> •
-              ${new Date(item.pubDate).toLocaleDateString('tr-TR',{month:'short',day:'numeric'})}
+              <span style="color:var(--b);font-weight:700">${item.source||'Kripto'}</span>
+              ${item.date?' • '+item.date:''}
             </div>
           </div>
         </div>`).join('');
     }else{
-      el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">📡 Haber servisine ulaşılamıyor</div>`;
+      el.innerHTML=`<div style="text-align:center;padding:12px;font-size:10px;color:var(--muted)">
+        📡 Haber servisleri şu an erişilemiyor</div>`;
     }
-  }catch(e){el.innerHTML=`<div style="text-align:center;padding:10px;font-size:10px;color:var(--muted)">📡 Geçici bağlantı hatası</div>`;}
+  }catch(e){
+    el.innerHTML=`<div style="text-align:center;padding:12px;font-size:10px;color:var(--muted)">
+      📡 Geçici bağlantı hatası</div>`;
+  }
 }
+
 
 // ─── PİYASA ───
 async function loadMkt(){
@@ -5879,7 +5921,6 @@ async def _start_miniapp_server(bot):
             target_url = request.rel_url.query.get("url", "")
             if not target_url:
                 return aiohttp_web.Response(text='{"error":"no url"}', content_type="application/json")
-            # Güvenlik: sadece izin verilen domainler
             allowed = ["api.binance.com", "api.alternative.me", "api.coingecko.com",
                        "api.rss2json.com", "cryptopanic.com", "tradingeconomics.com",
                        "www.coindesk.com"]
@@ -5894,16 +5935,69 @@ async def _start_miniapp_server(bot):
                         headers={"User-Agent": "Mozilla/5.0"},
                         timeout=aiohttp.ClientTimeout(total=10)
                     ) as resp:
-                        content_type = resp.headers.get("Content-Type", "application/json")
                         body = await resp.text()
                 return aiohttp_web.Response(text=body, content_type="application/json",
                                             headers=CORS_HEADERS)
             except Exception as e:
                 return aiohttp_web.Response(
                     text=f'{{"error":"{str(e)}"}}',
-                    content_type="application/json",
-                    headers=CORS_HEADERS
+                    content_type="application/json", headers=CORS_HEADERS
                 )
+
+        async def handle_news(request):
+            """RSS haberlerini server tarafında parse eder — CORS sorunu olmaz."""
+            import xml.etree.ElementTree as ET
+            import json as _json2
+            feeds = [
+                ("https://www.coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
+                ("https://cointelegraph.com/rss", "CoinTelegraph"),
+                ("https://decrypt.co/feed", "Decrypt"),
+            ]
+            items = []
+            for feed_url, source in feeds:
+                if items:
+                    break
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            feed_url,
+                            headers={"User-Agent": "Mozilla/5.0 (compatible; KriptoDrop/1.0)"},
+                            timeout=aiohttp.ClientTimeout(total=8)
+                        ) as resp:
+                            if resp.status != 200:
+                                continue
+                            xml_text = await resp.text()
+                    root = ET.fromstring(xml_text)
+                    channel = root.find("channel")
+                    if channel is None:
+                        channel = root
+                    for item in (channel.findall("item") or [])[:6]:
+                        title_el = item.find("title")
+                        date_el  = item.find("pubDate")
+                        if title_el is None or not title_el.text:
+                            continue
+                        date_str = ""
+                        if date_el is not None and date_el.text:
+                            try:
+                                from email.utils import parsedate_to_datetime
+                                dt = parsedate_to_datetime(date_el.text)
+                                date_str = dt.strftime("%d %b")
+                            except Exception:
+                                pass
+                        items.append({
+                            "title": title_el.text.strip(),
+                            "date":  date_str,
+                            "source": source,
+                        })
+                except Exception as e:
+                    log.warning(f"News feed {source} hata: {e}")
+                    continue
+            result = {"items": items}
+            return aiohttp_web.Response(
+                text=_json2.dumps(result, ensure_ascii=False),
+                content_type="application/json",
+                headers=CORS_HEADERS
+            )
 
         async def handle_favorites(request):
             """Kullanıcının favori coinlerini döndürür."""
@@ -5970,6 +6064,7 @@ async def _start_miniapp_server(bot):
         web_app.router.add_get("/miniapp",         handle_index)
         web_app.router.add_get("/health",          handle_health)
         web_app.router.add_get("/api/proxy",       handle_proxy)
+        web_app.router.add_get("/api/news",        handle_news)
         web_app.router.add_get("/api/favorites",   handle_favorites)
         web_app.router.add_get("/api/alarms",      handle_alarms)
 
