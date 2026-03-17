@@ -5032,9 +5032,10 @@ const tg=window.Telegram?.WebApp;
 if(tg){tg.ready();tg.expand();}
 const UID=tg?.initDataUnsafe?.user?.id||0;
 const PROXY='/api/proxy?url=';
+// Binance direkt URL — sf() fonksiyonu harici URL'leri otomatik proxy'den geçirir
 const BIN='https://api.binance.com/api/v3';
-const CGP=PROXY+encodeURIComponent('https://api.coingecko.com/api/v3');
-const FGP=PROXY+encodeURIComponent('https://api.alternative.me/fng/?limit=2');
+const CGP='https://api.coingecko.com/api/v3';
+const FGP='https://api.alternative.me/fng/?limit=2';
 const PAGES=['home','mkt','chart','nabiz','top','analiz','fib','sent','kar','alarmlar'];
 let CUR='home';
 let allCoins=[],filtCoins=[],coinFilter='all';
@@ -5079,12 +5080,15 @@ function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="b
 const PAL=['#3a9fff','#9b6fff','#00e5a0','#f0c040','#ff8c42','#00d4e8','#ff3d6b','#4ecdc4'];
 function cIco(sym){const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];return`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30">${sym[0]}</div>`;}
 
-// ─── SAFE FETCH ───
+// ─── SAFE FETCH — önce direkt, başarısızsa proxy ───
 async function sf(url,ms=9000){
+  // Harici URL'leri her zaman proxy üzerinden geç (Telegram WebView CORS sorunu)
+  const isExternal = url.startsWith('http://') || url.startsWith('https://');
+  const fetchUrl = isExternal ? (PROXY + encodeURIComponent(url)) : url;
   return new Promise(resolve=>{
     let done=false;
     const timer=setTimeout(()=>{if(!done){done=true;resolve(null);}},ms);
-    fetch(url)
+    fetch(fetchUrl)
       .then(r=>{if(r.ok)return r.json();throw new Error('HTTP '+r.status);})
       .then(d=>{if(!done){done=true;clearTimeout(timer);resolve(d);}})
       .catch(()=>{if(!done){done=true;clearTimeout(timer);resolve(null);}});
@@ -5647,25 +5651,35 @@ async def _start_miniapp_server(bot):
             """Dış API'lere proxy — Telegram WebView CORS sorununu çözer."""
             target_url = request.rel_url.query.get("url", "")
             if not target_url:
-                return aiohttp_web.Response(text='{"error":"no url"}', content_type="application/json")
-            allowed = ["api.binance.com", "api.alternative.me", "api.coingecko.com",
-                       "api.rss2json.com", "cryptopanic.com", "tradingeconomics.com",
-                       "www.coindesk.com"]
+                return aiohttp_web.Response(text='{"error":"no url"}', content_type="application/json", headers=CORS_HEADERS)
+            allowed = [
+                "api.binance.com", "api.alternative.me", "api.coingecko.com",
+                "api.rss2json.com", "cryptopanic.com", "tradingeconomics.com",
+                "www.coindesk.com", "cointelegraph.com", "decrypt.co",
+            ]
             from urllib.parse import urlparse
             parsed = urlparse(target_url)
             if not any(parsed.netloc.endswith(d) for d in allowed):
-                return aiohttp_web.Response(text='{"error":"domain not allowed"}', content_type="application/json")
+                return aiohttp_web.Response(text='{"error":"domain not allowed"}', content_type="application/json", headers=CORS_HEADERS)
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         target_url,
-                        headers={"User-Agent": "Mozilla/5.0"},
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (compatible; KriptoDrop/1.0)",
+                            "Accept": "application/json, text/plain, */*",
+                        },
+                        timeout=aiohttp.ClientTimeout(total=12)
                     ) as resp:
-                        body = await resp.text()
-                return aiohttp_web.Response(text=body, content_type="application/json",
-                                            headers=CORS_HEADERS)
+                        body = await resp.text(encoding="utf-8", errors="replace")
+                        ct = resp.headers.get("Content-Type", "application/json").split(";")[0].strip()
+                return aiohttp_web.Response(
+                    text=body,
+                    content_type=ct if ct else "application/json",
+                    headers=CORS_HEADERS
+                )
             except Exception as e:
+                log.warning(f"Proxy hata: {target_url} — {e}")
                 return aiohttp_web.Response(
                     text=f'{{"error":"{str(e)}"}}',
                     content_type="application/json", headers=CORS_HEADERS
