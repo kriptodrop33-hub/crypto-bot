@@ -3437,11 +3437,11 @@ async def start(update: Update, context):
              InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
             [InlineKeyboardButton("➡️ Bota DM At (Tüm Özellikler)", url=f"https://t.me/{BOT_USERNAME}?start=hello")],
         ]
-        # Mini App butonu varsa DM butonunun hemen üstüne ekle
+        # Mini App butonu: grupta web_app desteklenmez, callback ile DM'e yönlendir
         _murl_group = get_miniapp_url()
         if _murl_group:
             group_full_buttons.insert(len(group_full_buttons) - 1, [InlineKeyboardButton(
-                "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl_group)
+                "🖥 Dashboard Mini App", callback_data="miniapp_dm"
             )])
 
         keyboard    = InlineKeyboardMarkup(group_full_buttons)
@@ -4032,7 +4032,7 @@ async def button_handler(update: Update, context):
     # Grupta sadece bu callback'ler kısıtlama olmadan çalışır
     GROUP_FREE = {
         "top24", "top5", "market", "status",
-        "takvim_refresh", "ne_help",
+        "takvim_refresh", "ne_help", "miniapp_dm",
     }
 
     # Grupta üye bu butonlara tıklayınca DM yönlendirmesi yapılır
@@ -4089,6 +4089,37 @@ async def button_handler(update: Update, context):
             return
 
     await q.answer()
+
+    # ── Mini App DM yönlendirme ──
+    if q.data == "miniapp_dm":
+        murl = get_miniapp_url()
+        if murl:
+            try:
+                await context.bot.send_message(
+                    chat_id=q.from_user.id,
+                    text="🖥 *Kripto Dashboard* — Mini App'i açmak için aşağıdaki butona tıklayın:",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🚀 Dashboard'u Aç", web_app=WebAppInfo(url=murl))
+                    ]])
+                )
+                # Gruba kısa bilgi
+                tip = await context.bot.send_message(
+                    chat_id=q.message.chat.id,
+                    text=f"📩 @{q.from_user.username or q.from_user.first_name} DM'inize Mini App bağlantısı gönderildi!",
+                )
+                asyncio.create_task(auto_delete(context.bot, q.message.chat.id, tip.message_id, 8))
+            except Exception:
+                # Bot'u DM'de başlatmamışsa URL butonu gönder
+                try:
+                    tip = await context.bot.send_message(
+                        chat_id=q.message.chat.id,
+                        text=f"🖥 Dashboard: {murl}",
+                    )
+                    asyncio.create_task(auto_delete(context.bot, q.message.chat.id, tip.message_id, 15))
+                except Exception:
+                    pass
+        return
 
     # ── Market & genel ──
     if q.data == "market":
