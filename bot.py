@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 from datetime import datetime, timedelta, time as dtime
 from collections import defaultdict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, BotCommand, WebAppInfo
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -3400,7 +3400,7 @@ async def start(update: Update, context):
     _murl = get_miniapp_url()
     if _murl:
         dm_buttons.insert(-1, [InlineKeyboardButton(
-            "🖥 Dashboard Mini App", web_app={"url": _murl}
+            "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl)
         )])
 
     # Admin / Bot sahibi DM butonları
@@ -3417,7 +3417,7 @@ async def start(update: Update, context):
                 pass
 
     if in_group:
-        # Grup için DM yönlendirme butonu + tüm butonlar
+        # Grup için tüm butonlar + DM yönlendirme butonu
         group_full_buttons = [
             [InlineKeyboardButton("📊 Market",        callback_data="market"),
              InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
@@ -3437,11 +3437,11 @@ async def start(update: Update, context):
              InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
             [InlineKeyboardButton("➡️ Bota DM At (Tüm Özellikler)", url=f"https://t.me/{BOT_USERNAME}?start=hello")],
         ]
-        # Mini App butonu varsa ekle (DM yönlendirme butonunun üstüne)
+        # Mini App butonu varsa DM butonunun hemen üstüne ekle
         _murl_group = get_miniapp_url()
         if _murl_group:
-            group_full_buttons.insert(-2, [InlineKeyboardButton(
-                "🖥 Dashboard Mini App", web_app={"url": _murl_group}
+            group_full_buttons.insert(len(group_full_buttons) - 1, [InlineKeyboardButton(
+                "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl_group)
             )])
 
         keyboard    = InlineKeyboardMarkup(group_full_buttons)
@@ -3460,10 +3460,12 @@ async def start(update: Update, context):
             "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
             "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
         )
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
+        # /start komutunu gruptan sil (update.message bazen None olabilir)
+        if update.message:
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
         msg = await context.bot.send_message(
             chat_id=chat.id, text=welcome_text,
             reply_markup=keyboard, parse_mode="Markdown",
@@ -3621,7 +3623,7 @@ async def dashboard_command(update: Update, context):
 
     if murl:
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🖥 Dashboard'u Aç", web_app={"url": murl})
+            InlineKeyboardButton("🖥 Dashboard'u Aç", web_app=WebAppInfo(url=murl))
         ]])
         msg = await context.bot.send_message(
             chat.id,
@@ -4030,6 +4032,7 @@ async def button_handler(update: Update, context):
     # Grupta sadece bu callback'ler kısıtlama olmadan çalışır
     GROUP_FREE = {
         "top24", "top5", "market", "status",
+        "takvim_refresh", "ne_help",
     }
 
     # Grupta üye bu butonlara tıklayınca DM yönlendirmesi yapılır
@@ -4079,7 +4082,9 @@ async def button_handler(update: Update, context):
             return
         elif q.data not in GROUP_FREE \
                 and not q.data.startswith("hedef_") \
-                and not q.data.startswith("set_"):
+                and not q.data.startswith("set_") \
+                and not q.data.startswith("fib_") \
+                and not q.data.startswith("sent_"):
             await dm_redirect("Bu özellik")
             return
 
