@@ -839,57 +839,208 @@ async def ne_command(update: Update, context):
 
 # ================= EKONOMİK TAKVİM =================
 
-COINMARKETCAL_KEY = os.getenv("COINMARKETCAL_KEY", "")
-
-async def fetch_crypto_calendar() -> list:
+async def _fetch_te_rss() -> list:
+    """
+    TradingEconomics RSS feed'inden ekonomik takvim olaylarını çeker.
+    Kayıt gerektirmez — tamamen ücretsiz.
+    """
+    import xml.etree.ElementTree as ET
     events = []
-    if COINMARKETCAL_KEY:
-        try:
-            today = datetime.utcnow().strftime("%Y-%m-%d")
-            end   = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
-            url   = (f"https://developers.coinmarketcal.com/v1/events"
-                     f"?dateRangeStart={today}&dateRangeEnd={end}&sortBy=importance&page=1&max=20")
-            headers = {"x-api-key": COINMARKETCAL_KEY, "Accept-Encoding": "deflate, gzip"}
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        for item in (data.get("body") or []):
-                            title    = item.get("title",{}).get("en","")
-                            date_str = (item.get("date_event","") or "")[:10]
-                            coins    = ", ".join(c.get("symbol","") for c in (item.get("coins") or [])[:3])
-                            if title and date_str:
-                                events.append({"title": title, "date": date_str, "coins": coins,
-                                               "importance": item.get("percent",0), "source": "CoinMarketCal"})
-        except Exception as e:
-            log.warning(f"CoinMarketCal hata: {e}")
+    # TE'nin kamuya açık RSS feed'leri
+    feeds = [
+        ("https://tradingeconomics.com/rss/news.aspx?i=united+states", "ABD Makro"),
+        ("https://tradingeconomics.com/rss/news.aspx?i=euro+area",     "Euro Bölgesi"),
+    ]
+    # Kripto haberleri için ek kaynak (CryptoPanic public RSS — API key gerektirmez)
+    crypto_feeds = [
+        ("https://cryptopanic.com/news/rss/",                         "Kripto"),
+        ("https://www.coindesk.com/arc/outboundfeeds/rss/",           "CoinDesk"),
+    ]
+    all_feeds = feeds + crypto_feeds
+
+    # TE'de önem derecesini belirleyen anahtar kelimeler
+    HIGH_IMP = ["FOMC", "Fed", "interest rate", "faiz", "CPI", "inflation",
+                "NFP", "nonfarm", "PCE", "GDP", "ECB", "Bank of England",
+                "halving", "SEC", "ETF approval", "rate decision"]
+    MED_IMP  = ["PMI", "retail sales", "unemployment", "jobless",
+                "trade balance", "housing", "consumer confidence"]
 
     now = datetime.utcnow()
+
+    async with aiohttp.ClientSession() as session:
+        for url, source in all_feeds:
+            try:
+                async with session.get(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; KriptoBot/1.0)"},
+                    timeout=aiohttp.ClientTimeout(total=8)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    text = await resp.text()
+
+                root = ET.fromstring(text)
+                channel = root.find("channel")
+                if channel is None:
+                    continue
+
+                for item in (channel.findall("item") or [])[:15]:
+                    title_el = item.find("title")
+                    date_el  = item.find("pubDate")
+                    desc_el  = item.find("description")
+                    if title_el is None:
+                        continue
+
+                    title = (title_el.text or "").strip()
+                    desc  = ""
+                    if desc_el is not None:
+                        import re
+                        desc = re.sub(r"<[^>]+>", "", desc_el.text or "").strip()[:120]
+
+                    # Tarih parse
+                    ev_date = now.strftime("%Y-%m-%d")
+                    if date_el is not None and date_el.text:
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            dt = parsedate_to_datetime(date_el.text)
+                            ev_date = dt.strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+
+                    # Sadece gelecekteki veya bugünkü olaylar
+                    try:
+                        ev_dt = datetime.strptime(ev_date, "%Y-%m-%d")
+                        if (ev_dt.date() - now.date()).days < -1:
+                            continue
+                    except Exception:
+                        continue
+
+                    # Önem derecesi
+                    title_upper = title.upper()
+                    importance  = 40
+                    for kw in HIGH_IMP:
+                        if kw.upper() in title_upper:
+                            importance = 90
+                            break
+                    if importance < 90:
+                        for kw in MED_IMP:
+                            if kw.upper() in title_upper:
+                                importance = 60
+                                break
+
+                    # Kriptoya etkisi olan haberleri filtrele
+                    crypto_kw = ["bitcoin","btc","crypto","fed","fomc","cpi","inflation",
+                                 "rate","sec","etf","halving","blockchain","ethereum","eth"]
+                    is_relevant = any(kw in title.lower() for kw in crypto_kw) or importance >= 80
+
+                    if not is_relevant and source not in ("Kripto", "CoinDesk"):
+                        continue
+
+                    # Emoji + kategori
+                    if "FOMC" in title_upper or "Fed" in title or "rate" in title.lower():
+                        prefix, coins = "🏦", "BTC, ETH, Tüm Piyasa"
+                    elif "CPI" in title_upper or "inflation" in title.lower():
+                        prefix, coins = "📊", "BTC, ETH, Tüm Piyasa"
+                    elif "NFP" in title_upper or "nonfarm" in title.lower() or "jobs" in title.lower():
+                        prefix, coins = "💼", "BTC, ETH, Tüm Piyasa"
+                    elif "bitcoin" in title.lower() or "btc" in title.lower():
+                        prefix, coins = "₿", "BTC"
+                    elif "ethereum" in title.lower() or "eth" in title.lower():
+                        prefix, coins = "Ξ", "ETH"
+                    elif "sec" in title.lower() or "etf" in title.lower():
+                        prefix, coins = "⚖️", "BTC, ETH"
+                    else:
+                        prefix, coins = "📌", "Kripto Piyasa"
+
+                    events.append({
+                        "title":      f"{prefix} {title}",
+                        "date":       ev_date,
+                        "coins":      coins,
+                        "importance": importance,
+                        "desc":       desc[:100] if desc else "",
+                        "source":     source,
+                    })
+            except Exception as e:
+                log.warning(f"RSS feed hatasi ({source}): {e}")
+                continue
+
+    return events
+
+async def fetch_crypto_calendar() -> list:
+    """
+    Ekonomik takvim verilerini toplar:
+    1. TradingEconomics + CryptoPanic RSS (kayıtsız, ücretsiz)
+    2. Statik makro takvim (FOMC, CPI, NFP, PCE — her zaman gösterilir)
+    Sonuçları birleştirir, sıralar ve tekilleştirir.
+    """
+    now    = datetime.utcnow()
+    events = []
+
+    # 1. RSS kaynaklarından canlı veriler
+    try:
+        rss_events = await asyncio.wait_for(_fetch_te_rss(), timeout=12)
+        events.extend(rss_events)
+        log.info(f"RSS takvim: {len(rss_events)} olay alındı")
+    except asyncio.TimeoutError:
+        log.warning("RSS takvim timeout")
+    except Exception as e:
+        log.warning(f"RSS takvim genel hata: {e}")
+
+    # 2. Statik makro takvim — Her zaman eklenir (RSS'te yoksa)
     y, m = now.year, now.month
     static = [
-        {"title": "🏦 FOMC Toplantısı — Fed Faiz Kararı", "day": 18,
-         "desc": "ABD Merkez Bankası faiz kararı. Kripto için kritik makro olay."},
-        {"title": "📊 ABD CPI Enflasyon Verisi", "day": 12,
-         "desc": "Yüksek CPI → Fed şahinleşir → Risk varlıkları baskı altında."},
-        {"title": "💼 ABD NFP İstihdam Raporu", "day": 7,
-         "desc": "Güçlü rapor → Dolar güçlenir → Kripto kısa vadeli baskı."},
-        {"title": "📈 ABD PCE Fiyat Endeksi", "day": 28,
-         "desc": "Fed'in tercih ettiği enflasyon göstergesi."},
+        {"title": "🏦 FOMC Toplantısı — Fed Faiz Kararı", "day": 18, "importance": 95,
+         "desc": "ABD Merkez Bankası faiz kararı. Kripto piyasaları için en kritik makro olay.",
+         "coins": "BTC, ETH, Tüm Piyasa"},
+        {"title": "📊 ABD CPI Enflasyon Verisi", "day": 12, "importance": 90,
+         "desc": "Yüksek CPI → Fed şahinleşir → Risk varlıkları baskı altında kalır.",
+         "coins": "BTC, ETH, Tüm Piyasa"},
+        {"title": "💼 ABD NFP İstihdam Raporu", "day": 7, "importance": 80,
+         "desc": "Güçlü rapor → Dolar güçlenir → Kripto kısa vadeli baskı görebilir.",
+         "coins": "BTC, ETH, Tüm Piyasa"},
+        {"title": "📈 ABD PCE Fiyat Endeksi", "day": 28, "importance": 85,
+         "desc": "Fed'in tercih ettiği enflasyon göstergesi. FOMC öncesi en kritik veri.",
+         "coins": "BTC, ETH, Tüm Piyasa"},
     ]
+
+    # RSS'ten gelen başlıklar (tekilleştirme için)
+    existing_titles = {e["title"].lower()[:30] for e in events}
+
     for ev in static:
         try:
             ev_dt = datetime(y, m, ev["day"])
             if ev_dt < now:
-                ev_dt = datetime(y, m+1 if m < 12 else 1, ev["day"])
-                if m == 12: ev_dt = datetime(y+1, 1, ev["day"])
-            events.append({"title": ev["title"], "date": ev_dt.strftime("%Y-%m-%d"),
-                           "coins": "BTC, ETH, Tüm Piyasa", "importance": 90,
-                           "desc": ev.get("desc",""), "source": "Makro Takvim"})
+                if m == 12:
+                    ev_dt = datetime(y + 1, 1, ev["day"])
+                else:
+                    ev_dt = datetime(y, m + 1, ev["day"])
+
+            # RSS'te zaten benzer başlık varsa ekleme
+            short_title = ev["title"].lower()[:30]
+            if short_title not in existing_titles:
+                events.append({
+                    "title":      ev["title"],
+                    "date":       ev_dt.strftime("%Y-%m-%d"),
+                    "coins":      ev["coins"],
+                    "importance": ev["importance"],
+                    "desc":       ev["desc"],
+                    "source":     "Makro Takvim",
+                })
         except Exception:
             pass
 
-    events.sort(key=lambda x: x["date"])
-    return events[:15]
+    # Sırala: önce yakın tarih, sonra önem derecesi
+    events.sort(key=lambda x: (x["date"], -x.get("importance", 0)))
+
+    # Tekilleştir (aynı günde çok benzer başlıklar)
+    seen, unique = set(), []
+    for ev in events:
+        key = f"{ev['date']}_{ev['title'][:25].lower()}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(ev)
+
+    return unique[:20]
 
 async def takvim_command(update: Update, context):
     await register_user(update)
