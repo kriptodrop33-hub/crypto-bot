@@ -35,8 +35,12 @@ GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")     # Groq ücretsiz GPT (lla
 CRYPTOPANIC_KEY    = os.getenv("CRYPTOPANIC_KEY", "")  # CryptoPanic ücretsiz API
 # Mini App URL — Railway otomatik verir, elle girmeye gerek yok
 # Eğer RAILWAY_STATIC_URL veya RAILWAY_PUBLIC_DOMAIN varsa otomatik kullanılır
-_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL", "")
+_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL", "").replace("https://","").replace("http://","")
 MINIAPP_URL = os.getenv("MINIAPP_URL") or (f"https://{_railway_domain}" if _railway_domain else "")
+
+def get_miniapp_url() -> str:
+    """Runtime'da MINIAPP_URL'yi döndürür. _start_miniapp_server set ettikten sonra da çalışır."""
+    return MINIAPP_URL
 
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -3392,10 +3396,11 @@ async def start(update: Update, context):
          InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
     ]
 
-    # Mini App butonu varsa ekle
-    if MINIAPP_URL:
+    # Mini App butonu — URL runtime'da alınır (server başladıktan sonra da çalışır)
+    _murl = get_miniapp_url()
+    if _murl:
         dm_buttons.insert(-1, [InlineKeyboardButton(
-            "🖥 Dashboard Mini App", web_app={"url": MINIAPP_URL}
+            "🖥 Dashboard Mini App", web_app={"url": _murl}
         )])
 
     # Admin / Bot sahibi DM butonları
@@ -3571,6 +3576,45 @@ async def status(update: Update, context):
     )
     target = update.callback_query.message if update.callback_query else update.message
     await target.reply_text(text, parse_mode="Markdown")
+
+async def dashboard_command(update: Update, context):
+    """/dashboard — Mini App'i açar veya URL bilgisi verir."""
+    await register_user(update)
+    chat    = update.effective_chat
+    user_id = update.effective_user.id if update.effective_user else None
+    is_group = chat and chat.type in ("group", "supergroup")
+
+    murl = get_miniapp_url()
+
+    if murl:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🖥 Dashboard'u Aç", web_app={"url": murl})
+        ]])
+        msg = await context.bot.send_message(
+            chat.id,
+            "🖥 *Kripto Drop Dashboard*\nAşağıdaki butona tıklayarak açın:",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    else:
+        # URL henüz hazır değil — kullanıcıya bilgi ver
+        msg = await context.bot.send_message(
+            chat.id,
+            "⚙️ *Dashboard Kurulum Gerekiyor*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "Mini App aktif etmek için:\n\n"
+            "1️⃣ Railway → Projen → *Settings*\n"
+            "2️⃣ *Networking* sekmesi → *Generate Domain*\n"
+            "3️⃣ Oluşan URL'yi kopyala\n"
+            "4️⃣ *Variables* → `MINIAPP_URL` = `https://xxx.railway.app`\n"
+            "5️⃣ Redeploy yap\n\n"
+            "✅ Bundan sonra `/dashboard` butonu aktif olur.",
+            parse_mode="Markdown"
+        )
+
+    if is_group:
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
 
 async def istatistik(update: Update, context):
     """Bot istatistiklerini sadece ADMIN_ID'ye gösterir."""
@@ -4761,6 +4805,7 @@ async def _start_miniapp_server(bot):
     Mini App'i bot ile aynı process içinde çalıştırır.
     Railway otomatik PORT atar ve public URL verir.
     """
+    global MINIAPP_URL
     try:
         from aiohttp import web as aiohttp_web
 
@@ -4771,8 +4816,11 @@ async def _start_miniapp_server(bot):
                 text=MINIAPP_HTML,
                 content_type="text/html",
                 charset="utf-8",
-                headers={"X-Frame-Options": "ALLOWALL",
-                         "Content-Security-Policy": "frame-ancestors *"}
+                headers={
+                    "X-Frame-Options": "ALLOWALL",
+                    "Content-Security-Policy": "frame-ancestors *",
+                    "Access-Control-Allow-Origin": "*",
+                }
             )
 
         async def handle_health(request):
@@ -4788,17 +4836,20 @@ async def _start_miniapp_server(bot):
         site = aiohttp_web.TCPSite(runner, "0.0.0.0", port)
         await site.start()
 
-        # Railway public domain'i otomatik al
-        domain = (os.getenv("RAILWAY_PUBLIC_DOMAIN") or
-                  os.getenv("RAILWAY_STATIC_URL", "").replace("https://",""))
+        # Railway domain tespiti — birden fazla env var dene
+        domain = (
+            os.getenv("RAILWAY_PUBLIC_DOMAIN") or
+            os.getenv("RAILWAY_STATIC_URL","").replace("https://","").replace("http://","") or
+            os.getenv("RAILWAY_SERVICE_URL","").replace("https://","").replace("http://","") or
+            ""
+        ).strip("/")
+
         if domain:
-            url = f"https://{domain}"
-            log.info(f"✅ Mini App aktif: {url}")
-            # Global MINIAPP_URL'yi güncelle (start komutunda kullanılır)
-            global MINIAPP_URL
-            MINIAPP_URL = url
+            MINIAPP_URL = f"https://{domain}"
+            log.info(f"✅ Mini App aktif: {MINIAPP_URL}")
         else:
-            log.info(f"✅ Mini App aktif: http://0.0.0.0:{port}")
+            log.info(f"✅ Mini App sunucu başladı port {port} — Railway domain henüz yok")
+            log.info("💡 Railway → Settings → Networking → Generate Domain, ardından MINIAPP_URL variable ekleyin")
 
     except Exception as e:
         log.warning(f"Mini App başlatılamadı: {e}")
@@ -4844,6 +4895,7 @@ async def post_init(app):
     # ── Private chat komutları (tüm kullanıcılar) ──
     private_commands = [
         BotCommand("start",          "Botu başlat / Ana menü"),
+        BotCommand("dashboard",      "📊 Canlı kripto dashboard (Mini App)"),
         BotCommand("hedef",          "Fiyat hedefi ekle / listele"),
         BotCommand("alarmim",        "Kişisel alarmlarım"),
         BotCommand("alarm_ekle",     "Yeni alarm ekle"),
@@ -4883,6 +4935,7 @@ def main():
     app.job_queue.run_daily(takvim_job, time=dtime(8, 0))
 
     app.add_handler(CommandHandler("start",          start))
+    app.add_handler(CommandHandler("dashboard",      dashboard_command))
     app.add_handler(CommandHandler("istatistik",     istatistik))
     app.add_handler(CommandHandler("top24",          top24))
     app.add_handler(CommandHandler("top5",           top5))
