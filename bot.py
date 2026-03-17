@@ -644,9 +644,24 @@ async def fib_command(update: Update, context):
 # ================= SENTIMENT ANALİZİ =================
 
 async def fetch_sentiment(symbol: str) -> dict:
-    base = symbol.replace("USDT","")
+    base = symbol.replace("USDT","").upper()
+
+    # CoinGecko ID mapping (sembol → CoinGecko ID)
+    CG_ID_MAP = {
+        "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin",
+        "SOL": "solana", "ADA": "cardano", "XRP": "ripple",
+        "DOT": "polkadot", "DOGE": "dogecoin", "AVAX": "avalanche-2",
+        "MATIC": "matic-network", "POL": "matic-network",
+        "LINK": "chainlink", "UNI": "uniswap", "ATOM": "cosmos",
+        "LTC": "litecoin", "BCH": "bitcoin-cash", "FIL": "filecoin",
+        "TRX": "tron", "NEAR": "near", "APT": "aptos",
+        "ARB": "arbitrum", "OP": "optimism", "SUI": "sui",
+        "TON": "the-open-network", "SHIB": "shiba-inu",
+        "PEPE": "pepe", "WIF": "dogwifcoin", "BONK": "bonk",
+    }
     news_items = []
 
+    # 1. CryptoPanic API (key varsa)
     if CRYPTOPANIC_KEY:
         try:
             url = f"https://cryptopanic.com/api/v1/posts/?auth_token={CRYPTOPANIC_KEY}&currencies={base}&kind=news&public=true"
@@ -666,71 +681,135 @@ async def fetch_sentiment(symbol: str) -> dict:
         except Exception as e:
             log.warning(f"CryptoPanic hata: {e}")
 
+    # 2. CoinGecko topluluk sentiment (her zaman çalışır, key gerektirmez)
+    cg_id = CG_ID_MAP.get(base, base.lower())
+    try:
+        url = (f"https://api.coingecko.com/api/v3/coins/{cg_id}"
+               f"?localization=false&tickers=false&market_data=true"
+               f"&community_data=true&developer_data=false")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    up_pct   = data.get("sentiment_votes_up_percentage") or None
+                    down_pct = data.get("sentiment_votes_down_percentage") or None
+                    price    = (data.get("market_data") or {}).get("current_price",{}).get("usd", 0)
+                    pct24    = (data.get("market_data") or {}).get("price_change_percentage_24h", 0)
+                    desc     = ((data.get("description") or {}).get("en") or "")[:200]
+
+                    # Eğer CryptoPanic da yoksa CoinGecko ile bitir
+                    if not news_items and up_pct is not None:
+                        score = round(up_pct / 100, 2)
+                        label = "🟢 Pozitif" if up_pct > 55 else ("🔴 Negatif" if up_pct < 45 else "🟡 Nötr")
+                        trend = "📈 Yükseliş" if pct24 > 0 else "📉 Düşüş"
+                        summary = (f"Topluluk oylaması: %{up_pct:.1f} yükseliş / %{down_pct:.1f} düşüş beklentisi. "
+                                   f"24s {trend}: %{abs(pct24):.2f}")
+                        return {
+                            "score": score, "label": label, "summary": summary,
+                            "news_count": 0, "source": "CoinGecko Topluluk",
+                            "price": price, "pct24": pct24,
+                        }
+                    # CryptoPanic haberleri varsa CoinGecko fiyat verisini ekle
+                    elif up_pct is not None:
+                        # Haber listesine CoinGecko sentiment'i de faktör olarak ekle
+                        if up_pct > 55:
+                            news_items.append({"title": f"{base} community bullish sentiment %{up_pct:.0f}", "positive": 3, "negative": 0})
+                        elif up_pct < 45:
+                            news_items.append({"title": f"{base} community bearish sentiment %{down_pct:.0f}", "positive": 0, "negative": 3})
+    except Exception as e:
+        log.warning(f"CoinGecko sentiment hata: {e}")
+
+    # 3. Haber yoksa RSS fallback
     if not news_items:
         try:
-            cg_sym = base.lower()
-            url = f"https://api.coingecko.com/api/v3/coins/{cg_sym}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false"
+            import xml.etree.ElementTree as ET
+            rss_url = f"https://cryptopanic.com/news/{base.lower()}/rss/"
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                async with session.get(
+                    rss_url,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=aiohttp.ClientTimeout(total=8)
+                ) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        up_pct   = data.get("sentiment_votes_up_percentage") or 50
-                        down_pct = data.get("sentiment_votes_down_percentage") or 50
-                        score    = round(up_pct / 100, 2)
-                        label    = "🟢 Pozitif" if up_pct > 55 else ("🔴 Negatif" if up_pct < 45 else "🟡 Nötr")
-                        return {"score": score, "label": label,
-                                "summary": f"Topluluk: %{up_pct:.1f} yükseliş / %{down_pct:.1f} düşüş beklentisi.",
-                                "news_count": 0, "source": "CoinGecko"}
+                        xml_text = await resp.text()
+                        root = ET.fromstring(xml_text)
+                        ch   = root.find("channel")
+                        if ch is not None:
+                            for item in (ch.findall("item") or [])[:8]:
+                                t = item.find("title")
+                                if t is not None and t.text:
+                                    news_items.append({"title": t.text.strip(), "positive": 1, "negative": 0})
         except Exception as e:
-            log.warning(f"CoinGecko sentiment hata: {e}")
-        return {"score": 0.5, "label": "🟡 Veri Yok", "summary": "Yeterli haber bulunamadı.",
-                "news_count": 0, "source": "-"}
+            log.warning(f"RSS sentiment fallback hata: {e}")
 
-    if GROQ_API_KEY and news_items:
+    # Hiç veri yoksa
+    if not news_items:
+        return {
+            "score": 0.5, "label": "🟡 Veri Yok",
+            "summary": f"{base} için şu an yeterli haber verisi bulunamadı. Daha sonra tekrar deneyin.",
+            "news_count": 0, "source": "-", "price": 0, "pct24": 0,
+        }
+
+    # 4. Groq AI analizi (key varsa)
+    if GROQ_API_KEY:
         try:
             headlines = "\n".join([f"- {n['title']}" for n in news_items[:8]])
             prompt = (
-                f"{base} kripto parası hakkindaki haberleri analiz et.\n"
-                f"Yalnizca su formatta yanit ver (baska hicbir sey yazma):\n"
-                f"SKOR: 0.0-1.0\nETIKET: Pozitif/Negatif/Notr\nOZET: (Turkce max 2 cumle)\n\n"
+                f"{base} kripto parası hakkındaki haberleri analiz et.\n"
+                f"YALNIZCA şu formatta yanıt ver, başka hiçbir şey yazma:\n"
+                f"SKOR: (0.0 ile 1.0 arası ondalık sayı)\n"
+                f"ETIKET: (Pozitif veya Negatif veya Notr)\n"
+                f"OZET: (Türkçe, maksimum 2 cümle)\n\n"
                 f"Haberler:\n{headlines}"
             )
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama3-8b-8192", "messages": [{"role":"user","content":prompt}],
-                       "max_tokens": 200, "temperature": 0.3}
+            payload = {
+                "model": "llama3-8b-8192",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 200, "temperature": 0.3
+            }
             async with aiohttp.ClientSession() as session:
-                async with session.post("https://api.groq.com/openai/v1/chat/completions",
-                                        headers=headers, json=payload,
-                                        timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                async with session.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers=headers, json=payload,
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as resp:
                     if resp.status == 200:
                         result  = await resp.json()
                         content = result["choices"][0]["message"]["content"]
-                        lines   = content.strip().split("\n")
                         score, label_raw, ozet = 0.5, "Notr", "-"
-                        for line in lines:
-                            if line.startswith("SKOR:"):
-                                try: score = float(line.split(":",1)[1].strip())
+                        for line in content.strip().split("\n"):
+                            ll = line.strip()
+                            if ll.startswith("SKOR:"):
+                                try: score = max(0.0, min(1.0, float(ll.split(":",1)[1].strip())))
                                 except: pass
-                            elif line.startswith("ETIKET:"):
-                                label_raw = line.split(":",1)[1].strip()
-                            elif line.startswith("OZET:"):
-                                ozet = line.split(":",1)[1].strip()
-                        if "Pozitif" in label_raw or "pozitif" in label_raw: label = "🟢 Pozitif"
-                        elif "Negatif" in label_raw or "negatif" in label_raw: label = "🔴 Negatif"
-                        else: label = "🟡 Nötr"
-                        return {"score": score, "label": label, "summary": ozet,
-                                "news_count": len(news_items), "source": "CryptoPanic + Groq AI"}
+                            elif ll.startswith("ETIKET:"):
+                                label_raw = ll.split(":",1)[1].strip()
+                            elif ll.startswith("OZET:"):
+                                ozet = ll.split(":",1)[1].strip()
+                        label = ("🟢 Pozitif" if any(x in label_raw.lower() for x in ["pozitif","positive"])
+                                 else "🔴 Negatif" if any(x in label_raw.lower() for x in ["negatif","negative"])
+                                 else "🟡 Nötr")
+                        return {
+                            "score": score, "label": label, "summary": ozet,
+                            "news_count": len(news_items), "source": "Groq AI (Llama3)",
+                            "price": 0, "pct24": 0,
+                        }
         except Exception as e:
             log.warning(f"Groq hata: {e}")
 
+    # 5. Basit oy bazlı hesaplama (Groq yoksa)
     total_pos = sum(n["positive"] for n in news_items)
     total_neg = sum(n["negative"] for n in news_items)
     total     = total_pos + total_neg or 1
     score     = round(total_pos / total, 2)
     label     = "🟢 Pozitif" if score > 0.55 else ("🔴 Negatif" if score < 0.45 else "🟡 Nötr")
-    return {"score": score, "label": label,
-            "summary": f"{len(news_items)} haber tarandı. {total_pos} olumlu / {total_neg} olumsuz oy.",
-            "news_count": len(news_items), "source": "CryptoPanic"}
+    return {
+        "score": score, "label": label,
+        "summary": f"{len(news_items)} haber tarandı. {total_pos} olumlu / {total_neg} olumsuz sinyal.",
+        "news_count": len(news_items), "source": "CryptoPanic RSS",
+        "price": 0, "pct24": 0,
+    }
 
 async def sentiment_command(update: Update, context):
     chat = update.effective_chat
@@ -3728,6 +3807,89 @@ async def button_handler(update: Update, context):
                 InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
             ]])
             await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
+    # Analiz callback (sentiment butonundan açılır)
+    if q.data.startswith("analyse_"):
+        await q.answer()
+        symbol = q.data[8:]  # "analyse_BTCUSDT" → "BTCUSDT"
+        if not symbol:
+            return
+        loading_msg = await q.message.reply_text(f"🔍 `{symbol}` analiz ediliyor...", parse_mode="Markdown")
+        try:
+            async with aiohttp.ClientSession() as session:
+                ticker_resp = await session.get(
+                    f"{BINANCE_24H.replace('24hr','24hr')}?symbol={symbol}",
+                    timeout=aiohttp.ClientTimeout(total=8)
+                )
+                ticker = await ticker_resp.json()
+                klines_resp = await session.get(
+                    f"{BINANCE_KLINES}?symbol={symbol}&interval=1h&limit=50",
+                    timeout=aiohttp.ClientTimeout(total=8)
+                )
+                klines = await klines_resp.json()
+        except Exception as e:
+            try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
+            except: pass
+            await q.message.reply_text(f"⚠️ Veri alınamadı: {e}")
+            return
+
+        try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
+        except: pass
+
+        if ticker.get("code") or not isinstance(klines, list) or len(klines) < 14:
+            await q.message.reply_text(f"⚠️ `{symbol}` için yeterli veri yok.", parse_mode="Markdown")
+            return
+
+        price  = float(ticker.get("lastPrice", 0))
+        pct24  = float(ticker.get("priceChangePercent", 0))
+        vol24  = float(ticker.get("quoteVolume", 0))
+        high24 = float(ticker.get("highPrice", 0))
+        low24  = float(ticker.get("lowPrice", 0))
+
+        # RSI hesapla
+        closes = [float(k[4]) for k in klines]
+        gains, losses = [], []
+        for i in range(1, len(closes)):
+            d = closes[i] - closes[i-1]
+            gains.append(max(d, 0)); losses.append(max(-d, 0))
+        period = 14
+        avg_g = sum(gains[-period:]) / period
+        avg_l = sum(losses[-period:]) / period or 0.0001
+        rsi   = round(100 - 100 / (1 + avg_g / avg_l), 1)
+
+        # EMA 20
+        k2  = 2 / 21
+        ema = sum(closes[:20]) / 20
+        for c in closes[20:]: ema = c * k2 + ema * (1 - k2)
+        ema20 = round(ema, 4)
+
+        rsi_label = "🔴 Aşırı Alım" if rsi > 70 else ("🟢 Aşırı Satım" if rsi < 30 else "🟡 Nötr")
+        trend     = "🟢 Yükseliş" if price > ema20 else "🔴 Düşüş"
+        pct_icon  = "📈" if pct24 >= 0 else "📉"
+
+        def fmt(p):
+            return f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
+
+        text = (
+            f"🔍 *{symbol} — Teknik Analiz*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 *Fiyat:* `${fmt(price)}`  {pct_icon} `{pct24:+.2f}%`\n"
+            f"📊 *24s Hacim:* `${vol24/1e6:.1f}M`\n"
+            f"📈 *24s Yüksek:* `${fmt(high24)}`\n"
+            f"📉 *24s Düşük:*  `${fmt(low24)}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔮 *RSI (14):* `{rsi}` — {rsi_label}\n"
+            f"📐 *EMA 20:* `${fmt(ema20)}` — {trend}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏰ _{datetime.utcnow().strftime('%H:%M UTC')}_"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
+            InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
+            InlineKeyboardButton("🔄 Yenile",    callback_data=f"analyse_{symbol}"),
+        ]])
+        await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
         return
 
     # Takvim callback
