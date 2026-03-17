@@ -5080,19 +5080,25 @@ function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="b
 const PAL=['#3a9fff','#9b6fff','#00e5a0','#f0c040','#ff8c42','#00d4e8','#ff3d6b','#4ecdc4'];
 function cIco(sym){const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];return`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30">${sym[0]}</div>`;}
 
-// ─── SAFE FETCH — önce direkt, başarısızsa proxy ───
-async function sf(url,ms=9000){
-  // Harici URL'leri her zaman proxy üzerinden geç (Telegram WebView CORS sorunu)
+// ─── SAFE FETCH — tüm harici istekler proxy üzerinden ───
+async function sf(url, ms=12000){
   const isExternal = url.startsWith('http://') || url.startsWith('https://');
   const fetchUrl = isExternal ? (PROXY + encodeURIComponent(url)) : url;
-  return new Promise(resolve=>{
-    let done=false;
-    const timer=setTimeout(()=>{if(!done){done=true;resolve(null);}},ms);
-    fetch(fetchUrl)
-      .then(r=>{if(r.ok)return r.json();throw new Error('HTTP '+r.status);})
-      .then(d=>{if(!done){done=true;clearTimeout(timer);resolve(d);}})
-      .catch(()=>{if(!done){done=true;clearTimeout(timer);resolve(null);}});
-  });
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), ms);
+    const r = await fetch(fetchUrl, {signal: ctrl.signal});
+    clearTimeout(timer);
+    if(!r.ok) return null;
+    // proxy text/plain veya application/json döndürebilir, her ikisini de handle et
+    const txt = await r.text();
+    if(!txt || txt.trim()==='') return null;
+    try { return JSON.parse(txt); }
+    catch(e) { console.warn('sf parse error:', url, txt.slice(0,100)); return null; }
+  } catch(e) {
+    console.warn('sf fetch error:', url, e.message);
+    return null;
+  }
 }
 
 // ─── NAVIGATION ───
@@ -5117,7 +5123,11 @@ function openChart(sym){document.getElementById('gSym').value=sym;go('chart');dr
 // ─── TICKER ───
 const TSYMS=['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','AVAX'];
 async function loadTicker(){
-  const d=await sf(`${BIN}/ticker/price`);
+  // Her sembol için tek tek çek (proxy büyük yanıtları kesiyor olabilir)
+  const syms = TSYMS.map(s=>s+'USDT');
+  // Binance'in symbols parametresi ile sadece ihtiyaç duyulan coinleri çek
+  const symParam = encodeURIComponent(JSON.stringify(syms));
+  const d = await sf(`${BIN}/ticker/price?symbols=${symParam}`);
   if(!d||!Array.isArray(d))return;
   TSYMS.forEach(s=>{
     const c=d.find(x=>x.symbol===s+'USDT');if(!c)return;
@@ -5662,20 +5672,31 @@ async def _start_miniapp_server(bot):
             if not any(parsed.netloc.endswith(d) for d in allowed):
                 return aiohttp_web.Response(text='{"error":"domain not allowed"}', content_type="application/json", headers=CORS_HEADERS)
             try:
-                async with aiohttp.ClientSession() as session:
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(connector=connector) as session:
                     async with session.get(
                         target_url,
                         headers={
                             "User-Agent": "Mozilla/5.0 (compatible; KriptoDrop/1.0)",
                             "Accept": "application/json, text/plain, */*",
+                            "Accept-Encoding": "identity",
                         },
-                        timeout=aiohttp.ClientTimeout(total=12)
+                        timeout=aiohttp.ClientTimeout(total=15),
+                        allow_redirects=True,
                     ) as resp:
-                        body = await resp.text(encoding="utf-8", errors="replace")
+                        # Büyük yanıtları da tam oku
+                        body = await resp.read()
+                        try:
+                            text_body = body.decode("utf-8")
+                        except Exception:
+                            text_body = body.decode("latin-1", errors="replace")
                         ct = resp.headers.get("Content-Type", "application/json").split(";")[0].strip()
+                        if not ct:
+                            ct = "application/json"
+                log.info(f"Proxy OK: {parsed.netloc} — {len(text_body)} bytes")
                 return aiohttp_web.Response(
-                    text=body,
-                    content_type=ct if ct else "application/json",
+                    text=text_body,
+                    content_type="application/json",
                     headers=CORS_HEADERS
                 )
             except Exception as e:
