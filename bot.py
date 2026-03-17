@@ -5206,6 +5206,10 @@ async function drawChart(){
   el.innerHTML='<div class="ld"><div class="spin"></div>Grafik yükleniyor...</div>';
   [cChart,rChart,vChart].forEach(c=>{try{c?.destroy();}catch(e){}});
   cChart=rChart=vChart=null;
+  // Eski SVG mum grafiğini temizle
+  document.querySelectorAll('.cndl-svg').forEach(el=>el.remove());
+  const cdlCanvas = document.getElementById('cdl');
+  if(cdlCanvas) cdlCanvas.style.display = 'block';
   try{
     const lim=tf==='15m'?96:tf==='1h'?80:tf==='4h'?80:tf==='1d'?80:52;
     const k=await sf(`${BIN}/klines?symbol=${sym}&interval=${tf}&limit=${lim}`,12000);
@@ -5266,7 +5270,7 @@ async function drawChart(){
             font-size:10px;font-weight:700;cursor:pointer">${t}</button>`).join('')}
         </div>
         <div style="padding:8px 9px">
-          <div class="ch" style="height:200px"><canvas id="cdl"></canvas></div>
+          <div class="ch" id="cdlWrap" style="height:200px;position:relative"><canvas id="cdl" style="width:100%;height:200px"></canvas></div>
           <div style="font-size:8px;color:var(--muted);margin:4px 0 2px;font-weight:700;letter-spacing:.4px">RSI (14) = <span style="color:${rsiNow>70?'var(--r)':rsiNow<30?'var(--g)':'var(--p)'}">${rsiNow.toFixed(1)}</span> ${rsiNow>70?'🔴 Aşırı Alım':rsiNow<30?'🟢 Aşırı Satım':'🟡 Nötr'}</div>
           <div class="ch" style="height:60px"><canvas id="cdlR"></canvas></div>
           <div style="font-size:8px;color:var(--muted);margin:4px 0 2px;font-weight:700;letter-spacing:.4px">HACİM</div>
@@ -5288,27 +5292,103 @@ async function drawChart(){
       x:{ticks:{color:'#5577aa',font:{size:8},maxTicksLimit:7,maxRotation:0},grid:{color:'rgba(29,45,66,.6)'},border:{display:false}},
       y:{position:'right',ticks:{color:'#5577aa',font:{size:8},maxTicksLimit:6,callback:v=>fp(v)},grid:{color:'rgba(29,45,66,.6)'},border:{display:false}}
     };
-    cChart=new Chart(document.getElementById('cdl').getContext('2d'),{
-      type:'bar',
-      data:{labels,datasets:[
-        {type:'bar',data:bodyD,backgroundColor:bClr,borderColor:bBrd,borderWidth:1,borderSkipped:false,barPercentage:.55,categoryPercentage:.85},
-        {type:'bar',data:k.map((_,i)=>[Math.max(opens[i],closes[i]),highs[i]]),backgroundColor:bClr,borderWidth:0,barPercentage:.1,categoryPercentage:.85},
-        {type:'bar',data:k.map((_,i)=>[lows[i],Math.min(opens[i],closes[i])]),backgroundColor:bClr,borderWidth:0,barPercentage:.1,categoryPercentage:.85},
-        {type:'line',data:e20,borderColor:'#f0c040',borderWidth:1,pointRadius:0,tension:.2,fill:false,spanGaps:true},
-        {type:'line',data:e50,borderColor:'#ff8c42',borderWidth:1,pointRadius:0,tension:.2,fill:false,spanGaps:true},
-      ]},
-      options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
-          const i=ctx.dataIndex;
-          if(ctx.datasetIndex===0)return[`A:$${fp(opens[i])}`,'Y:$'+fp(highs[i]),'D:$'+fp(lows[i]),'K:$'+fp(closes[i])];
-          return '';
-        }}}},scales:scaleOpts}
-    });
+
+    // ── SVG Mum Grafiği (gerçek candlestick) ──
+    function drawCandleSVG(canvasId, opens, highs, lows, closes, ema20, ema50, labels){
+      const canvas = document.getElementById(canvasId);
+      if(!canvas) return;
+      const wrap = document.getElementById('cdlWrap') || canvas.parentElement;
+      const W = Math.max(280, wrap.offsetWidth || wrap.clientWidth || 340);
+      const H = 200;
+      canvas.style.display = 'none'; // canvas'ı gizle
+
+      // Eski SVG varsa kaldır
+      const oldSvg = canvas.parentElement.querySelector('.cndl-svg');
+      if(oldSvg) oldSvg.remove();
+
+      const n = closes.length;
+      const padL = 4, padR = 45, padT = 8, padB = 20;
+      const chartW = W - padL - padR;
+      const chartH = H - padT - padB;
+
+      const allPrices = [...highs, ...lows, ...ema20.filter(x=>x), ...ema50.filter(x=>x)];
+      const minP = Math.min(...allPrices) * 0.999;
+      const maxP = Math.max(...allPrices) * 1.001;
+      const priceRange = maxP - minP;
+
+      function px(price){ return padT + chartH - ((price - minP) / priceRange) * chartH; }
+      function xPos(i){ return padL + (i + 0.5) * (chartW / n); }
+      const candleW = Math.max(1, (chartW / n) * 0.6);
+
+      let svg = `<svg class="cndl-svg" width="${W}" height="${H}" style="display:block;overflow:visible" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+
+      // Grid yatay çizgiler
+      const yTicks = 5;
+      for(let i = 0; i <= yTicks; i++){
+        const price = minP + (priceRange * i / yTicks);
+        const y = px(price);
+        const label = fp(price);
+        svg += `<line x1="${padL}" y1="${y}" x2="${W - padR + 2}" y2="${y}" stroke="rgba(29,45,66,.7)" stroke-width="1"/>`;
+        svg += `<text x="${W - padR + 5}" y="${y + 3}" fill="#5577aa" font-size="8" font-family="monospace">${label}</text>`;
+      }
+
+      // X ekseni etiketleri (her 8 mumda bir)
+      const step = Math.max(1, Math.floor(n / 7));
+      for(let i = 0; i < n; i += step){
+        const x = xPos(i);
+        svg += `<text x="${x}" y="${H - 4}" fill="#5577aa" font-size="8" text-anchor="middle" font-family="sans-serif">${labels[i]}</text>`;
+      }
+
+      // EMA çizgileri
+      const drawEMA = (emaArr, color) => {
+        let d = '';
+        for(let i = 0; i < emaArr.length; i++){
+          if(emaArr[i] == null) continue;
+          const x = xPos(i), y = px(emaArr[i]);
+          d += (d === '' ? `M${x},${y}` : ` L${x},${y}`);
+        }
+        if(d) svg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linejoin="round"/>`;
+      };
+      drawEMA(ema20, '#f0c040');
+      drawEMA(ema50, '#ff8c42');
+
+      // Mumlar
+      for(let i = 0; i < n; i++){
+        const x = xPos(i);
+        const o = opens[i], h = highs[i], l = lows[i], c = closes[i];
+        const isBull = c >= o;
+        const color = isBull ? '#00e5a0' : '#ff3d6b';
+        const bodyTop = px(Math.max(o, c));
+        const bodyBot = px(Math.min(o, c));
+        const bodyH = Math.max(1, bodyBot - bodyTop);
+        const wickTop = px(h);
+        const wickBot = px(l);
+
+        // Gövde
+        svg += `<rect x="${x - candleW/2}" y="${bodyTop}" width="${candleW}" height="${bodyH}" fill="${color}" rx="0.5"/>`;
+        // Üst wick
+        if(wickTop < bodyTop)
+          svg += `<line x1="${x}" y1="${wickTop}" x2="${x}" y2="${bodyTop}" stroke="${color}" stroke-width="1.2"/>`;
+        // Alt wick
+        if(wickBot > bodyBot)
+          svg += `<line x1="${x}" y1="${bodyBot}" x2="${x}" y2="${wickBot}" stroke="${color}" stroke-width="1.2"/>`;
+      }
+
+      svg += '</svg>';
+
+      const div = document.createElement('div');
+      div.innerHTML = svg;
+      canvas.parentElement.insertBefore(div.firstChild, canvas);
+    }
+
+    drawCandleSVG('cdl', opens, highs, lows, closes, e20, e50, labels);
+
+    // RSI Chart (Chart.js ile — sorunsuz)
     rChart=new Chart(document.getElementById('cdlR').getContext('2d'),{
       type:'line',data:{labels,datasets:[
-        {data:rsiD,borderColor:'#9b6fff',borderWidth:1.2,pointRadius:0,tension:.3,fill:false,spanGaps:true},
-        {data:Array(k.length).fill(70),borderColor:'rgba(255,61,107,.3)',borderWidth:1,borderDash:[3,2],pointRadius:0,fill:false},
-        {data:Array(k.length).fill(30),borderColor:'rgba(0,229,160,.3)',borderWidth:1,borderDash:[3,2],pointRadius:0,fill:false},
+        {data:rsiD,borderColor:'#9b6fff',borderWidth:1.5,pointRadius:0,tension:.3,fill:false,spanGaps:true},
+        {data:Array(k.length).fill(70),borderColor:'rgba(255,61,107,.35)',borderWidth:1,borderDash:[3,2],pointRadius:0,fill:false},
+        {data:Array(k.length).fill(30),borderColor:'rgba(0,229,160,.35)',borderWidth:1,borderDash:[3,2],pointRadius:0,fill:false},
       ]},
       options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
         plugins:{legend:{display:false},tooltip:{enabled:false}},
