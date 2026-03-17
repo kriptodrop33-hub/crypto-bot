@@ -4528,72 +4528,48 @@ MINIAPP_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Kripto Drop Pro</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{
   --bg:#07090f;--card:#0e141f;--card2:#131c2a;--card3:#192436;
-  --border:#1d2d42;--border2:#253d58;
-  --text:#ddeeff;--muted:#5577aa;--dim:#050810;
-  --g:#00e5a0;--g2:#00ffb3;--gd:rgba(0,229,160,.12);
-  --r:#ff3d6b;--r2:#ff6b8a;--rd:rgba(255,61,107,.12);
+  --border:#1d2d42;--text:#ddeeff;--muted:#5577aa;--dim:#050810;
+  --g:#00e5a0;--gd:rgba(0,229,160,.12);
+  --r:#ff3d6b;--rd:rgba(255,61,107,.12);
   --y:#f0c040;--yd:rgba(240,192,64,.12);
   --b:#3a9fff;--b2:#6bbfff;--bd:rgba(58,159,255,.12);
   --p:#9b6fff;--pd:rgba(155,111,255,.12);
-  --o:#ff8c42;--t:#00d4e8;--td:rgba(0,212,232,.12);
-  --acc:#1a6fff;
-  --nav-w:64px;
+  --o:#ff8c42;--t:#00d4e8;
+  --nav-w:62px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);font-size:13px}
-
-/* LAYOUT */
 #app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 #main{flex:1;display:flex;overflow:hidden}
 
-/* LEFT SIDEBAR NAV */
-#sidenav{
-  width:var(--nav-w);flex-shrink:0;
-  background:#060c18;border-right:1px solid var(--border);
-  display:flex;flex-direction:column;align-items:center;
-  padding:6px 0;overflow-y:auto;overflow-x:hidden;gap:2px;
-  scrollbar-width:none;
-}
+/* SOL NAV */
+#sidenav{width:var(--nav-w);flex-shrink:0;background:#060c18;border-right:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;overflow-y:auto;scrollbar-width:none}
 #sidenav::-webkit-scrollbar{display:none}
-.nb{
-  width:56px;height:56px;border-radius:14px;
-  background:transparent;border:none;color:var(--muted);
-  cursor:pointer;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:3px;
-  font-size:10px;font-weight:700;transition:all .15s;
-  padding:0;letter-spacing:.2px;
-}
+.nb{width:54px;height:54px;border-radius:13px;background:transparent;border:none;color:var(--muted);
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;font-size:9px;font-weight:700;transition:all .15s;padding:0;letter-spacing:.2px}
 .nb:active{opacity:.7;transform:scale(.93)}
 .nb.on{background:rgba(58,159,255,.15);color:var(--b2)}
-.nb .ic{font-size:22px;line-height:1}
-.nb-div{width:36px;height:1px;background:var(--border);margin:4px 0;flex-shrink:0}
+.nb .ic{font-size:20px;line-height:1}
+.nb-div{width:34px;height:1px;background:var(--border);margin:3px 0;flex-shrink:0}
 
-/* CONTENT AREA */
+/* SCROLL */
 #scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:10px}
 #scroll::-webkit-scrollbar{display:none}
 
-/* TICKER */
-.ticker{height:26px;background:#050d1a;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;overflow:hidden;flex-shrink:0}
-.t-inner{display:flex;animation:tick 35s linear infinite}
-@keyframes tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-.t-item{display:flex;align-items:center;gap:4px;padding:0 14px;
-  border-right:1px solid var(--border);white-space:nowrap;height:26px;flex-shrink:0;font-size:10px}
-.t-sym{font-weight:700;color:var(--muted);font-size:9px;letter-spacing:.4px}
-
 /* HEADER */
-.hdr{height:46px;flex-shrink:0;background:linear-gradient(180deg,#0a1628,#060d1a);
+.hdr{height:44px;flex-shrink:0;background:linear-gradient(180deg,#0a1628,#060d1a);
   border-bottom:1px solid var(--border);display:flex;align-items:center;
-  justify-content:space-between;padding:0 13px;z-index:200}
+  justify-content:space-between;padding:0 12px;z-index:200}
 .logo{display:flex;align-items:center;gap:7px}
-.logo-box{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#1040a0,#0a2880);
-  display:flex;align-items:center;justify-content:center;font-size:15px}
-.logo-txt{font-size:14px;font-weight:800;letter-spacing:-.3px;
+.logo-box{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#1040a0,#0a2880);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+.logo-txt{font-size:13px;font-weight:800;
   background:linear-gradient(135deg,var(--b2),var(--t));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .logo-sub{font-size:8px;color:var(--muted);font-weight:600;letter-spacing:.4px;margin-top:-2px}
 .hdr-r{display:flex;align-items:center;gap:6px}
@@ -4604,47 +4580,55 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
 .ltxt{font-size:9px;font-weight:700;color:var(--g);letter-spacing:.4px}
 #clk{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
 
-/* PAGES */
-.page{display:none;padding:12px}
+/* TICKER */
+.ticker{height:24px;background:#050d1a;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;overflow:hidden;flex-shrink:0}
+.t-inner{display:flex;animation:tick 30s linear infinite}
+@keyframes tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.t-item{display:flex;align-items:center;gap:3px;padding:0 12px;
+  border-right:1px solid var(--border);white-space:nowrap;height:24px;flex-shrink:0;font-size:10px}
+.t-sym{font-weight:700;color:var(--muted);font-size:9px}
+
+/* PAGE */
+.page{display:none;padding:11px}
 .page.on{display:block}
 
 /* CARD */
-.card{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:13px;margin-bottom:10px;position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(58,159,255,.15),transparent)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:9px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(58,159,255,.12),transparent)}
 .cg{border-color:rgba(0,229,160,.18)}.cb{border-color:rgba(58,159,255,.18)}.cy{border-color:rgba(240,192,64,.18)}.cp{border-color:rgba(155,111,255,.18)}.co{border-color:rgba(255,140,66,.18)}
 
 /* GRID */
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
-.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px}
 
-/* STAT BOX */
-.sb{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 7px;text-align:center}
-.sv{font-size:17px;font-weight:800;line-height:1.1;letter-spacing:-.3px}
+/* STAT */
+.sb{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:9px 6px;text-align:center}
+.sv{font-size:16px;font-weight:800;line-height:1.1}
 .sl{font-size:9px;color:var(--muted);margin-top:3px;font-weight:600}
 
 /* COLORS */
-.up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}.tl{color:var(--t)}
+.up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}
 
 /* BADGE */
-.bdg{display:inline-flex;align-items:center;padding:3px 7px;border-radius:7px;font-size:11px;font-weight:700}
+.bdg{display:inline-flex;align-items:center;padding:2px 7px;border-radius:7px;font-size:11px;font-weight:700}
 .bg{background:var(--gd);color:var(--g);border:1px solid rgba(0,229,160,.2)}
 .br{background:var(--rd);color:var(--r);border:1px solid rgba(255,61,107,.2)}
 .by{background:var(--yd);color:var(--y);border:1px solid rgba(240,192,64,.2)}
 .bb{background:var(--bd);color:var(--b);border:1px solid rgba(58,159,255,.2)}
 
 /* COIN ROW */
-.cr{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.cr{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
 .cr:last-child{border-bottom:none}
-.cr:active{opacity:.65}
-.cico{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:1px solid;flex-shrink:0}
+.cico{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:1px solid;flex-shrink:0}
 .cinfo{flex:1;min-width:0}
 .csym{font-size:13px;font-weight:800}
-.cname{font-size:10px;color:var(--muted);margin-top:1px}
+.cname{font-size:9px;color:var(--muted);margin-top:1px}
 .cr-r{text-align:right;flex-shrink:0}
-.cpct{font-size:13px;font-weight:800}
-.cprice{font-size:10px;color:var(--muted);margin-top:1px;font-variant-numeric:tabular-nums}
-.crank{font-size:9px;color:var(--muted);width:18px;text-align:center;flex-shrink:0;font-weight:600}
+.cpct{font-size:12px;font-weight:800}
+.cprice{font-size:9px;color:var(--muted);margin-top:1px}
+.crank{font-size:9px;color:var(--muted);width:16px;text-align:center;flex-shrink:0;font-weight:600}
 
 /* FORM */
 .row{display:flex;gap:7px;align-items:center;margin-bottom:10px}
@@ -4653,88 +4637,50 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
 .inp:focus{border-color:var(--b)}
 .inp::placeholder{color:var(--muted)}
 .sel{background:var(--card2);border:1px solid var(--border);border-radius:10px;
-  padding:12px 8px;color:var(--text);font-size:12px;outline:none;-webkit-appearance:none}
+  padding:12px 8px;color:var(--text);font-size:12px;outline:none}
 .btn{background:linear-gradient(135deg,#1052d0,#0838a8);border:none;border-radius:10px;
-  padding:12px 16px;color:#fff;font-size:13px;cursor:pointer;font-weight:700;flex-shrink:0;white-space:nowrap}
+  padding:12px 16px;color:#fff;font-size:13px;cursor:pointer;font-weight:700;flex-shrink:0}
 .btn:active{opacity:.8}
 .btn-g{background:linear-gradient(135deg,#007a50,#005535)}
-.btn-r{background:linear-gradient(135deg,#a0102a,#700818)}
-.btn-o{background:linear-gradient(135deg,#b05010,#803808)}
 
-.frow{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;flex-wrap:wrap}
-.frow::-webkit-scrollbar{display:none}
-.fc{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 13px;
-  font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.frow{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.fc{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:7px 12px;
+  font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap}
 .fc.on{background:var(--bd);border-color:rgba(58,159,255,.35);color:var(--b2)}
 
-/* SECTION HEADER */
-.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+/* SH */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
 .sh-t{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);display:flex;align-items:center;gap:5px}
 .sh-t span{color:var(--text)}
-.sh-btn{font-size:10px;color:var(--b);font-weight:600;cursor:pointer;padding:3px 7px;border-radius:6px;border:1px solid rgba(58,159,255,.2)}
+.sh-btn{font-size:10px;color:var(--b);font-weight:600;cursor:pointer;padding:3px 7px;border-radius:5px;border:1px solid rgba(58,159,255,.2)}
 
-/* PROGRESS */
-.pb{background:rgba(255,255,255,.06);border-radius:3px;height:6px;overflow:hidden}
-.pbf{height:6px;border-radius:3px;transition:width .5s ease}
-
-/* FEAR GREED RING */
-.fg-ring{width:88px;height:88px;position:relative;margin:0 auto}
-.fg-ring svg{transform:rotate(-90deg)}
-.fg-ov{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
-.fg-n{font-size:22px;font-weight:900;line-height:1}
-.fg-l{font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.2px;white-space:nowrap}
-
-/* CHART */
-.ch{position:relative}
-.ohlcv{display:flex;gap:5px;flex-wrap:wrap;padding:5px 9px;background:var(--dim);border-bottom:1px solid var(--border);font-size:9px}
-
-/* EMPTY STATE */
+/* MISC */
+.pb{background:rgba(255,255,255,.06);border-radius:3px;height:5px;overflow:hidden}
+.pbf{height:5px;border-radius:3px;transition:width .5s}
 .mt{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px;gap:8px;opacity:.6}
-.mt-i{font-size:36px}
-.mt-t{font-size:14px;font-weight:700}
-.mt-s{font-size:11px;color:var(--muted);text-align:center}
-
-/* LOADING */
-.ld{display:flex;align-items:center;justify-content:center;gap:7px;padding:20px;color:var(--muted);font-size:11px}
-.spin{width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--b);border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0}
+.mt-i{font-size:36px}.mt-t{font-size:14px;font-weight:700}.mt-s{font-size:11px;color:var(--muted);text-align:center}
+.spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--b);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
-
-/* ERROR */
-.err{display:flex;align-items:center;justify-content:space-between;background:var(--rd);border:1px solid rgba(255,61,107,.25);border-radius:10px;padding:9px 12px;margin-bottom:10px;gap:8px}
-.err-txt{font-size:11px;color:var(--r);font-weight:600}
-.err-btn{font-size:10px;color:var(--b);font-weight:700;cursor:pointer;padding:4px 8px;border-radius:6px;border:1px solid rgba(58,159,255,.2);background:var(--bd);flex-shrink:0}
-
-/* TOAST */
+.ld{display:flex;align-items:center;justify-content:center;gap:7px;padding:20px;color:var(--muted);font-size:11px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
-  background:#1a2a40;border:1px solid var(--border2);border-radius:20px;
-  padding:8px 16px;font-size:12px;color:var(--text);opacity:0;
-  transition:all .25s;pointer-events:none;white-space:nowrap;z-index:9999}
+  background:#1a2a40;border:1px solid var(--border);border-radius:20px;
+  padding:8px 16px;font-size:12px;opacity:0;transition:all .25s;pointer-events:none;z-index:9999;white-space:nowrap}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* HEATMAP */
-.hmap{display:flex;flex-wrap:wrap;gap:3px}
-.hm-cell{border-radius:6px;display:flex;align-items:center;justify-content:center;
-  flex-direction:column;gap:1px;cursor:pointer;transition:opacity .1s}
-.hm-cell:active{opacity:.7}
-.hm-s{font-size:9px;font-weight:800}
-.hm-p{font-size:8px;font-weight:700}
-
-/* KAR/ZARAR PAGE */
+/* KAR/ZARAR */
+.kz-tab{display:flex;gap:6px;margin-bottom:12px}
+.kz-t{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--card2);
+  text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer}
+.kz-t.on{background:var(--bd);border-color:rgba(58,159,255,.35);color:var(--b2)}
 .kz-result{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:10px}
 .kz-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)}
 .kz-row:last-child{border-bottom:none}
 .kz-label{font-size:12px;color:var(--muted);font-weight:600}
 .kz-val{font-size:13px;font-weight:800}
-.kz-big{font-size:20px;font-weight:900;text-align:center;padding:12px 0}
-.kz-tab{display:flex;gap:6px;margin-bottom:12px}
-.kz-t{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--card2);
-  text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer}
-.kz-t.on{background:var(--bd);border-color:rgba(58,159,255,.35);color:var(--b2)}
+.kz-big{font-size:22px;font-weight:900;text-align:center;padding:12px 0}
 .pos-card{background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:12px;margin-bottom:8px}
 .pos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pos-sym{font-size:14px;font-weight:900}
-.pos-del{font-size:18px;cursor:pointer;padding:2px 6px;opacity:.6}
-.pos-del:active{opacity:1}
 .pos-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pos-item{background:var(--card3);border-radius:8px;padding:8px}
 .pos-item-l{font-size:9px;color:var(--muted);margin-bottom:3px;font-weight:600}
@@ -4744,7 +4690,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
 <body>
 <div id="app">
 
-<!-- HEADER -->
 <div class="hdr">
   <div class="logo">
     <div class="logo-box">📊</div>
@@ -4756,241 +4701,152 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   </div>
 </div>
 
-<!-- TICKER -->
 <div class="ticker">
-  <div class="t-inner" id="tickerIn">
+  <div class="t-inner" id="tInner">
     <div class="t-item"><span class="t-sym">BTC</span><span id="tBTC">$--</span></div>
     <div class="t-item"><span class="t-sym">ETH</span><span id="tETH">$--</span></div>
     <div class="t-item"><span class="t-sym">BNB</span><span id="tBNB">$--</span></div>
     <div class="t-item"><span class="t-sym">SOL</span><span id="tSOL">$--</span></div>
     <div class="t-item"><span class="t-sym">XRP</span><span id="tXRP">$--</span></div>
     <div class="t-item"><span class="t-sym">DOGE</span><span id="tDOGE">$--</span></div>
-    <div class="t-item"><span class="t-sym">ADA</span><span id="tADA">$--</span></div>
-    <div class="t-item"><span class="t-sym">AVAX</span><span id="tAVAX">$--</span></div>
     <div class="t-item"><span class="t-sym">BTC</span><span id="tBTC2">$--</span></div>
     <div class="t-item"><span class="t-sym">ETH</span><span id="tETH2">$--</span></div>
     <div class="t-item"><span class="t-sym">BNB</span><span id="tBNB2">$--</span></div>
     <div class="t-item"><span class="t-sym">SOL</span><span id="tSOL2">$--</span></div>
     <div class="t-item"><span class="t-sym">XRP</span><span id="tXRP2">$--</span></div>
     <div class="t-item"><span class="t-sym">DOGE</span><span id="tDOGE2">$--</span></div>
-    <div class="t-item"><span class="t-sym">ADA</span><span id="tADA2">$--</span></div>
-    <div class="t-item"><span class="t-sym">AVAX</span><span id="tAVAX2">$--</span></div>
   </div>
 </div>
 
-<!-- MAIN -->
 <div id="main">
-
-<!-- SOL NAV -->
 <div id="sidenav">
   <button class="nb on"  onclick="go('home')">   <span class="ic">🏠</span>Ana</button>
   <button class="nb"     onclick="go('mkt')">    <span class="ic">📈</span>Piyasa</button>
-  <button class="nb"     onclick="go('chart')">  <span class="ic">🕯️</span>Grafik</button>
-  <button class="nb"     onclick="go('nabiz')">  <span class="ic">🌡️</span>Nabız</button>
-  <div class="nb-div"></div>
   <button class="nb"     onclick="go('top')">    <span class="ic">🏆</span>Liderler</button>
+  <div class="nb-div"></div>
   <button class="nb"     onclick="go('analiz')"> <span class="ic">🔬</span>Analiz</button>
   <button class="nb"     onclick="go('fib')">    <span class="ic">📐</span>Fibonacci</button>
-  <button class="nb"     onclick="go('sent')">   <span class="ic">🧠</span>Duygu</button>
   <div class="nb-div"></div>
   <button class="nb"     onclick="go('kar')">    <span class="ic">💰</span>K/Z</button>
   <button class="nb"     onclick="go('alarmlar')"><span class="ic">🔔</span>Alarmlar</button>
 </div>
 
-<!-- SCROLL AREA -->
 <div id="scroll">
 
 <!-- ANA SAYFA -->
 <div id="p-home" class="page on">
-  <div id="homeErr" style="display:none" class="err">
-    <span class="err-txt">⚠️ Bağlantı hatası</span>
-    <span class="err-btn" onclick="retryHome()">🔄 Tekrar Dene</span>
-  </div>
-  <div class="g2" style="margin-bottom:8px">
-    <div class="card cg" style="padding:13px">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">₿ BITCOIN</div>
-      <div class="sv up" id="hBP" style="font-size:20px">--</div>
-      <div id="hBB" style="margin-top:4px;font-size:11px">--</div>
-      <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hBV">Vol: --</div>
-    </div>
-    <div class="card cb" style="padding:13px">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">Ξ ETHEREUM</div>
-      <div class="sv bl" id="hEP" style="font-size:20px">--</div>
-      <div id="hEB" style="margin-top:4px;font-size:11px">--</div>
-      <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hEV">Vol: --</div>
-    </div>
-  </div>
-  <div class="g4" style="margin-bottom:9px">
-    <div class="sb"><div class="sv or" id="hDom">--</div><div class="sl">BTC Dom.</div></div>
-    <div class="sb"><div class="sv" id="hAvg">--</div><div class="sl">Ort. Değ.</div></div>
-    <div class="sb"><div class="sv up" id="hUp">--</div><div class="sl">↑ Yükselen</div></div>
-    <div class="sb"><div class="sv dn" id="hDn">--</div><div class="sl">↓ Düşen</div></div>
-  </div>
-  <div class="g2" style="margin-bottom:9px">
-    <div class="card cy" style="padding:11px;text-align:center">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:7px;letter-spacing:.4px">😱 KORKU & AÇGÖZLÜLÜK</div>
-      <div class="fg-ring">
-        <svg width="88" height="88" viewBox="0 0 88 88">
-          <circle cx="44" cy="44" r="35" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="7"/>
-          <circle id="fgA" cx="44" cy="44" r="35" fill="none" stroke="var(--muted)"
-            stroke-width="7" stroke-linecap="round" stroke-dasharray="219.9" stroke-dashoffset="219.9"
-            style="transition:stroke-dashoffset .8s ease,stroke .4s"/>
-        </svg>
-        <div class="fg-ov">
-          <div class="fg-n" id="fgN">--</div>
-          <div class="fg-l" id="fgL">Yükleniyor</div>
-        </div>
+  <div id="homeLoad" class="ld"><div class="spin"></div>Veriler yükleniyor...</div>
+  <div id="homeContent" style="display:none">
+    <div class="g2" style="margin-bottom:8px">
+      <div class="card cg" style="padding:12px">
+        <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">₿ BITCOIN</div>
+        <div class="sv up" id="hBP" style="font-size:19px">--</div>
+        <div id="hBB" style="margin-top:4px;font-size:11px">--</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hBV">Vol: --</div>
       </div>
-      <div style="font-size:9px;color:var(--muted);margin-top:5px" id="fgY">Dün: --</div>
+      <div class="card cb" style="padding:12px">
+        <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">Ξ ETHEREUM</div>
+        <div class="sv bl" id="hEP" style="font-size:19px">--</div>
+        <div id="hEB" style="margin-top:4px;font-size:11px">--</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hEV">Vol: --</div>
+      </div>
     </div>
-    <div class="card" style="padding:11px">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:7px;letter-spacing:.4px">📊 PİYASA NABZI</div>
-      <div id="hNabiz"><div class="spin" style="width:16px;height:16px;margin:10px auto"></div></div>
+    <div class="g4" style="margin-bottom:8px">
+      <div class="sb"><div class="sv or" id="hDom">--</div><div class="sl">BTC Dom.</div></div>
+      <div class="sb"><div class="sv" id="hAvg">--</div><div class="sl">Ort. Değ.</div></div>
+      <div class="sb"><div class="sv up" id="hUp">--</div><div class="sl">↑ Yükselen</div></div>
+      <div class="sb"><div class="sv dn" id="hDn">--</div><div class="sl">↓ Düşen</div></div>
     </div>
-  </div>
-  <div class="card cb" style="margin-bottom:9px">
-    <div class="sh"><div class="sh-t">⭐ <span>FAVORİLERİM</span></div><span class="sh-btn" onclick="go('mkt')">Tüm Piyasa →</span></div>
-    <div id="hFav"><div class="ld"><div class="spin"></div></div></div>
-  </div>
-  <div class="card cp" style="margin-bottom:9px">
-    <div class="sh"><div class="sh-t">🔔 <span>AKTİF ALARMLARIM</span></div><span class="sh-btn" onclick="go('alarmlar')">Tümü →</span></div>
-    <div id="hAlarm"><div class="ld"><div class="spin"></div></div></div>
-  </div>
-  <div class="card" style="margin-bottom:9px">
-    <div class="sh"><div class="sh-t">🚀 <span>LİDERLER</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
-    <div id="hGain"><div class="ld"><div class="spin"></div></div></div>
-  </div>
-  <div class="card cy" style="margin-bottom:9px">
-    <div class="sh"><div class="sh-t">📅 <span>EKONOMİK TAKVİM</span></div><span style="font-size:9px;color:var(--muted)" id="hTakT"></span></div>
-    <div id="hTak"><div class="ld"><div class="spin"></div></div></div>
-  </div>
-  <div class="card">
-    <div class="sh"><div class="sh-t">📰 <span>SON HABERLER</span></div><span style="font-size:9px;color:var(--muted)" id="hNT">--:--</span></div>
-    <div id="hNews"><div class="ld"><div class="spin"></div></div></div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="sh"><div class="sh-t">🚀 <span>LİDERLER</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+      <div id="hGain"></div>
+    </div>
+    <div class="card cp" style="margin-bottom:8px">
+      <div class="sh"><div class="sh-t">🔔 <span>AKTİF ALARMLARIM</span></div><span class="sh-btn" onclick="go('alarmlar')">Tümü →</span></div>
+      <div id="hAlarm"><div style="font-size:11px;color:var(--muted);padding:5px 0">Yükleniyor...</div></div>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="sh-t">📰 <span>SON HABERLER</span></div></div>
+      <div id="hNews"><div style="font-size:11px;color:var(--muted)">Yükleniyor...</div></div>
+    </div>
   </div>
 </div>
 
 <!-- PİYASA -->
 <div id="p-mkt" class="page">
   <div class="row">
-    <input class="inp" id="mQ" placeholder="🔍 Coin ara... BTC, ETH" oninput="fltMkt()">
+    <input class="inp" id="mQ" placeholder="🔍 BTC, ETH..." oninput="fltMkt()">
     <select class="sel" id="mSrt" onchange="srtMkt()">
       <option value="vol">📊 Hacim</option>
       <option value="up">🟢 Yükselen</option>
       <option value="dn">🔴 Düşen</option>
-      <option value="px">💰 Fiyat</option>
     </select>
   </div>
   <div class="frow">
     <div class="fc on" id="fAll" onclick="setF('all')">🌐 Tümü</div>
     <div class="fc" id="fUp" onclick="setF('up')">🟢 Yükselen</div>
     <div class="fc" id="fDn" onclick="setF('dn')">🔴 Düşen</div>
-    <div class="fc" id="fHot" onclick="setF('hot')">🔥 Büyük Hacim</div>
     <div class="fc" id="fPump" onclick="setF('pump')">⚡ +5% Pump</div>
     <div class="fc" id="fDump" onclick="setF('dump')">💥 -5% Dump</div>
   </div>
-  <div style="font-size:9px;color:var(--muted);margin-bottom:7px;text-align:right" id="mCnt"></div>
   <div id="mktList"><div class="ld"><div class="spin"></div>Yükleniyor...</div></div>
-</div>
-
-<!-- GRAFİK -->
-<div id="p-chart" class="page">
-  <div class="row">
-    <input class="inp" id="gSym" placeholder="BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')drawChart()">
-    <select class="sel" id="gTF" onchange="drawChart()">
-      <option value="15m">15d</option><option value="1h">1s</option>
-      <option value="4h" selected>4s</option><option value="1d">1g</option><option value="1w">1h</option>
-    </select>
-    <button class="btn" onclick="drawChart()">🕯️ Çiz</button>
-  </div>
-  <div id="chartOut"><div class="mt"><div class="mt-i">🕯️</div><div class="mt-t">Mum Grafiği</div><div class="mt-s">Sembol girin ve Çiz'e basın</div></div></div>
-</div>
-
-<!-- NABIZ -->
-<div id="p-nabiz" class="page">
-  <div class="g2" style="margin-bottom:9px">
-    <div class="card cy" style="padding:11px;text-align:center">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:6px">😱 FEAR &amp; GREED</div>
-      <canvas id="fgG" width="130" height="72"></canvas>
-      <div style="font-size:18px;font-weight:900;margin-top:4px" id="fgGV">--</div>
-      <div style="font-size:10px;color:var(--muted)" id="fgGL">--</div>
-    </div>
-    <div class="card" style="padding:11px">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:6px">📈 YUKARI / AŞAĞI</div>
-      <canvas id="adC" width="120" height="120" style="display:block;margin:0 auto"></canvas>
-      <div style="text-align:center;font-size:10px;margin-top:4px" id="adL">--</div>
-    </div>
-  </div>
-  <div class="card" style="margin-bottom:9px"><div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🗺️ SEKTÖR HEATMAP</div><div class="hmap" id="sHeat"><div class="ld"><div class="spin"></div></div></div></div>
-  <div class="card" style="margin-bottom:9px"><div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">💧 HACİM DAĞILIMI</div><div style="position:relative;height:130px"><canvas id="domPie"></canvas></div></div>
-  <div class="card"><div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🔮 RSI AŞIRI BÖLGELER (1s)</div><div id="rsiExt"><div class="ld" style="padding:8px"><div class="spin"></div></div></div></div>
 </div>
 
 <!-- LİDERLER -->
 <div id="p-top" class="page">
-  <div class="frow" style="margin-bottom:9px">
+  <div class="frow" style="margin-bottom:8px">
     <div class="fc on" id="tG" onclick="showTop('g')">🚀 Yükselen</div>
     <div class="fc" id="tL" onclick="showTop('l')">💥 Düşen</div>
     <div class="fc" id="tV" onclick="showTop('v')">💧 Hacim</div>
   </div>
-  <div class="card" id="topL"><div class="ld"><div class="spin"></div></div></div>
+  <div id="topL"><div class="ld"><div class="spin"></div></div></div>
 </div>
 
 <!-- ANALİZ -->
 <div id="p-analiz" class="page">
   <div class="row">
-    <input class="inp" id="aIn" placeholder="BTCUSDT veya BTC" maxlength="15" onkeydown="if(event.key==='Enter')doAnaliz()">
+    <input class="inp" id="aIn" placeholder="BTC veya BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doAnaliz()">
     <button class="btn" onclick="doAnaliz()">🔬 Analiz</button>
   </div>
-  <div id="aOut"><div class="mt"><div class="mt-i">🔬</div><div class="mt-t">Teknik Analiz</div><div class="mt-s">RSI, EMA, sinyal skoru</div></div></div>
+  <div id="aOut"><div class="mt"><div class="mt-i">🔬</div><div class="mt-t">Teknik Analiz</div><div class="mt-s">RSI · EMA · Sinyal skoru</div></div></div>
 </div>
 
 <!-- FİBONACCİ -->
 <div id="p-fib" class="page">
   <div class="row">
-    <input class="inp" id="fIn" placeholder="BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doFib()">
-    <select class="sel" id="fTF"><option value="1h">1s</option><option value="4h" selected>4s</option><option value="1d">1g</option><option value="1w">1h</option></select>
+    <input class="inp" id="fIn" placeholder="BTC veya BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doFib()">
+    <select class="sel" id="fTF">
+      <option value="1h">1s</option><option value="4h" selected>4s</option>
+      <option value="1d">1g</option><option value="1w">1h</option>
+    </select>
     <button class="btn" onclick="doFib()">📐 Çiz</button>
   </div>
   <div id="fOut"><div class="mt"><div class="mt-i">📐</div><div class="mt-t">Fibonacci</div><div class="mt-s">Destek ve direnç seviyeleri</div></div></div>
 </div>
 
-<!-- DUYGU -->
-<div id="p-sent" class="page">
-  <div class="row">
-    <input class="inp" id="sIn" placeholder="BTC, ETH, SOL..." maxlength="15" onkeydown="if(event.key==='Enter')doSent()">
-    <button class="btn" onclick="doSent()">🧠 Analiz</button>
-  </div>
-  <div id="sOut"><div class="mt"><div class="mt-i">🧠</div><div class="mt-t">Sentiment Analizi</div><div class="mt-s">Topluluk duygu skoru</div></div></div>
-</div>
-
-<!-- KAR / ZARAR -->
+<!-- KAR/ZARAR -->
 <div id="p-kar" class="page">
   <div class="kz-tab">
     <div class="kz-t on" id="kzT1" onclick="kzSwitch('hesap')">🧮 Hızlı Hesap</div>
     <div class="kz-t"    id="kzT2" onclick="kzSwitch('pozisyon')">📦 Pozisyonlarım</div>
   </div>
-
-  <!-- Hızlı Hesap -->
   <div id="kzHesap">
     <div class="card co">
       <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:12px">💰 KAR / ZARAR HESAPLA</div>
-      <div class="row">
-        <input class="inp" id="kzSym" placeholder="BTC veya BTCUSDT" maxlength="15" style="text-transform:uppercase">
-      </div>
+      <div class="row"><input class="inp" id="kzSym" placeholder="BTC veya BTCUSDT" maxlength="15"></div>
       <div class="g2" style="margin-bottom:10px">
         <div>
           <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Alış Fiyatı (USDT)</div>
           <input class="inp" id="kzBuy" placeholder="60000" type="number" style="width:100%">
         </div>
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Miktar (Adet)</div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Miktar</div>
           <input class="inp" id="kzAmt" placeholder="0.5" type="number" style="width:100%">
         </div>
       </div>
       <div style="margin-bottom:10px">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Satış Fiyatı (USDT) — boş bırakırsanız canlı fiyat kullanılır</div>
-        <input class="inp" id="kzSell" placeholder="Canlı fiyat" type="number" style="width:100%">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Satış Fiyatı — boş = canlı fiyat</div>
+        <input class="inp" id="kzSell" placeholder="Canlı fiyat kullanılır" type="number" style="width:100%">
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn" style="flex:1;padding:14px" onclick="kzHesapla()">🧮 Hesapla</button>
@@ -4999,12 +4855,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
     </div>
     <div id="kzResult"></div>
   </div>
-
-  <!-- Pozisyonlar -->
   <div id="kzPoz" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px">📦 KAYITLI POZİSYONLARIM</div>
-      <button class="btn" style="padding:8px 12px;font-size:11px" onclick="loadKarPoz()">🔄 Yenile</button>
+      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px">📦 POZİSYONLARIM</div>
+      <button class="btn" style="padding:7px 11px;font-size:11px" onclick="loadKarPoz()">🔄</button>
     </div>
     <div id="kzPozList"><div class="ld"><div class="spin"></div></div></div>
   </div>
@@ -5015,473 +4869,190 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div id="alarmOut"><div class="ld"><div class="spin"></div></div></div>
 </div>
 
-<!-- TAKVİM -->
-<div id="p-takvim" class="page">
-  <div id="takvimOut"><div class="ld"><div class="spin"></div></div></div>
-</div>
-
 </div><!-- /scroll -->
 </div><!-- /main -->
 </div><!-- /app -->
-
 <div id="toast"></div>
 
 <script>
-// ─── CONFIG ───
 const tg=window.Telegram?.WebApp;
 if(tg){tg.ready();tg.expand();}
 const UID=tg?.initDataUnsafe?.user?.id||0;
-const PROXY='/api/proxy?url=';
-// Binance direkt URL — sf() fonksiyonu harici URL'leri otomatik proxy'den geçirir
-const BIN='https://api.binance.com/api/v3';
-const CGP='https://api.coingecko.com/api/v3';
-const FGP='https://api.alternative.me/fng/?limit=2';
-const PAGES=['home','mkt','chart','nabiz','top','analiz','fib','sent','kar','alarmlar'];
-let CUR='home';
-let allCoins=[],filtCoins=[],coinFilter='all';
-let topData={g:[],l:[],v:[]},topMode='g';
-let cChart=null,rChart=null,vChart=null,nabLoaded=false;
-let domPieInst=null,adInst=null;
-let kzMode='hesap';
-let kzLastSym='',kzLastBuy=0,kzLastAmt=0;
 
-// ─── CLOCK ───
-setInterval(()=>{
-  const now=new Date();
-  const el=document.getElementById('clk');
-  if(el)el.textContent=now.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-},1000);
-
-// ─── TOAST ───
-function toast(m,d=2200){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
-
-// ─── COPY ───
-function cp(text,label){try{navigator.clipboard.writeText(text);}catch(e){}toast('📋 Kopyalandı'+(label?' — '+label:''));}
-
-// ─── FORMAT ───
+// ── FORMAT ──
 function fp(p){
   p=parseFloat(p);if(isNaN(p)||p===0)return'--';
   if(p>=100000)return p.toLocaleString('tr-TR',{maximumFractionDigits:0});
   if(p>=1000)return p.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  if(p>=1)return p.toFixed(4);
-  if(p>=0.001)return p.toFixed(6);
-  return p.toFixed(8);
+  if(p>=1)return p.toFixed(4);if(p>=0.001)return p.toFixed(6);return p.toFixed(8);
 }
 function fv(v){
   v=parseFloat(v)||0;
-  if(v>=1e12)return(v/1e12).toFixed(2)+'T$';
-  if(v>=1e9)return(v/1e9).toFixed(2)+'B$';
+  if(v>=1e9)return(v/1e9).toFixed(1)+'B$';
   if(v>=1e6)return(v/1e6).toFixed(1)+'M$';
   if(v>=1e3)return(v/1e3).toFixed(0)+'K$';
   return v.toFixed(0)+'$';
 }
 function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
-const PAL=['#3a9fff','#9b6fff','#00e5a0','#f0c040','#ff8c42','#00d4e8','#ff3d6b','#4ecdc4'];
+const PAL=['#3a9fff','#9b6fff','#00e5a0','#f0c040','#ff8c42','#00d4e8','#ff3d6b'];
 function cIco(sym){const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];return`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30">${sym[0]}</div>`;}
+function toast(m,d=2200){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
 
-// ─── SAFE FETCH — tüm harici istekler proxy üzerinden ───
-async function sf(url, ms=12000){
-  const isExternal = url.startsWith('http://') || url.startsWith('https://');
-  const fetchUrl = isExternal ? (PROXY + encodeURIComponent(url)) : url;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=>ctrl.abort(), ms);
-    const r = await fetch(fetchUrl, {signal: ctrl.signal});
-    clearTimeout(timer);
-    if(!r.ok) return null;
-    // proxy text/plain veya application/json döndürebilir, her ikisini de handle et
-    const txt = await r.text();
-    if(!txt || txt.trim()==='') return null;
-    try { return JSON.parse(txt); }
-    catch(e) { console.warn('sf parse error:', url, txt.slice(0,100)); return null; }
-  } catch(e) {
-    console.warn('sf fetch error:', url, e.message);
+// ── CLOCK ──
+setInterval(()=>{const e=document.getElementById('clk');if(e)e.textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
+
+// ── API FETCH — sadece kendi sunucumuz ──
+async function api(path, ms=15000){
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),ms);
+    const r=await fetch(path,{signal:ctrl.signal});
+    clearTimeout(t);
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){
+    console.warn('api error:',path,e.message);
     return null;
   }
 }
 
-// ─── NAVIGATION ───
+// ── STATE ──
+let allCoins=[], filtCoins=[], coinFilter='all';
+let topData={g:[],l:[],v:[]}, topMode='g';
+const PAGES=['home','mkt','top','analiz','fib','kar','alarmlar'];
+let CUR='home';
+
+// ── NAV ──
 function go(t){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
-  document.querySelectorAll('.nb').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('#sidenav .nb').forEach(x=>x.classList.remove('on'));
   const pg=document.getElementById('p-'+t);if(!pg)return;
   pg.classList.add('on');
-  const nbs=document.querySelectorAll('#sidenav .nb');
   const ni=PAGES.indexOf(t);
+  const nbs=document.querySelectorAll('#sidenav .nb');
   if(ni>=0&&nbs[ni])nbs[ni].classList.add('on');
   CUR=t;
   document.getElementById('scroll').scrollTop=0;
   if(t==='mkt'&&!allCoins.length)loadMkt();
-  if(t==='nabiz')loadNabiz();
   if(t==='top'&&!topData.g.length)loadTop();
   if(t==='alarmlar')loadAlarms();
-  if(t==='kar')loadKarPoz();
-}
-function openChart(sym){document.getElementById('gSym').value=sym;go('chart');drawChart();}
-
-// ─── TICKER ───
-const TSYMS=['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','AVAX'];
-async function loadTicker(){
-  // Her sembol için tek tek çek (proxy büyük yanıtları kesiyor olabilir)
-  const syms = TSYMS.map(s=>s+'USDT');
-  // Binance'in symbols parametresi ile sadece ihtiyaç duyulan coinleri çek
-  const symParam = encodeURIComponent(JSON.stringify(syms));
-  const d = await sf(`${BIN}/ticker/price?symbols=${symParam}`);
-  if(!d||!Array.isArray(d))return;
-  TSYMS.forEach(s=>{
-    const c=d.find(x=>x.symbol===s+'USDT');if(!c)return;
-    const txt='$'+fp(c.price);
-    ['t'+s,'t'+s+'2'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=txt;});
-  });
+  if(t==='kar'&&kzMode==='pozisyon')loadKarPoz();
 }
 
-// ─── KAR/ZARAR ───
-function kzSwitch(mode){
-  kzMode=mode;
-  document.getElementById('kzT1').classList.toggle('on',mode==='hesap');
-  document.getElementById('kzT2').classList.toggle('on',mode==='pozisyon');
-  document.getElementById('kzHesap').style.display=mode==='hesap'?'block':'none';
-  document.getElementById('kzPoz').style.display=mode==='pozisyon'?'block':'none';
-  if(mode==='pozisyon')loadKarPoz();
-}
-
-async function kzHesapla(){
-  const sym=(document.getElementById('kzSym').value||'').toUpperCase().replace(/[#\/]/g,'');
-  const symFull=sym.endsWith('USDT')?sym:sym+'USDT';
-  const buy=parseFloat(document.getElementById('kzBuy').value);
-  const amt=parseFloat(document.getElementById('kzAmt').value);
-  const sellInput=parseFloat(document.getElementById('kzSell').value);
-  const resEl=document.getElementById('kzResult');
-
-  if(!sym||isNaN(buy)||isNaN(amt)||buy<=0||amt<=0){
-    toast('⚠️ Sembol, alış fiyatı ve miktar zorunlu');return;
-  }
-  resEl.innerHTML='<div class="ld"><div class="spin"></div>Fiyat alınıyor...</div>';
-  kzLastSym=symFull;kzLastBuy=buy;kzLastAmt=amt;
-
-  let cur=sellInput;
-  if(isNaN(cur)||cur<=0){
-    const d=await sf(`${BIN}/ticker/price?symbol=${symFull}`);
-    if(!d||!d.price){resEl.innerHTML='<div class="err"><span class="err-txt">⚠️ Fiyat alınamadı</span></div>';return;}
-    cur=parseFloat(d.price);
-  }
-  const invested=amt*buy;
-  const curVal=amt*cur;
-  const pnl=curVal-invested;
-  const pnlPct=((cur-buy)/buy)*100;
-  const isUp=pnl>=0;
-  const icon=isUp?'🟢':'🔴';
-  const cls=isUp?'up':'dn';
-
-  resEl.innerHTML=`
-    <div class="kz-result">
-      <div class="kz-big ${cls}">${icon} ${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</div>
-      <div class="kz-row"><span class="kz-label">💰 Alış Fiyatı</span><span class="kz-val">$${fp(buy)}</span></div>
-      <div class="kz-row"><span class="kz-label">📦 Miktar</span><span class="kz-val">${amt}</span></div>
-      <div class="kz-row"><span class="kz-label">📈 Şu An</span><span class="kz-val ${cls}">$${fp(cur)}</span></div>
-      <div class="kz-row"><span class="kz-label">💼 Yatırılan</span><span class="kz-val">$${invested.toFixed(2)}</span></div>
-      <div class="kz-row"><span class="kz-label">📊 Güncel Değer</span><span class="kz-val">$${curVal.toFixed(2)}</span></div>
-      <div class="kz-row" style="border-bottom:none">
-        <span class="kz-label">${isUp?'🟢 KAR':'🔴 ZARAR'}</span>
-        <span class="kz-val ${cls}" style="font-size:16px">${pnl>=0?'+':''}$${pnl.toFixed(2)}</span>
-      </div>
-    </div>`;
-}
-
-async function kzKaydet(){
-  const sym=(document.getElementById('kzSym').value||'').toUpperCase().replace(/[#\/]/g,'');
-  const symFull=sym.endsWith('USDT')?sym:sym+'USDT';
-  const buy=parseFloat(document.getElementById('kzBuy').value);
-  const amt=parseFloat(document.getElementById('kzAmt').value);
-  if(!sym||isNaN(buy)||isNaN(amt)||buy<=0||amt<=0){toast('⚠️ Eksik bilgi');return;}
-  if(!UID){toast('⚠️ Telegram hesabı gerekli');return;}
-  // Bot API üzerinden kayıt — /api/kar_kaydet endpoint
-  try{
-    const r=await fetch(`/api/kar_kaydet?uid=${UID}&symbol=${symFull}&amount=${amt}&buy_price=${buy}`);
-    const d=await r.json();
-    if(d.ok){toast('✅ Pozisyon kaydedildi!');}
-    else{toast('⚠️ '+(d.error||'Kayıt başarısız'));}
-  }catch(e){toast('⚠️ Kayıt hatası');}
-}
-
-async function loadKarPoz(){
-  if(!UID){document.getElementById('kzPozList').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';return;}
-  document.getElementById('kzPozList').innerHTML='<div class="ld"><div class="spin"></div></div>';
-  try{
-    const d=await sf(`/api/kar_pozisyon?uid=${UID}`);
-    if(!d||!d.positions||d.positions.length===0){
-      document.getElementById('kzPozList').innerHTML='<div class="mt"><div class="mt-i">📭</div><div class="mt-t">Pozisyon Yok</div><div class="mt-s">Hızlı Hesap'tan kaydedin</div></div>';return;
-    }
-    const syms=d.positions.map(p=>p.symbol);
-    // Canlı fiyatları çek
-    const prices={};
-    try{
-      const tickers=await sf(`${BIN}/ticker/price`);
-      if(tickers)tickers.forEach(t=>{prices[t.symbol]=parseFloat(t.price);});
-    }catch(e){}
-
-    let html='';
-    for(const p of d.positions){
-      const cur=prices[p.symbol]||p.buy_price;
-      const invested=p.amount*p.buy_price;
-      const curVal=p.amount*cur;
-      const pnl=curVal-invested;
-      const pct=((cur-p.buy_price)/p.buy_price)*100;
-      const isUp=pnl>=0;
-      const cls=isUp?'up':'dn';
-      html+=`<div class="pos-card">
-        <div class="pos-head">
-          <div class="pos-sym">${p.symbol.replace('USDT','')}</div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="bdg ${isUp?'bg':'br'}" style="font-size:12px">${pct>=0?'+':''}${pct.toFixed(2)}%</span>
-            <span class="pos-del" onclick="kzDelPoz('${p.symbol}')">🗑</span>
-          </div>
-        </div>
-        <div class="pos-grid">
-          <div class="pos-item"><div class="pos-item-l">Alış Fiyatı</div><div class="pos-item-v">$${fp(p.buy_price)}</div></div>
-          <div class="pos-item"><div class="pos-item-l">Miktar</div><div class="pos-item-v">${p.amount}</div></div>
-          <div class="pos-item"><div class="pos-item-l">Şu An</div><div class="pos-item-v ${cls}">$${fp(cur)}</div></div>
-          <div class="pos-item"><div class="pos-item-l">${isUp?'🟢 Kar':'🔴 Zarar'}</div><div class="pos-item-v ${cls}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</div></div>
-        </div>
-      </div>`;
-    }
-    document.getElementById('kzPozList').innerHTML=html;
-  }catch(e){document.getElementById('kzPozList').innerHTML='<div class="err"><span class="err-txt">⚠️ Yüklenemedi</span></div>';}
-}
-
-async function kzDelPoz(sym){
-  if(!UID)return;
-  if(!confirm('Bu pozisyonu silmek istediğinize emin misiniz?'))return;
-  try{
-    const r=await fetch(`/api/kar_sil?uid=${UID}&symbol=${sym}`);
-    const d=await r.json();
-    if(d.ok){toast('🗑 Silindi');loadKarPoz();}
-    else toast('⚠️ Silinemedi');
-  }catch(e){toast('⚠️ Hata');}
-}
-
-// ─── ANA SAYFA ───
-function retryHome(){document.getElementById('homeErr').style.display='none';loadHome();}
+// ── DASHBOARD (ana sayfa) — sunucudan tek istek ──
 async function loadHome(){
-  const errEl=document.getElementById('homeErr');
-  errEl.style.display='none';
-  const t24=await sf(`${BIN}/ticker/24hr`);
-  if(!t24||!Array.isArray(t24)||t24.length<10){
-    errEl.style.display='flex';
-    loadFG();loadHomeFav();loadHomeAlarms();loadHomeNews();
+  document.getElementById('homeLoad').style.display='flex';
+  document.getElementById('homeContent').style.display='none';
+
+  const d = await api('/api/dashboard');
+  
+  document.getElementById('homeLoad').style.display='none';
+  document.getElementById('homeContent').style.display='block';
+
+  if(!d){
+    document.getElementById('hGain').innerHTML='<div style="color:var(--r);font-size:11px;padding:5px">⚠️ Veri yüklenemedi. Lütfen yenileyin.</div>';
     return;
   }
-  try{
-    const u=t24.filter(x=>x&&x.symbol&&x.symbol.endsWith('USDT'));
-    const btc=u.find(x=>x.symbol==='BTCUSDT')||{};
-    const eth=u.find(x=>x.symbol==='ETHUSDT')||{};
-    const bv=parseFloat(btc.quoteVolume||0);
-    const tv=u.reduce((a,x)=>a+parseFloat(x.quoteVolume||0),0);
-    const dom=tv>0?(bv/tv*100):0;
-    const chs=u.map(x=>parseFloat(x.priceChangePercent||0)).filter(x=>!isNaN(x));
-    const avg=chs.length?chs.reduce((a,b)=>a+b,0)/chs.length:0;
-    const ri=chs.filter(x=>x>0).length;
-    const bp=parseFloat(btc.priceChangePercent||0);
-    const ep=parseFloat(eth.priceChangePercent||0);
-    const set=(id,val)=>{const e=document.getElementById(id);if(e)e.innerHTML=val;};
-    const setT=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
-    set('hBP',`$${fp(btc.lastPrice||0)}`);
-    set('hBB',pb(bp));
-    setT('hBV',`Vol: ${fv(btc.quoteVolume||0)}`);
-    set('hEP',`$${fp(eth.lastPrice||0)}`);
-    set('hEB',pb(ep));
-    setT('hEV',`Vol: ${fv(eth.quoteVolume||0)}`);
-    setT('hDom',`${dom.toFixed(1)}%`);
-    document.getElementById('hDom').className='sv '+(bp>0?'or':'dn');
-    set('hAvg',pb(avg));
-    setT('hUp',String(ri));
-    setT('hDn',String(chs.length-ri));
-    const mood=avg>1?'🐂 Boğa':avg<-1?'🐻 Ayı':'😐 Yatay';
-    const mc=avg>1?'var(--g)':avg<-1?'var(--r)':'var(--y)';
-    const top5g=u.filter(x=>parseFloat(x.quoteVolume||0)>1e6).sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent)).slice(0,4);
-    set('hNabiz',`<div style="text-align:center;font-size:15px;font-weight:900;color:${mc};margin-bottom:7px">${mood}</div>`+
-      top5g.map(c=>{const p=parseFloat(c.priceChangePercent);return`<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0"><span style="color:var(--muted)">${c.symbol.replace('USDT','')}</span>${pb(p)}</div>`}).join(''));
-    const topG=u.filter(x=>parseFloat(x.quoteVolume||0)>1e6).sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent)).slice(0,5);
-    set('hGain',topG.map((c,i)=>{const p=parseFloat(c.priceChangePercent);return`<div class="cr" onclick="openChart('${c.symbol}')"><span style="font-size:11px;color:var(--muted);width:16px">${i+1}</span>${cIco(c.symbol.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.symbol.replace('USDT','')}</div><div class="cname">$${fp(c.lastPrice)}</div></div><div class="cr-r"><div class="cpct ${pc(p)}">${pb(p)}</div></div></div>`}).join(''));
-  }catch(e){errEl.style.display='flex';}
-  loadFG();loadHomeFav();loadHomeAlarms();loadHomeNews();loadHomeTakvim();
-}
 
-async function loadFG(){
-  const d=await sf(FGP);
-  if(!d||!d.data)return;
-  const v=parseInt(d.data[0]?.value||50);
-  const lbl=d.data[0]?.value_classification||'--';
-  const y=d.data[1]?.value;
-  const r=35,c=2*Math.PI*r,off=c-(c*v/100);
-  const col=v>=60?'var(--g)':v>=40?'var(--y)':'var(--r)';
-  const arc=document.getElementById('fgA');
-  if(arc){arc.style.stroke=col;arc.style.strokeDashoffset=off;}
-  const setT=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
-  setT('fgN',v);setT('fgL',lbl);
-  if(y)setT('fgY','Dün: '+y);
-  setT('fgGV',v);setT('fgGL',lbl);
-  const canvas=document.getElementById('fgG');
-  if(canvas&&window.Chart){
-    const ctx=canvas.getContext('2d');
-    if(rChart)rChart.destroy();
-    rChart=new Chart(ctx,{type:'doughnut',data:{datasets:[{data:[v,100-v],backgroundColor:[col,'rgba(255,255,255,.05)'],borderWidth:0,circumference:180,rotation:-90}]},options:{plugins:{legend:{display:false}},cutout:'70%',responsive:false}});
+  // Ticker
+  const SYMS=['BTC','ETH','BNB','SOL','XRP','DOGE'];
+  SYMS.forEach(s=>{
+    const px=d.prices&&d.prices[s+'USDT'];
+    if(!px)return;
+    const txt='$'+fp(px);
+    [s,s+'2'].forEach(k=>{const e=document.getElementById('t'+k);if(e)e.textContent=txt;});
+  });
+
+  // BTC/ETH kartları
+  const btc=d.btc||{};const eth=d.eth||{};
+  document.getElementById('hBP').textContent='$'+fp(btc.price||0);
+  document.getElementById('hBB').innerHTML=pb(parseFloat(btc.change||0));
+  document.getElementById('hBV').textContent='Vol: '+fv(btc.volume||0);
+  document.getElementById('hEP').textContent='$'+fp(eth.price||0);
+  document.getElementById('hEB').innerHTML=pb(parseFloat(eth.change||0));
+  document.getElementById('hEV').textContent='Vol: '+fv(eth.volume||0);
+
+  // İstatistikler
+  document.getElementById('hDom').textContent=(d.btc_dom||0).toFixed(1)+'%';
+  document.getElementById('hAvg').innerHTML=pb(parseFloat(d.avg_change||0));
+  document.getElementById('hUp').textContent=d.rising||'--';
+  document.getElementById('hDn').textContent=d.falling||'--';
+
+  // Liderler
+  const tops=d.top5||[];
+  document.getElementById('hGain').innerHTML=tops.length
+    ? tops.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">$${fp(c.p)}</div></div><div class="cr-r">${pb(c.ch)}</div></div>`).join('')
+    : '<div style="font-size:11px;color:var(--muted)">Veri yok</div>';
+
+  // Alarmlar
+  const alarms=d.alarms||[];
+  document.getElementById('hAlarm').innerHTML=alarms.length
+    ? alarms.slice(0,4).map(a=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="font-weight:700">${a.symbol.replace('USDT','')}</span><span style="color:var(--muted)">${a.type==='percent'?'%'+a.threshold:'$'+a.threshold}</span></div>`).join('')
+    : '<div style="font-size:11px;color:var(--muted);padding:5px 0">Aktif alarm yok</div>';
+
+  // Haberler
+  const news=d.news||[];
+  document.getElementById('hNews').innerHTML=news.length
+    ? news.slice(0,4).map(n=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:600;line-height:1.3;margin-bottom:2px">${n.title}</div><div style="font-size:9px;color:var(--muted)">${n.source}</div></div>`).join('')
+    : '<div style="font-size:11px;color:var(--muted)">Haber yüklenemedi</div>';
+
+  // allCoins'i doldur (piyasa için)
+  if(d.coins&&d.coins.length&&!allCoins.length){
+    allCoins=d.coins;
+    filtCoins=[...allCoins];
+  }
+  if(d.top_data){
+    topData=d.top_data;
   }
 }
 
-async function loadHomeFav(){
-  if(!UID){document.getElementById('hFav').innerHTML='<div style="text-align:center;font-size:11px;color:var(--muted);padding:10px">Telegram hesabı gerekli</div>';return;}
-  const d=await sf(`/api/favorites?uid=${UID}`);
-  const favs=d?.favorites||[];
-  if(!favs.length){document.getElementById('hFav').innerHTML='<div style="text-align:center;font-size:11px;color:var(--muted);padding:10px">Favori coin yok — bota /favori ekle BTC yazın</div>';return;}
-  const t=await sf(`${BIN}/ticker/24hr`);
-  if(!t){document.getElementById('hFav').innerHTML='<div class="err"><span class="err-txt">Fiyat alınamadı</span></div>';return;}
-  const map={};t.forEach(x=>{if(x.symbol)map[x.symbol]=x;});
-  const html=favs.map(sym=>{const c=map[sym]||{};const p=parseFloat(c.priceChangePercent||0);return`<div class="cr" onclick="openChart('${sym}')"><div>${cIco(sym.replace('USDT',''))}</div><div class="cinfo"><div class="csym">${sym.replace('USDT','')}</div><div class="cname">$${fp(c.lastPrice||0)}</div></div><div class="cr-r"><div class="cpct ${pc(p)}">${pb(p)}</div><div class="cprice">${fv(parseFloat(c.quoteVolume||0))}</div></div></div>`;}).join('');
-  document.getElementById('hFav').innerHTML=html||'<div style="text-align:center;font-size:11px;color:var(--muted);padding:10px">Veri yok</div>';
-}
-
-async function loadHomeAlarms(){
-  if(!UID){document.getElementById('hAlarm').innerHTML='<div style="text-align:center;font-size:11px;color:var(--muted);padding:10px">Telegram hesabı gerekli</div>';return;}
-  const d=await sf(`/api/alarms?uid=${UID}`);
-  const alarms=(d?.alarms||[]).filter(a=>a.active).slice(0,4);
-  if(!alarms.length){document.getElementById('hAlarm').innerHTML='<div style="text-align:center;font-size:11px;color:var(--muted);padding:10px">Aktif alarm yok — /alarm_ekle BTCUSDT 3</div>';return;}
-  document.getElementById('hAlarm').innerHTML=alarms.map(a=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="font-weight:700">${a.symbol.replace('USDT','')}</span><span style="color:var(--muted)">${a.type==='percent'?`%${a.threshold}`:a.type==='price'?`$${a.threshold}`:a.type}</span></div>`).join('');
-}
-
-async function loadHomeNews(){
-  const d=await sf('/api/news');
-  if(!d||!d.news)return;
-  const setT=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
-  setT('hNT',new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}));
-  document.getElementById('hNews').innerHTML=d.news.slice(0,5).map(n=>`<div style="padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="window.open('${n.url}','_blank')"><div style="font-size:11px;font-weight:600;line-height:1.3;margin-bottom:3px">${n.title}</div><div style="font-size:9px;color:var(--muted)">${n.source} · ${n.published_at||''}</div></div>`).join('');
-}
-
-async function loadHomeTakvim(){
-  const d=await sf('/api/news');
-  if(!d||!d.calendar)return;
-  const setT=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
-  setT('hTakT',d.calendar.length+' etkinlik');
-  document.getElementById('hTak').innerHTML=d.calendar.slice(0,4).map(e=>{const imp=e.importance==='high'?'🔴':e.importance==='medium'?'🟡':'⚪';return`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);align-items:flex-start"><span style="font-size:14px;flex-shrink:0">${imp}</span><div><div style="font-size:11px;font-weight:700">${e.name||'--'}</div><div style="font-size:9px;color:var(--muted)">${e.date||''} · ${e.country||''}</div></div></div>`;}).join('');
-}
-
-// ─── PİYASA ───
+// ── PİYASA ──
 async function loadMkt(){
   document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';
-  const d=await sf(`${BIN}/ticker/24hr`);
-  if(!d||!Array.isArray(d)){document.getElementById('mktList').innerHTML='<div class="err"><span class="err-txt">Veri yüklenemedi</span></div>';return;}
-  allCoins=d.filter(x=>x.symbol.endsWith('USDT')&&parseFloat(x.quoteVolume||0)>100000).map(x=>({s:x.symbol,p:parseFloat(x.lastPrice),ch:parseFloat(x.priceChangePercent),v:parseFloat(x.quoteVolume)}));
-  allCoins.sort((a,b)=>b.v-a.v);
-  filtCoins=[...allCoins];
-  renderMkt();
+  if(!allCoins.length){
+    const d=await api('/api/dashboard');
+    if(d&&d.coins){allCoins=d.coins;filtCoins=[...allCoins];}
+  }
+  applyF();renderMkt();
 }
 function applyF(){
   let c=[...allCoins];
   if(coinFilter==='up')c=c.filter(x=>x.ch>0);
   else if(coinFilter==='dn')c=c.filter(x=>x.ch<0);
-  else if(coinFilter==='hot')c=c.filter(x=>x.v>50e6);
   else if(coinFilter==='pump')c=c.filter(x=>x.ch>5);
   else if(coinFilter==='dump')c=c.filter(x=>x.ch<-5);
-  const q=document.getElementById('mQ').value.toUpperCase().trim();
+  const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
   if(q)c=c.filter(x=>x.s.includes(q));
-  filtCoins=c;
   const sv=document.getElementById('mSrt')?.value||'vol';
-  if(sv==='up')filtCoins.sort((a,b)=>b.ch-a.ch);
-  else if(sv==='dn')filtCoins.sort((a,b)=>a.ch-b.ch);
-  else if(sv==='px')filtCoins.sort((a,b)=>b.p-a.p);
-  else filtCoins.sort((a,b)=>b.v-a.v);
+  if(sv==='up')c.sort((a,b)=>b.ch-a.ch);
+  else if(sv==='dn')c.sort((a,b)=>a.ch-b.ch);
+  else c.sort((a,b)=>b.v-a.v);
+  filtCoins=c;
 }
 function renderMkt(){
   applyF();
-  const cnt=document.getElementById('mCnt');
-  if(cnt)cnt.textContent=`${filtCoins.length} coin`;
-  const top=filtCoins.slice(0,80);
-  document.getElementById('mktList').innerHTML=top.map(c=>`<div class="cr" onclick="openChart('${c.s}')"><div>${cIco(c.s.replace('USDT',''))}</div><div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('');
+  document.getElementById('mktList').innerHTML=filtCoins.slice(0,100).map(c=>
+    `<div class="cr">${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`
+  ).join('');
 }
 function fltMkt(){applyF();renderMkt();}
 function srtMkt(){applyF();renderMkt();}
 function setF(f){
   coinFilter=f;
-  ['All','Up','Dn','Hot','Pump','Dump'].forEach(x=>{const e=document.getElementById('f'+x);if(e)e.classList.remove('on');});
-  const m={all:'fAll',up:'fUp',dn:'fDn',hot:'fHot',pump:'fPump',dump:'fDump'};
+  ['All','Up','Dn','Pump','Dump'].forEach(x=>{const e=document.getElementById('f'+x);if(e)e.classList.remove('on');});
+  const m={all:'fAll',up:'fUp',dn:'fDn',pump:'fPump',dump:'fDump'};
   const e=document.getElementById(m[f]);if(e)e.classList.add('on');
   applyF();renderMkt();
 }
 
-// ─── GRAFİK ───
-async function drawChart(){
-  const sym=(document.getElementById('gSym').value||'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const tf=document.getElementById('gTF').value||'4h';
-  const out=document.getElementById('chartOut');
-  out.innerHTML='<div class="ld"><div class="spin"></div>Grafik çiziliyor...</div>';
-  const d=await sf(`${BIN}/klines?symbol=${sym}&interval=${tf}&limit=60`);
-  if(!d||!Array.isArray(d)||d.length<2){out.innerHTML='<div class="err"><span class="err-txt">⚠️ Veri alınamadı</span></div>';return;}
-  const labels=d.map(k=>new Date(k[0]).toLocaleDateString('tr-TR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}));
-  const closes=d.map(k=>parseFloat(k[4]));
-  const vols=d.map(k=>parseFloat(k[5]));
-  const colors=d.map((k,i)=>parseFloat(k[4])>=parseFloat(k[1])?'rgba(0,229,160,.7)':'rgba(255,61,107,.7)');
-  out.innerHTML='<canvas id="cC" style="width:100%;height:220px"></canvas><canvas id="vC" style="width:100%;height:70px;margin-top:4px"></canvas>';
-  if(cChart)cChart.destroy();
-  if(vChart)vChart.destroy();
-  cChart=new Chart(document.getElementById('cC').getContext('2d'),{type:'line',data:{labels,datasets:[{data:closes,borderColor:'var(--b)',backgroundColor:'rgba(58,159,255,.05)',borderWidth:1.5,pointRadius:0,tension:.3,fill:true}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:6,color:'var(--muted)',font:{size:8}},grid:{color:'rgba(255,255,255,.04)'}},y:{ticks:{color:'var(--muted)',font:{size:8},callback:v=>fp(v)},grid:{color:'rgba(255,255,255,.04)'}}},animation:{duration:300}}});
-  vChart=new Chart(document.getElementById('vC').getContext('2d'),{type:'bar',data:{labels,datasets:[{data:vols,backgroundColor:colors,borderWidth:0}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{display:false},grid:{display:false}}},animation:{duration:200}}});
-}
-
-// ─── NABIZ ───
-async function loadNabiz(){
-  if(nabLoaded)return;nabLoaded=true;
-  const d=await sf(`${BIN}/ticker/24hr`);
-  if(!d)return;
-  const u=d.filter(x=>x.symbol.endsWith('USDT'));
-  const ri=u.filter(x=>parseFloat(x.priceChangePercent)>0).length;
-  const fa=u.length-ri;
-  const adCanvas=document.getElementById('adC');
-  if(adCanvas&&window.Chart){
-    const ctx=adCanvas.getContext('2d');
-    if(adInst)adInst.destroy();
-    adInst=new Chart(ctx,{type:'doughnut',data:{datasets:[{data:[ri,fa],backgroundColor:['rgba(0,229,160,.8)','rgba(255,61,107,.8)'],borderWidth:0}]},options:{plugins:{legend:{display:false}},cutout:'60%',responsive:false}});
-  }
-  const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  setT('adL',`🟢 ${ri} / 🔴 ${fa}`);
-  // Heat map
-  const sects={DeFi:['UNI','AAVE','COMP','MKR','SNX'],L1:['SOL','ADA','AVAX','DOT','NEAR'],L2:['MATIC','ARB','OP','LRC','IMX'],Meme:['DOGE','SHIB','PEPE','FLOKI','BONK'],AI:['FET','AGIX','OCEAN','NMR','GRT']};
-  let heatHtml='';
-  for(const [sec,syms] of Object.entries(sects)){
-    const vals=syms.map(s=>{const c=u.find(x=>x.symbol===s+'USDT');return c?parseFloat(c.priceChangePercent):null;}).filter(x=>x!==null);
-    const avg=vals.length?vals.reduce((a,b)=>a+b)/vals.length:0;
-    const bg=avg>3?'#006644':avg>0?'#004433':avg>-3?'#440011':'#660022';
-    heatHtml+=`<div class="hm-cell" style="background:${bg};width:calc(20% - 3px);padding:8px 4px;text-align:center"><div class="hm-s">${sec}</div><div class="hm-p ${pc(avg)}">${avg>=0?'+':''}${avg.toFixed(1)}%</div></div>`;
-  }
-  document.getElementById('sHeat').innerHTML=heatHtml;
-  // Pie
-  const top5=u.sort((a,b)=>parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume)).slice(0,5);
-  const others=u.slice(5).reduce((a,x)=>a+parseFloat(x.quoteVolume||0),0);
-  const pieCanvas=document.getElementById('domPie');
-  if(pieCanvas&&window.Chart){
-    const ctx=pieCanvas.getContext('2d');
-    if(domPieInst)domPieInst.destroy();
-    domPieInst=new Chart(ctx,{type:'doughnut',data:{labels:[...top5.map(x=>x.symbol.replace('USDT','')),'Diğer'],datasets:[{data:[...top5.map(x=>parseFloat(x.quoteVolume)),others],backgroundColor:PAL,borderWidth:0}]},options:{plugins:{legend:{position:'right',labels:{color:'#5577aa',font:{size:9},boxWidth:10}}},cutout:'55%',responsive:true,maintainAspectRatio:true}});
-  }
-  // RSI
-  const rsiTop=u.filter(x=>parseFloat(x.quoteVolume)>1e7).sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent));
-  const ob=rsiTop.slice(0,5);const os=rsiTop.slice(-5).reverse();
-  document.getElementById('rsiExt').innerHTML=
-    '<div style="font-size:10px;color:var(--r);font-weight:700;margin-bottom:5px">🔴 Aşırı Alım (En çok yükselenler)</div>'+
-    ob.map(c=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px"><span style="color:var(--muted)">${c.symbol.replace('USDT','')}</span>${pb(parseFloat(c.priceChangePercent))}</div>`).join('')+
-    '<div style="font-size:10px;color:var(--g);font-weight:700;margin:8px 0 5px">🟢 Aşırı Satım (En çok düşenler)</div>'+
-    os.map(c=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px"><span style="color:var(--muted)">${c.symbol.replace('USDT','')}</span>${pb(parseFloat(c.priceChangePercent))}</div>`).join('');
-}
-
-// ─── LİDERLER ───
+// ── LİDERLER ──
 async function loadTop(){
   document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';
-  const d=await sf(`${BIN}/ticker/24hr`);
-  if(!d)return;
-  const u=d.filter(x=>x.symbol.endsWith('USDT')&&parseFloat(x.quoteVolume||0)>1e6);
-  topData.g=[...u].sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent)).slice(0,20);
-  topData.l=[...u].sort((a,b)=>parseFloat(a.priceChangePercent)-parseFloat(b.priceChangePercent)).slice(0,20);
-  topData.v=[...u].sort((a,b)=>parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume)).slice(0,20);
+  if(!topData.g.length){
+    const d=await api('/api/dashboard');
+    if(d&&d.top_data)topData=d.top_data;
+  }
   showTop('g');
 }
 function showTop(m){
@@ -5489,141 +5060,164 @@ function showTop(m){
   ['G','L','V'].forEach(x=>{const e=document.getElementById('t'+x);if(e)e.classList.remove('on');});
   const mp={g:'tG',l:'tL',v:'tV'};const e=document.getElementById(mp[m]);if(e)e.classList.add('on');
   const data=topData[m]||[];
-  document.getElementById('topL').innerHTML=data.length?data.map((c,i)=>{const p=parseFloat(c.priceChangePercent);return`<div class="cr" onclick="openChart('${c.symbol}')"><span class="crank">${i+1}</span>${cIco(c.symbol.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.symbol.replace('USDT','')}</div><div class="cname">${fv(parseFloat(c.quoteVolume))}</div></div><div class="cr-r"><div class="cpct ${pc(p)}">${pb(p)}</div><div class="cprice">$${fp(c.lastPrice)}</div></div></div>`;}).join(''):'<div class="ld">Veri yok</div>';
+  document.getElementById('topL').innerHTML=data.length
+    ? data.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('')
+    : '<div class="ld">Veri yok</div>';
 }
 
-// ─── ANALİZ ───
+// ── ANALİZ ──
 async function doAnaliz(){
-  const raw=document.getElementById('aIn').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const raw=(document.getElementById('aIn').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const sym=raw.endsWith('USDT')?raw:raw+'USDT';
   const out=document.getElementById('aOut');
   out.innerHTML='<div class="ld"><div class="spin"></div>Analiz yapılıyor...</div>';
-  const [k1h,k4h,k1d]=await Promise.all([
-    sf(`${BIN}/klines?symbol=${sym}&interval=1h&limit=50`),
-    sf(`${BIN}/klines?symbol=${sym}&interval=4h&limit=50`),
-    sf(`${BIN}/klines?symbol=${sym}&interval=1d&limit=50`)
-  ]);
-  if(!k1h){out.innerHTML='<div class="err"><span class="err-txt">⚠️ Veri alınamadı</span></div>';return;}
-  function closes(k){return k.map(x=>parseFloat(x[4]));}
-  function rsi(cls,p=14){const g=[];for(let i=1;i<cls.length;i++){const d=cls[i]-cls[i-1];g.push({g:Math.max(d,0),l:Math.max(-d,0)});}let ag=g.slice(0,p).reduce((a,x)=>a+x.g,0)/p,al=g.slice(0,p).reduce((a,x)=>a+x.l,0)/p;for(let i=p;i<g.length;i++){ag=(ag*(p-1)+g[i].g)/p;al=(al*(p-1)+g[i].l)/p;}return al===0?100:100-100/(1+ag/al);}
-  function ema(cls,p){let e=cls[0];for(let i=1;i<cls.length;i++)e=cls[i]*(2/(p+1))+e*(1-2/(p+1));return e;}
-  const c1=closes(k1h),c4=closes(k4h),c1d=closes(k1d);
-  const r1=rsi(c1),r4=rsi(c4),rd=rsi(c1d);
-  const e20=ema(c4,20),e50=ema(c4,50),e200=ema(c1d,200);
-  const cur=c1[c1.length-1];
-  let sc=0,tot=0;
-  const sig=[];
-  if(r1<30){sig.push({t:'1s RSI Aşırı Satım',c:'up',v:`${r1.toFixed(0)}`});sc+=2;tot+=2;}
-  else if(r1>70){sig.push({t:'1s RSI Aşırı Alım',c:'dn',v:`${r1.toFixed(0)}`});sc-=2;tot+=2;}
-  if(r4<30){sig.push({t:'4s RSI Aşırı Satım',c:'up',v:`${r4.toFixed(0)}`});sc+=3;tot+=3;}
-  else if(r4>70){sig.push({t:'4s RSI Aşırı Alım',c:'dn',v:`${r4.toFixed(0)}`});sc-=3;tot+=3;}
-  if(cur>e20){sig.push({t:'EMA20 Üstü (4s)',c:'up',v:`$${fp(e20)}`});sc++;tot++;}
-  else{sig.push({t:'EMA20 Altı (4s)',c:'dn',v:`$${fp(e20)}`});sc--;tot++;}
-  if(cur>e50){sig.push({t:'EMA50 Üstü (4s)',c:'up',v:`$${fp(e50)}`});sc++;tot++;}
-  else{sig.push({t:'EMA50 Altı (4s)',c:'dn',v:`$${fp(e50)}`});sc--;tot++;}
-  if(cur>e200){sig.push({t:'EMA200 Üstü (1g)',c:'up',v:`$${fp(e200)}`});sc+=2;tot+=2;}
-  else{sig.push({t:'EMA200 Altı (1g)',c:'dn',v:`$${fp(e200)}`});sc-=2;tot+=2;}
-  const norm=tot>0?Math.round((sc/tot)*50+50):50;
-  const sLbl=norm>=70?'🟢 AL':norm>=55?'🔵 ZAYIF AL':norm>=45?'⚪ NÖTR':norm>=30?'🟠 ZAYIF SAT':'🔴 SAT';
-  const col=norm>=70?'var(--g)':norm>=55?'var(--b)':norm>=45?'var(--y)':norm>=30?'var(--o)':'var(--r)';
+  const d=await api(`/api/analiz?symbol=${sym}`);
+  if(!d){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
+  const {rsi1,rsi4,rsiD,ema20,ema50,ema200,cur,score,signals}=d;
+  const col=score>=70?'var(--g)':score>=55?'var(--b)':score>=45?'var(--y)':score>=30?'var(--o)':'var(--r)';
+  const lbl=score>=70?'🟢 AL':score>=55?'🔵 ZAYIF AL':score>=45?'⚪ NÖTR':score>=30?'🟠 ZAYIF SAT':'🔴 SAT';
   out.innerHTML=`<div class="card" style="margin-bottom:8px">
     <div style="text-align:center;padding:8px 0">
-      <div style="font-size:26px;font-weight:900;color:${col}">${sLbl}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Sinyal skoru: ${norm}/100</div>
+      <div style="font-size:24px;font-weight:900;color:${col}">${lbl}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Sinyal: ${score}/100</div>
     </div>
-    <div class="pb"><div class="pbf" style="width:${norm}%;background:${col}"></div></div>
+    <div class="pb"><div class="pbf" style="width:${score}%;background:${col}"></div></div>
+  </div>
+  <div class="g3" style="margin-bottom:8px">
+    <div class="sb"><div class="sv ${rsi1<30?'up':rsi1>70?'dn':'nu'}">${Math.round(rsi1)}</div><div class="sl">RSI 1s</div></div>
+    <div class="sb"><div class="sv ${rsi4<30?'up':rsi4>70?'dn':'nu'}">${Math.round(rsi4)}</div><div class="sl">RSI 4s</div></div>
+    <div class="sb"><div class="sv ${rsiD<30?'up':rsiD>70?'dn':'nu'}">${Math.round(rsiD)}</div><div class="sl">RSI 1g</div></div>
   </div>
   <div class="card">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📊 SİNYALLER</div>
-    ${sig.map(s=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="color:${s.c==='up'?'var(--g)':'var(--r)'}">${s.t}</span><span style="color:var(--muted)">${s.v}</span></div>`).join('')}
-  </div>
-  <div class="g3" style="margin-top:8px">
-    <div class="sb"><div class="sv ${r1<30?'up':r1>70?'dn':'nu'}">${r1.toFixed(0)}</div><div class="sl">RSI 1s</div></div>
-    <div class="sb"><div class="sv ${r4<30?'up':r4>70?'dn':'nu'}">${r4.toFixed(0)}</div><div class="sl">RSI 4s</div></div>
-    <div class="sb"><div class="sv ${rd<30?'up':rd>70?'dn':'nu'}">${rd.toFixed(0)}</div><div class="sl">RSI 1g</div></div>
+    ${(signals||[]).map(s=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="color:${s.bull?'var(--g)':'var(--r)'}">${s.label}</span><span style="color:var(--muted)">${s.val}</span></div>`).join('')}
   </div>`;
 }
 
-// ─── FİBONACCİ ───
+// ── FİBONACCİ ──
 async function doFib(){
-  const raw=document.getElementById('fIn').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const raw=(document.getElementById('fIn').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const sym=raw.endsWith('USDT')?raw:raw+'USDT';
   const tf=document.getElementById('fTF').value||'4h';
   const out=document.getElementById('fOut');
-  out.innerHTML='<div class="ld"><div class="spin"></div></div>';
-  const d=await sf(`${BIN}/klines?symbol=${sym}&interval=${tf}&limit=100`);
-  if(!d||!Array.isArray(d)){out.innerHTML='<div class="err"><span class="err-txt">Veri alınamadı</span></div>';return;}
-  const hs=d.map(k=>parseFloat(k[2])),ls=d.map(k=>parseFloat(k[3])),cl=d.map(k=>parseFloat(k[4]));
-  const high=Math.max(...hs),low=Math.min(...ls),cur=cl[cl.length-1];
-  const diff=high-low;
-  const lvls=[0,0.236,0.382,0.5,0.618,0.786,1];
-  const isUp=cur>(high+low)/2;
+  out.innerHTML='<div class="ld"><div class="spin"></div>Hesaplanıyor...</div>';
+  const d=await api(`/api/fib?symbol=${sym}&interval=${tf}`);
+  if(!d||!d.levels){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
   out.innerHTML=`<div class="card">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:8px">📐 ${sym} — ${tf.toUpperCase()} FİBONACCİ</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Yüksek: <span style="color:var(--g)">${fp(high)}</span> · Düşük: <span style="color:var(--r)">${fp(low)}</span> · Şu An: <span style="color:var(--b)">${fp(cur)}</span></div>
-    ${lvls.map(l=>{const p=isUp?high-diff*l:low+diff*l;const dist=((p-cur)/cur*100);const isCur=Math.abs(p-cur)/cur<0.005;return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${isCur?'background:rgba(58,159,255,.07);border-radius:6px;padding:7px 6px':''}"><span style="font-size:10px;color:${l===0?'var(--g)':l===1?'var(--r)':'var(--muted)'}">%${(l*100).toFixed(1)}</span><span style="font-size:13px;font-weight:800">${fp(p)}</span><span style="font-size:10px;${dist>0?'color:var(--g)':'color:var(--r)'}">${dist>0?'+':''}${dist.toFixed(2)}%</span></div>`;}).join('')}
-  </div>`;
-}
-
-// ─── SENTIMENT ───
-async function doSent(){
-  const raw=document.getElementById('sIn').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const sym=raw.endsWith('USDT')?raw:raw+'USDT';
-  const out=document.getElementById('sOut');
-  out.innerHTML='<div class="ld"><div class="spin"></div>Analiz yapılıyor...</div>';
-  const d=await sf(PROXY+encodeURIComponent(`https://api.coingecko.com/api/v3/search/trending`));
-  const base=raw.replace('USDT','').toLowerCase();
-  let score=0.5,label='Nötr',summary='Yeterli veri bulunamadı.';
-  if(d&&d.coins){
-    const found=d.coins.find(c=>c.item?.symbol?.toLowerCase()===base||c.item?.id?.toLowerCase()===base);
-    if(found){score=0.65;label='Olumlu';summary=`${raw.replace('USDT','')} şu an trend listesinde! Topluluk ilgisi yüksek.`;}
-  }
-  const news=await sf(PROXY+encodeURIComponent(`https://cryptopanic.com/api/v1/posts/?currencies=${base}&public=true`));
-  if(news&&news.results){
-    const pos=news.results.filter(n=>n.kind==='positive').length;
-    const neg=news.results.filter(n=>n.kind==='negative').length;
-    const tot=news.results.length||1;
-    const ns=(pos-neg)/tot;
-    score=Math.max(0,Math.min(1,(score+ns*0.3+0.5)/2));
-    if(score>0.65)label='Olumlu 🟢';else if(score<0.35)label='Olumsuz 🔴';else label='Nötr ⚪';
-    summary=`${pos} pozitif, ${neg} negatif haber analiz edildi.`;
-  }
-  const pct=Math.round(score*100);
-  const col=score>0.65?'var(--g)':score<0.35?'var(--r)':'var(--y)';
-  out.innerHTML=`<div class="card">
-    <div style="text-align:center;padding:12px 0">
-      <div style="font-size:28px;font-weight:900;color:${col}">${label}</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:5px">Duygu Skoru: ${pct}/100</div>
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📐 ${sym} — ${tf.toUpperCase()}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+      Yüksek: <span class="up">$${fp(d.high)}</span> · Düşük: <span class="dn">$${fp(d.low)}</span> · Şu An: <span class="bl">$${fp(d.cur)}</span>
     </div>
-    <div class="pb" style="margin:10px 0"><div class="pbf" style="width:${pct}%;background:${col}"></div></div>
-    <div style="font-size:11px;color:var(--muted);text-align:center">${summary}</div>
+    ${d.levels.map(l=>{
+      const isCur=Math.abs(l.price-d.cur)/d.cur<0.005;
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${isCur?'background:rgba(58,159,255,.07);border-radius:6px;padding:7px 6px':''}">
+        <span style="font-size:10px;color:var(--muted)">%${l.pct}</span>
+        <span style="font-size:13px;font-weight:800">$${fp(l.price)}</span>
+        <span style="font-size:10px;${l.dist>=0?'color:var(--g)':'color:var(--r)'}">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
-// ─── ALARMLAR ───
+// ── KAR/ZARAR ──
+let kzMode='hesap';
+function kzSwitch(m){
+  kzMode=m;
+  document.getElementById('kzT1').classList.toggle('on',m==='hesap');
+  document.getElementById('kzT2').classList.toggle('on',m==='pozisyon');
+  document.getElementById('kzHesap').style.display=m==='hesap'?'block':'none';
+  document.getElementById('kzPoz').style.display=m==='pozisyon'?'block':'none';
+  if(m==='pozisyon')loadKarPoz();
+}
+async function kzHesapla(){
+  const sym=(document.getElementById('kzSym').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const symF=sym.endsWith('USDT')?sym:sym+'USDT';
+  const buy=parseFloat(document.getElementById('kzBuy').value);
+  const amt=parseFloat(document.getElementById('kzAmt').value);
+  const sellIn=parseFloat(document.getElementById('kzSell').value);
+  const res=document.getElementById('kzResult');
+  if(!sym||isNaN(buy)||isNaN(amt)||buy<=0||amt<=0){toast('⚠️ Sembol, alış ve miktar zorunlu');return;}
+  res.innerHTML='<div class="ld"><div class="spin"></div>Fiyat alınıyor...</div>';
+  const d=await api(`/api/price?symbol=${symF}`);
+  const cur=(!isNaN(sellIn)&&sellIn>0)?sellIn:(d?.price||0);
+  if(!cur){res.innerHTML='<div style="color:var(--r);padding:10px">⚠️ Fiyat alınamadı</div>';return;}
+  const inv=amt*buy,curV=amt*cur,pnl=curV-inv,pct=((cur-buy)/buy)*100,isUp=pnl>=0;
+  res.innerHTML=`<div class="kz-result">
+    <div class="kz-big ${isUp?'up':'dn'}">${isUp?'🟢':'🔴'} ${pct>=0?'+':''}${pct.toFixed(2)}%</div>
+    <div class="kz-row"><span class="kz-label">Alış Fiyatı</span><span class="kz-val">$${fp(buy)}</span></div>
+    <div class="kz-row"><span class="kz-label">Miktar</span><span class="kz-val">${amt}</span></div>
+    <div class="kz-row"><span class="kz-label">Şu An</span><span class="kz-val ${isUp?'up':'dn'}">$${fp(cur)}</span></div>
+    <div class="kz-row"><span class="kz-label">Yatırılan</span><span class="kz-val">$${inv.toFixed(2)}</span></div>
+    <div class="kz-row"><span class="kz-label">Güncel Değer</span><span class="kz-val">$${curV.toFixed(2)}</span></div>
+    <div class="kz-row"><span class="kz-label">${isUp?'🟢 KAR':'🔴 ZARAR'}</span><span class="kz-val ${isUp?'up':'dn'}" style="font-size:16px">${pnl>=0?'+':''}$${pnl.toFixed(2)}</span></div>
+  </div>`;
+}
+async function kzKaydet(){
+  const sym=(document.getElementById('kzSym').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const symF=sym.endsWith('USDT')?sym:sym+'USDT';
+  const buy=parseFloat(document.getElementById('kzBuy').value);
+  const amt=parseFloat(document.getElementById('kzAmt').value);
+  if(!sym||isNaN(buy)||isNaN(amt)||buy<=0||amt<=0){toast('⚠️ Eksik bilgi');return;}
+  if(!UID){toast('⚠️ Telegram hesabı gerekli');return;}
+  const d=await api(`/api/kar_kaydet?uid=${UID}&symbol=${symF}&amount=${amt}&buy_price=${buy}`);
+  if(d?.ok)toast('✅ Kaydedildi!');else toast('⚠️ '+(d?.error||'Hata'));
+}
+async function loadKarPoz(){
+  if(!UID){document.getElementById('kzPozList').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-s">Telegram üzerinden açın</div></div>';return;}
+  document.getElementById('kzPozList').innerHTML='<div class="ld"><div class="spin"></div></div>';
+  const d=await api(`/api/kar_pozisyon?uid=${UID}`);
+  const poz=d?.positions||[];
+  if(!poz.length){document.getElementById('kzPozList').innerHTML='<div class="mt"><div class="mt-i">📭</div><div class="mt-t">Pozisyon Yok</div></div>';return;}
+  // Fiyatları al
+  const syms=poz.map(p=>p.symbol).join(',');
+  const pr=await api(`/api/prices?symbols=${syms}`);
+  const prices=pr?.prices||{};
+  document.getElementById('kzPozList').innerHTML=poz.map(p=>{
+    const cur=prices[p.symbol]||p.buy_price;
+    const inv=p.amount*p.buy_price,curV=p.amount*cur,pnl=curV-inv,pct=((cur-p.buy_price)/p.buy_price)*100,isUp=pnl>=0;
+    return`<div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-sym">${p.symbol.replace('USDT','')}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="bdg ${isUp?'bg':'br'}">${pct>=0?'+':''}${pct.toFixed(2)}%</span>
+          <span style="font-size:18px;cursor:pointer;opacity:.6" onclick="kzDel('${p.symbol}')">🗑</span>
+        </div>
+      </div>
+      <div class="pos-grid">
+        <div class="pos-item"><div class="pos-item-l">Alış</div><div class="pos-item-v">$${fp(p.buy_price)}</div></div>
+        <div class="pos-item"><div class="pos-item-l">Miktar</div><div class="pos-item-v">${p.amount}</div></div>
+        <div class="pos-item"><div class="pos-item-l">Şu An</div><div class="pos-item-v ${isUp?'up':'dn'}">$${fp(cur)}</div></div>
+        <div class="pos-item"><div class="pos-item-l">${isUp?'🟢 Kar':'🔴 Zarar'}</div><div class="pos-item-v ${isUp?'up':'dn'}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function kzDel(sym){
+  if(!UID||!confirm('Silinsin mi?'))return;
+  const d=await api(`/api/kar_sil?uid=${UID}&symbol=${sym}`);
+  if(d?.ok){toast('🗑 Silindi');loadKarPoz();}else toast('⚠️ Silinemedi');
+}
+
+// ── ALARMLAR ──
 async function loadAlarms(){
   if(!UID){document.getElementById('alarmOut').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';return;}
   document.getElementById('alarmOut').innerHTML='<div class="ld"><div class="spin"></div></div>';
-  const d=await sf(`/api/alarms?uid=${UID}`);
-  if(!d||!d.alarms||!d.alarms.length){document.getElementById('alarmOut').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">/alarm_ekle BTCUSDT 3.5 ile ekleyin</div></div>';return;}
-  document.getElementById('alarmOut').innerHTML=d.alarms.map(a=>{const st=a.active?'<span class="bdg bg">Aktif</span>':a.paused?'<span class="bdg by">Duraklı</span>':'<span class="bdg br">Pasif</span>';return`<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:14px;font-weight:900">${a.symbol.replace('USDT','')}</span>${st}</div><div style="font-size:11px;color:var(--muted)">Tür: ${a.type} · ${a.type==='percent'?`%${a.threshold}`:a.type==='price'?`$${a.threshold}`:''}</div>${a.last_triggered?`<div style="font-size:10px;color:var(--muted);margin-top:4px">Son tetik: ${a.last_triggered}</div>`:''}</div>`;}).join('');
+  const d=await api(`/api/alarms?uid=${UID}`);
+  const alarms=d?.alarms||[];
+  if(!alarms.length){document.getElementById('alarmOut').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">/alarm_ekle BTCUSDT 3.5</div></div>';return;}
+  document.getElementById('alarmOut').innerHTML=alarms.map(a=>{
+    const st=a.active?'<span class="bdg bg">Aktif</span>':a.paused?'<span class="bdg by">Duraklı</span>':'<span class="bdg br">Pasif</span>';
+    return`<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-size:14px;font-weight:900">${a.symbol.replace('USDT','')}</span>${st}
+      </div>
+      <div style="font-size:11px;color:var(--muted)">${a.type} · ${a.type==='percent'?'%'+a.threshold:'$'+a.threshold}</div>
+    </div>`;
+  }).join('');
 }
 
-// ─── INIT ───
+// ── INIT ──
 loadHome();
-loadTicker();
-setInterval(loadTicker,30000);
-setInterval(()=>{
-  if(CUR==='home')loadHome();
-  if(CUR==='mkt'&&allCoins.length){
-    sf(`${BIN}/ticker/24hr`).then(d=>{
-      if(d&&Array.isArray(d)){
-        allCoins=d.filter(x=>x.symbol.endsWith('USDT')&&parseFloat(x.quoteVolume||0)>100000).map(x=>({s:x.symbol,p:parseFloat(x.lastPrice),ch:parseFloat(x.priceChangePercent),v:parseFloat(x.quoteVolume)}));
-        applyF();renderMkt();
-      }
-    });
-  }
-},30000);
+setInterval(()=>{if(CUR==='home')loadHome();},60000);
 </script>
 </body>
 </html>"""
@@ -5868,6 +5462,218 @@ async def _start_miniapp_server(bot):
                     return aiohttp_web.Response(text=_json.dumps({"ok":False,"error":str(e)}),content_type="application/json",headers=CORS_HEADERS)
             return aiohttp_web.Response(text='{"ok":false,"error":"missing params"}',content_type="application/json",headers=CORS_HEADERS)
 
+        import json as _json
+
+        async def handle_dashboard(request):
+            """Ana sayfa için tüm veriyi sunucuda toplar — tek istek."""
+            uid_str = request.rel_url.query.get("uid","")
+            result = {}
+            try:
+                async with aiohttp.ClientSession() as s:
+                    async with s.get("https://api.binance.com/api/v3/ticker/24hr",
+                                     timeout=aiohttp.ClientTimeout(total=10)) as r:
+                        t24 = await r.json()
+            except Exception as e:
+                log.warning(f"dashboard binance hata: {e}")
+                t24 = []
+
+            usdt = [x for x in t24 if x.get("symbol","").endswith("USDT")]
+            btc = next((x for x in usdt if x["symbol"]=="BTCUSDT"),{})
+            eth = next((x for x in usdt if x["symbol"]=="ETHUSDT"),{})
+            bv = float(btc.get("quoteVolume",0))
+            tv = sum(float(x.get("quoteVolume",0)) for x in usdt) or 1
+            chs = [float(x.get("priceChangePercent",0)) for x in usdt]
+            avg = sum(chs)/len(chs) if chs else 0
+
+            # Fiyatlar (ticker için)
+            prices = {x["symbol"]: float(x.get("lastPrice",0)) for x in usdt}
+
+            # Top5
+            filtered = [x for x in usdt if float(x.get("quoteVolume",0))>1e6]
+            top5g = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:5]
+
+            # Tüm coin listesi (piyasa sayfası)
+            coins = [{"s":x["symbol"],"p":float(x.get("lastPrice",0)),
+                      "ch":float(x.get("priceChangePercent",0)),
+                      "v":float(x.get("quoteVolume",0))}
+                     for x in usdt if float(x.get("quoteVolume",0))>100000]
+            coins.sort(key=lambda x: x["v"], reverse=True)
+
+            # Top data
+            top_g = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:20]
+            top_l = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)))[:20]
+            top_v = sorted(filtered, key=lambda x: float(x.get("quoteVolume",0)), reverse=True)[:20]
+            def mkcoin(x):
+                return {"s":x["symbol"],"p":float(x.get("lastPrice",0)),
+                        "ch":float(x.get("priceChangePercent",0)),"v":float(x.get("quoteVolume",0))}
+
+            # Alarmlar
+            alarms = []
+            if uid_str and uid_str.isdigit() and db_pool:
+                try:
+                    async with db_pool.acquire() as conn:
+                        rows = await conn.fetch(
+                            "SELECT symbol,threshold,alarm_type,active,paused_until FROM user_alarms WHERE user_id=$1 AND active=1 ORDER BY symbol",
+                            int(uid_str)
+                        )
+                    now = datetime.utcnow()
+                    for r in rows:
+                        pu = r["paused_until"]
+                        if pu and pu.replace(tzinfo=None) > now:
+                            continue
+                        alarms.append({"symbol":r["symbol"],"threshold":r["threshold"],"type":r["alarm_type"] or "percent"})
+                except Exception as e:
+                    log.warning(f"dashboard alarm hata: {e}")
+
+            # Haberler
+            news = []
+            try:
+                import xml.etree.ElementTree as ET
+                async with aiohttp.ClientSession() as s:
+                    async with s.get("https://cointelegraph.com/rss",
+                                     headers={"User-Agent":"Mozilla/5.0"},
+                                     timeout=aiohttp.ClientTimeout(total=6)) as r:
+                        if r.status == 200:
+                            xml = await r.text()
+                            root = ET.fromstring(xml)
+                            ch = root.find("channel") or root
+                            for item in list(ch.findall("item"))[:5]:
+                                t = item.findtext("title","")
+                                news.append({"title":t,"source":"CoinTelegraph"})
+            except Exception:
+                pass
+
+            result = {
+                "btc": {"price":float(btc.get("lastPrice",0)),"change":float(btc.get("priceChangePercent",0)),"volume":bv},
+                "eth": {"price":float(eth.get("lastPrice",0)),"change":float(eth.get("priceChangePercent",0)),"volume":float(eth.get("quoteVolume",0))},
+                "btc_dom": round(bv/tv*100,1),
+                "avg_change": round(avg,2),
+                "rising": sum(1 for c in chs if c>0),
+                "falling": sum(1 for c in chs if c<0),
+                "top5": [mkcoin(x) for x in top5g],
+                "top_data": {"g":[mkcoin(x) for x in top_g],"l":[mkcoin(x) for x in top_l],"v":[mkcoin(x) for x in top_v]},
+                "coins": coins[:300],
+                "prices": prices,
+                "alarms": alarms,
+                "news": news,
+            }
+            log.info(f"dashboard OK: {len(usdt)} coin, {len(alarms)} alarm")
+            return aiohttp_web.Response(
+                text=_json.dumps(result), content_type="application/json", headers=CORS_HEADERS
+            )
+
+        async def handle_price(request):
+            """Tek sembol anlık fiyat."""
+            sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
+            try:
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(f"https://api.binance.com/api/v3/ticker/price?symbol={sym}",
+                                     timeout=aiohttp.ClientTimeout(total=6)) as r:
+                        d = await r.json()
+                return aiohttp_web.Response(
+                    text=_json.dumps({"price":float(d.get("price",0))}),
+                    content_type="application/json", headers=CORS_HEADERS
+                )
+            except Exception as e:
+                return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
+                    content_type="application/json", headers=CORS_HEADERS)
+
+        async def handle_prices(request):
+            """Çoklu sembol fiyatları."""
+            syms_raw = request.rel_url.query.get("symbols","")
+            syms = [s.strip().upper() for s in syms_raw.split(",") if s.strip()]
+            result = {"prices":{}}
+            if not syms:
+                return aiohttp_web.Response(text=_json.dumps(result),
+                    content_type="application/json", headers=CORS_HEADERS)
+            try:
+                async with aiohttp.ClientSession() as s:
+                    sym_json = _json.dumps(syms)
+                    async with s.get(f"https://api.binance.com/api/v3/ticker/price?symbols={sym_json}",
+                                     timeout=aiohttp.ClientTimeout(total=8)) as r:
+                        data = await r.json()
+                for item in data:
+                    result["prices"][item["symbol"]] = float(item.get("price",0))
+            except Exception as e:
+                log.warning(f"prices hata: {e}")
+            return aiohttp_web.Response(text=_json.dumps(result),
+                content_type="application/json", headers=CORS_HEADERS)
+
+        async def handle_analiz(request):
+            """Sunucu taraflı teknik analiz."""
+            sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
+            def calc_rsi(closes, p=14):
+                g,l2=[],[]
+                for i in range(1,len(closes)):
+                    d=closes[i]-closes[i-1];g.append(max(d,0));l2.append(max(-d,0))
+                if len(g)<p:return 50
+                ag=sum(g[:p])/p;al=sum(l2[:p])/p
+                for i in range(p,len(g)):ag=(ag*(p-1)+g[i])/p;al=(al*(p-1)+l2[i])/p
+                return 100-100/(1+ag/al) if al else 100
+            def calc_ema(closes,p):
+                e=closes[0];k=2/(p+1)
+                for c in closes[1:]:e=c*k+e*(1-k)
+                return e
+            try:
+                async with aiohttp.ClientSession() as s:
+                    k1h,k4h,k1d = await asyncio.gather(
+                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1h&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
+                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=4h&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
+                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1d&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
+                    )
+                    c1=[float(x[4]) for x in await k1h.json()]
+                    c4=[float(x[4]) for x in await k4h.json()]
+                    cd=[float(x[4]) for x in await k1d.json()]
+                r1=calc_rsi(c1);r4=calc_rsi(c4);rD=calc_rsi(cd)
+                e20=calc_ema(c4,20);e50=calc_ema(c4,50);e200=calc_ema(cd,200)
+                cur=c1[-1]
+                sc=0;tot=0;signals=[]
+                def sig(label,bull,val):
+                    nonlocal sc,tot
+                    w=2 if '4s' in label or '1g' in label else 1
+                    sc+=(w if bull else -w);tot+=w
+                    signals.append({"label":label,"bull":bull,"val":val})
+                if r1<30:sig("RSI 1s — Aşırı Satım",True,str(round(r1)))
+                elif r1>70:sig("RSI 1s — Aşırı Alım",False,str(round(r1)))
+                if r4<30:sig("RSI 4s — Aşırı Satım",True,str(round(r4)))
+                elif r4>70:sig("RSI 4s — Aşırı Alım",False,str(round(r4)))
+                sig(f"EMA20 {'Üstü' if cur>e20 else 'Altı'} (4s)",cur>e20,f"${round(e20,4)}")
+                sig(f"EMA50 {'Üstü' if cur>e50 else 'Altı'} (4s)",cur>e50,f"${round(e50,4)}")
+                sig(f"EMA200 {'Üstü' if cur>e200 else 'Altı'} (1g)",cur>e200,f"${round(e200,4)}")
+                score=round((sc/tot)*50+50) if tot else 50
+                return aiohttp_web.Response(
+                    text=_json.dumps({"rsi1":r1,"rsi4":r4,"rsiD":rD,"ema20":e20,"ema50":e50,"ema200":e200,
+                                      "cur":cur,"score":score,"signals":signals}),
+                    content_type="application/json", headers=CORS_HEADERS)
+            except Exception as e:
+                return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
+                    content_type="application/json", headers=CORS_HEADERS)
+
+        async def handle_fib(request):
+            """Sunucu taraflı Fibonacci."""
+            sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
+            iv  = request.rel_url.query.get("interval","4h")
+            try:
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={iv}&limit=100",
+                                     timeout=aiohttp.ClientTimeout(total=8)) as r:
+                        data = await r.json()
+                hs=[float(x[2]) for x in data];ls=[float(x[3]) for x in data];cs=[float(x[4]) for x in data]
+                high=max(hs);low=min(ls);cur=cs[-1];diff=high-low
+                isUp=cur>(high+low)/2
+                lvls=[0,0.236,0.382,0.5,0.618,0.786,1]
+                levels=[]
+                for l in lvls:
+                    p=high-diff*l if isUp else low+diff*l
+                    dist=(p-cur)/cur*100
+                    levels.append({"pct":round(l*100,1),"price":p,"dist":round(dist,2)})
+                return aiohttp_web.Response(
+                    text=_json.dumps({"high":high,"low":low,"cur":cur,"levels":levels}),
+                    content_type="application/json", headers=CORS_HEADERS)
+            except Exception as e:
+                return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
+                    content_type="application/json", headers=CORS_HEADERS)
+
         web_app = aiohttp_web.Application()
         web_app.router.add_get("/",                   handle_index)
         web_app.router.add_get("/miniapp",            handle_index)
@@ -5879,6 +5685,11 @@ async def _start_miniapp_server(bot):
         web_app.router.add_get("/api/kar_pozisyon",   handle_kar_pozisyon)
         web_app.router.add_get("/api/kar_kaydet",     handle_kar_kaydet)
         web_app.router.add_get("/api/kar_sil",        handle_kar_sil)
+        web_app.router.add_get("/api/dashboard",      handle_dashboard)
+        web_app.router.add_get("/api/price",          handle_price)
+        web_app.router.add_get("/api/prices",         handle_prices)
+        web_app.router.add_get("/api/analiz",         handle_analiz)
+        web_app.router.add_get("/api/fib",            handle_fib)
 
         runner = aiohttp_web.AppRunner(web_app)
         await runner.setup()
