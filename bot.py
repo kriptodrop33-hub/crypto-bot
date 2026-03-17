@@ -611,6 +611,26 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
 
 async def fib_command(update: Update, context):
     chat    = update.effective_chat
+    if chat and chat.type in ("group", "supergroup"):
+        if update.message:
+            try: await update.message.delete()
+            except Exception: pass
+        if not await is_group_admin(context.bot, chat.id, update.effective_user.id):
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text=f"🔒 *Fibonacci Analizi* özelliğini kullanmak için buraya tıklayın 👇\nBotu DM üzerinden kullanabilirsiniz.",
+                    parse_mode="Markdown"
+                )
+            except Exception: pass
+            try:
+                tip = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"🔒 Fibonacci Analizi için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+            except Exception: pass
+            return
     args    = context.args or []
     if not args:
         await send_temp(context.bot, chat.id,
@@ -820,6 +840,26 @@ async def fetch_sentiment(symbol: str) -> dict:
 
 async def sentiment_command(update: Update, context):
     chat = update.effective_chat
+    if chat and chat.type in ("group", "supergroup"):
+        if update.message:
+            try: await update.message.delete()
+            except Exception: pass
+        if not await is_group_admin(context.bot, chat.id, update.effective_user.id):
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text=f"🔒 *Sentiment Analizi* özelliğini kullanmak için buraya tıklayın 👇\nBotu DM üzerinden kullanabilirsiniz.",
+                    parse_mode="Markdown"
+                )
+            except Exception: pass
+            try:
+                tip = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"🔒 Sentiment Analizi için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+            except Exception: pass
+            return
     args = context.args or []
     if not args:
         await send_temp(context.bot, chat.id,
@@ -894,6 +934,26 @@ SOZLUK_ALIAS = {
 async def ne_command(update: Update, context):
     await register_user(update)
     chat = update.effective_chat
+    if chat and chat.type in ("group", "supergroup"):
+        if update.message:
+            try: await update.message.delete()
+            except Exception: pass
+        if not await is_group_admin(context.bot, chat.id, update.effective_user.id):
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text=f"🔒 *Terim Sözlüğü* özelliğini kullanmak için buraya tıklayın 👇\nBotu DM üzerinden kullanabilirsiniz.",
+                    parse_mode="Markdown"
+                )
+            except Exception: pass
+            try:
+                tip = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"🔒 Terim Sözlüğü için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+            except Exception: pass
+            return
     args = context.args or []
 
     if not args:
@@ -4079,6 +4139,15 @@ async def button_handler(update: Update, context):
             return
         elif q.data in ("alarm_guide", "alarm_history") or q.data.startswith("alarm_deleteall_"):
             await dm_redirect("Alarmlarım")
+            return
+        elif q.data == "fib_help":
+            await dm_redirect("Fibonacci Analizi")
+            return
+        elif q.data == "sent_help":
+            await dm_redirect("Sentiment Analizi")
+            return
+        elif q.data == "ne_help":
+            await dm_redirect("Terim Sözlüğü")
             return
         elif q.data not in GROUP_FREE \
                 and not q.data.startswith("hedef_") \
