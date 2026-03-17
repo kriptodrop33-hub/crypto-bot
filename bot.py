@@ -33,7 +33,10 @@ ADMIN_ID      = int(os.getenv("ADMIN_ID", "0"))        # Bot sahibinin Telegram 
 BOT_USERNAME  = os.getenv("BOT_USERNAME", "botunuz")   # Örnek: KriptoDrop_alertbot (@ olmadan)
 GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")     # Groq ücretsiz GPT (llama3)
 CRYPTOPANIC_KEY    = os.getenv("CRYPTOPANIC_KEY", "")  # CryptoPanic ücretsiz API
-MINIAPP_URL        = os.getenv("MINIAPP_URL", "")       # Mini App URL (Railway deploy sonrası)
+# Mini App URL — Railway otomatik verir, elle girmeye gerek yok
+# Eğer RAILWAY_STATIC_URL veya RAILWAY_PUBLIC_DOMAIN varsa otomatik kullanılır
+_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL", "")
+MINIAPP_URL = os.getenv("MINIAPP_URL") or (f"https://{_railway_domain}" if _railway_domain else "")
 
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -4334,6 +4337,472 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             log.warning(f"Kisisel alarm gonderilemedi ({user_id}): {e}")
 
+# ================= MINI APP WEB SUNUCUSU =================
+
+MINIAPP_HTML = r"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Kripto Drop Dashboard</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;
+      --green:#00e676;--red:#ff1744;--yellow:#ffd700;--blue:#1e90ff;--accent:#238636}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:70px}
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:10px 14px;
+        display:flex;align-items:center;justify-content:space-between;
+        position:sticky;top:0;z-index:100}
+.header h1{font-size:15px;font-weight:700}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+     display:inline-block;margin-right:5px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+.tabs{display:flex;background:var(--card);border-bottom:1px solid var(--border);
+      overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;padding:9px 14px;font-size:12px;color:var(--muted);cursor:pointer;
+     border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.page{display:none;padding:10px}
+.page.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;
+      padding:11px;margin-bottom:9px}
+.card-title{font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+            color:var(--muted);margin-bottom:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.sbox{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+      padding:9px;text-align:center}
+.sval{font-size:17px;font-weight:700}
+.slbl{font-size:9px;color:var(--muted);margin-top:2px}
+.up{color:var(--green)}.down{color:var(--red)}.neutral{color:var(--yellow)}
+.coin-row{display:flex;align-items:center;justify-content:space-between;
+          padding:8px 0;border-bottom:1px solid var(--border)}
+.coin-row:last-child{border-bottom:none}
+.rank{font-size:10px;color:var(--muted);width:18px;text-align:right;margin-right:8px}
+.cname{font-size:13px;font-weight:600}
+.cvol{font-size:10px;color:var(--muted)}
+.cpct{font-size:13px;font-weight:700}
+.cprice{font-size:10px;color:var(--muted);text-align:right;margin-top:1px}
+.sbox2{display:flex;gap:7px;margin-bottom:9px}
+.sbox2 input{flex:1;background:var(--card);border:1px solid var(--border);
+             border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+.sbox2 input:focus{border-color:var(--blue)}
+.sbox2 input::placeholder{color:var(--muted)}
+.sbox2 select{background:var(--card);border:1px solid var(--border);border-radius:6px;
+              padding:8px;color:var(--text);font-size:12px;outline:none}
+.btn{background:var(--accent);border:none;border-radius:6px;padding:8px 13px;
+     color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:active{opacity:.8}
+.chart-wrap{position:relative;height:190px;margin:6px 0}
+.arow{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;
+      border-bottom:1px solid var(--border)}
+.arow:last-child{border-bottom:none}
+.akey{color:var(--muted)}.aval{font-weight:600}
+.loader{text-align:center;padding:25px;color:var(--muted);font-size:12px}
+.spin{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--blue);
+      border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 7px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.bg{background:rgba(0,230,118,.15);color:var(--green)}
+.br{background:rgba(255,23,68,.15);color:var(--red)}
+.by{background:rgba(255,215,0,.15);color:var(--yellow)}
+.fib-bar{height:6px;background:var(--border);border-radius:3px;
+         margin:10px 0 4px;position:relative}
+.fib-mk{position:absolute;top:-4px;width:2px;height:14px;
+        border-radius:1px;transform:translateX(-50%)}
+.fib-cur{position:absolute;top:-6px;width:4px;height:18px;
+         background:var(--text);border-radius:2px;transform:translateX(-50%)}
+.bnav{position:fixed;bottom:0;left:0;right:0;background:var(--card);
+      border-top:1px solid var(--border);display:flex;z-index:200}
+.nb{flex:1;padding:8px 2px 6px;text-align:center;cursor:pointer;font-size:9px;
+    color:var(--muted);border:none;background:none}
+.nb .ic{font-size:16px;display:block;margin-bottom:1px}
+.nb.active{color:var(--blue)}
+#toast{position:fixed;bottom:75px;left:50%;transform:translateX(-50%);
+       background:var(--card);border:1px solid var(--border);padding:7px 14px;
+       border-radius:18px;font-size:12px;opacity:0;transition:opacity .3s;
+       pointer-events:none;white-space:nowrap;z-index:999}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <div><h1>🪙 Kripto Drop</h1></div>
+  <div style="font-size:10px;color:var(--muted)"><span class="dot"></span>Canlı</div>
+</div>
+<div class="tabs">
+  <div class="tab active" onclick="go('market')">📊 Market</div>
+  <div class="tab" onclick="go('top')">🏆 Liderler</div>
+  <div class="tab" onclick="go('analyse')">🔍 Analiz</div>
+  <div class="tab" onclick="go('fib')">📐 Fibonacci</div>
+  <div class="tab" onclick="go('sent')">🧠 Duygu</div>
+  <div class="tab" onclick="go('cal')">📅 Takvim</div>
+</div>
+
+<div id="page-market" class="page active">
+  <div class="grid2" id="mStats"><div class="loader" style="grid-column:span 2"><div class="spin"></div>Yükleniyor...</div></div>
+  <div class="card" style="margin-top:8px">
+    <div class="card-title">📈 BTC / ETH — Son 24 Saat</div>
+    <div class="chart-wrap"><canvas id="pChart"></canvas></div>
+  </div>
+  <div class="card"><div class="card-title">🌡️ Piyasa Duyarlılığı</div><div id="mood"><div class="loader"><div class="spin"></div></div></div></div>
+</div>
+
+<div id="page-top" class="page">
+  <div class="card"><div class="card-title">🟢 24s En Çok Yükselen</div><div id="gainers"><div class="loader"><div class="spin"></div></div></div></div>
+  <div class="card"><div class="card-title">🔴 24s En Çok Düşen</div><div id="losers"><div class="loader"><div class="spin"></div></div></div></div>
+</div>
+
+<div id="page-analyse" class="page">
+  <div class="sbox2">
+    <input id="aIn" placeholder="BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doAnalyse()">
+    <button class="btn" onclick="doAnalyse()">Analiz</button>
+  </div>
+  <div id="aRes"></div>
+</div>
+
+<div id="page-fib" class="page">
+  <div class="sbox2">
+    <input id="fIn" placeholder="BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doFib()">
+    <select id="fInt"><option value="1h">1s</option><option value="4h" selected>4s</option><option value="1d">1g</option><option value="1w">1h</option></select>
+    <button class="btn" onclick="doFib()">Çiz</button>
+  </div>
+  <div id="fRes"></div>
+</div>
+
+<div id="page-sent" class="page">
+  <div class="sbox2">
+    <input id="sIn" placeholder="BTC, ETH..." maxlength="15" onkeydown="if(event.key==='Enter')doSent()">
+    <button class="btn" onclick="doSent()">Analiz</button>
+  </div>
+  <div id="sRes"></div>
+</div>
+
+<div id="page-cal" class="page">
+  <div id="calRes"><div class="loader"><div class="spin"></div>Takvim yükleniyor...</div></div>
+</div>
+
+<div class="bnav">
+  <button class="nb active" onclick="go('market')"><span class="ic">📊</span>Market</button>
+  <button class="nb" onclick="go('top')"><span class="ic">🏆</span>Liderler</button>
+  <button class="nb" onclick="go('analyse')"><span class="ic">🔍</span>Analiz</button>
+  <button class="nb" onclick="go('fib')"><span class="ic">📐</span>Fib</button>
+  <button class="nb" onclick="go('sent')"><span class="ic">🧠</span>Duygu</button>
+  <button class="nb" onclick="go('cal')"><span class="ic">📅</span>Takvim</button>
+</div>
+<div id="toast"></div>
+
+<script>
+const tg=window.Telegram?.WebApp;
+if(tg){tg.ready();tg.expand();}
+const B='https://api.binance.com/api/v3';
+const CG='https://api.coingecko.com/api/v3';
+let pci=null,cur='market';
+const pages=['market','top','analyse','fib','sent','cal'];
+
+function go(t){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(x=>x.classList.remove('active'));
+  document.getElementById('page-'+t).classList.add('active');
+  const i=pages.indexOf(t);
+  if(i>=0){document.querySelectorAll('.tab')[i].classList.add('active');
+           document.querySelectorAll('.nb')[i].classList.add('active');}
+  cur=t;
+  if(t==='top'&&!document.querySelector('#gainers .coin-row'))loadTop();
+  if(t==='cal')loadCal();
+}
+
+function toast(m){const e=document.getElementById('toast');e.textContent=m;
+  e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200);}
+
+function fp(p){p=parseFloat(p);
+  if(p>=1000)return p.toLocaleString('tr-TR',{maximumFractionDigits:2});
+  if(p>=1)return p.toFixed(4);return p.toFixed(8);}
+function fv(v){v=parseFloat(v);
+  if(v>=1e9)return(v/1e9).toFixed(1)+'B$';
+  if(v>=1e6)return(v/1e6).toFixed(1)+'M$';return v.toFixed(0)+'$';}
+function pc(p){return p>0?'up':p<0?'down':'neutral';}
+function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';
+  return`<span class="badge ${c}">${s}${p.toFixed(2)}%</span>`;}
+
+async function loadMarket(){
+  try{
+    const[t24,kb,ke]=await Promise.all([
+      fetch(`${B}/ticker/24hr`).then(r=>r.json()),
+      fetch(`${B}/klines?symbol=BTCUSDT&interval=1h&limit=24`).then(r=>r.json()),
+      fetch(`${B}/klines?symbol=ETHUSDT&interval=1h&limit=24`).then(r=>r.json()),
+    ]);
+    const u=t24.filter(x=>x.symbol.endsWith('USDT'));
+    const btc=u.find(x=>x.symbol==='BTCUSDT');
+    const eth=u.find(x=>x.symbol==='ETHUSDT');
+    const ch=u.map(x=>parseFloat(x.priceChangePercent));
+    const avg=ch.reduce((a,b)=>a+b,0)/ch.length;
+    const ri=ch.filter(x=>x>0).length;
+    const bv=parseFloat(btc?.quoteVolume||0);
+    const tv=u.reduce((a,x)=>a+parseFloat(x.quoteVolume),0);
+    const bd=((bv/tv)*100).toFixed(1);
+    document.getElementById('mStats').innerHTML=`
+      <div class="sbox"><div class="sval ${pc(parseFloat(btc?.priceChangePercent||0))}">$${fp(btc?.lastPrice||0)}</div>
+        <div class="slbl">₿ BTC</div><div style="margin-top:3px">${pb(parseFloat(btc?.priceChangePercent||0))}</div></div>
+      <div class="sbox"><div class="sval ${pc(parseFloat(eth?.priceChangePercent||0))}">$${fp(eth?.lastPrice||0)}</div>
+        <div class="slbl">Ξ ETH</div><div style="margin-top:3px">${pb(parseFloat(eth?.priceChangePercent||0))}</div></div>
+      <div class="sbox"><div class="sval">${bd}%</div><div class="slbl">BTC Dominans</div></div>
+      <div class="sbox"><div class="sval ${avg>=0?'up':'down'}">${avg>=0?'+':''}${avg.toFixed(2)}%</div><div class="slbl">Market Ort.</div></div>
+      <div class="sbox"><div class="sval up">${ri}</div><div class="slbl">Yükselen</div></div>
+      <div class="sbox"><div class="sval down">${u.length-ri}</div><div class="slbl">Düşen</div></div>`;
+    const mood=avg>1.5?'🐂 Boğa':avg<-1.5?'🐻 Ayı':'😐 Yatay';
+    const mc=avg>1.5?'var(--green)':avg<-1.5?'var(--red)':'var(--yellow)';
+    document.getElementById('mood').innerHTML=`<div style="text-align:center;padding:8px">
+      <div style="font-size:26px;margin-bottom:4px">${mood.split(' ')[0]}</div>
+      <div style="font-size:15px;font-weight:700;color:${mc}">${mood.substring(2)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">${ri}/${u.length} coin yükseliyor • Ort. ${avg>=0?'+':''}${avg.toFixed(2)}%</div></div>`;
+    const lbl=kb.map(k=>{const d=new Date(k[0]);return d.getHours()+':00';});
+    const bp=kb.map(k=>parseFloat(k[4]));
+    const ep=ke.map(k=>parseFloat(k[4]));
+    const en=ep.map(p=>p*(bp[0]/ep[0]));
+    if(pci)pci.destroy();
+    pci=new Chart(document.getElementById('pChart').getContext('2d'),{
+      type:'line',data:{labels:lbl,datasets:[
+        {label:'BTC',data:bp,borderColor:'#ffd700',borderWidth:1.5,pointRadius:0,tension:.4,fill:true,backgroundColor:'rgba(255,215,0,.05)'},
+        {label:'ETH(norm)',data:en,borderColor:'#1e90ff',borderWidth:1.5,pointRadius:0,tension:.4,fill:true,backgroundColor:'rgba(30,144,255,.05)'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#8b949e',font:{size:10}}}},
+        scales:{x:{ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:6},grid:{color:'#21262d'}},
+                y:{ticks:{color:'#8b949e',font:{size:9},callback:v=>'$'+(v>=1000?(v/1000).toFixed(0)+'K':v.toFixed(0))},grid:{color:'#21262d'}}}}});
+  }catch(e){document.getElementById('mStats').innerHTML=`<div class="loader" style="grid-column:span 2">⚠️ ${e.message}</div>`;}
+}
+
+async function loadTop(){
+  try{
+    const d=await fetch(`${B}/ticker/24hr`).then(r=>r.json());
+    const u=d.filter(x=>x.symbol.endsWith('USDT')&&parseFloat(x.quoteVolume)>1e6);
+    u.sort((a,b)=>parseFloat(b.priceChangePercent)-parseFloat(a.priceChangePercent));
+    const g=u.slice(0,10),l=u.slice(-10).reverse();
+    function rl(items,el){el.innerHTML=items.map((c,i)=>{
+      const p=parseFloat(c.priceChangePercent);
+      return`<div class="coin-row"><div style="display:flex;align-items:center">
+        <span class="rank">${i+1}</span>
+        <div><div class="cname">${c.symbol.replace('USDT','')}</div>
+        <div class="cvol">${fv(c.quoteVolume)}</div></div></div>
+        <div style="text-align:right"><div class="cpct ${pc(p)}">${p>0?'+':''}${p.toFixed(2)}%</div>
+        <div class="cprice">$${fp(c.lastPrice)}</div></div></div>`;}).join('');}
+    rl(g,document.getElementById('gainers'));rl(l,document.getElementById('losers'));
+  }catch(e){document.getElementById('gainers').innerHTML=`<div class="loader">⚠️ ${e.message}</div>`;}
+}
+
+async function doAnalyse(){
+  let s=document.getElementById('aIn').value.toUpperCase().trim();
+  if(!s){toast('Sembol girin!');return;}
+  if(!s.endsWith('USDT'))s+='USDT';
+  const el=document.getElementById('aRes');
+  el.innerHTML='<div class="loader"><div class="spin"></div>Analiz yapılıyor...</div>';
+  try{
+    const[tk,k1,k4,k1d]=await Promise.all([
+      fetch(`${B}/ticker/24hr?symbol=${s}`).then(r=>r.json()),
+      fetch(`${B}/klines?symbol=${s}&interval=1h&limit=50`).then(r=>r.json()),
+      fetch(`${B}/klines?symbol=${s}&interval=4h&limit=50`).then(r=>r.json()),
+      fetch(`${B}/klines?symbol=${s}&interval=1d&limit=50`).then(r=>r.json()),
+    ]);
+    if(tk.code){el.innerHTML=`<div class="loader">❌ ${s} bulunamadı.</div>`;return;}
+    const pr=parseFloat(tk.lastPrice),p24=parseFloat(tk.priceChangePercent);
+    function rsi(k,n=14){const c=k.map(x=>parseFloat(x[4]));
+      let g=0,l=0;for(let i=c.length-n;i<c.length;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d;}
+      return 100-100/(1+(g/n)/((l/n)||.0001));}
+    function ema(k,n){const c=k.map(x=>parseFloat(x[4])),m=2/(n+1);
+      let e=c.slice(0,n).reduce((a,b)=>a+b,0)/n;
+      for(let i=n;i<c.length;i++)e=c[i]*m+e*(1-m);return e;}
+    const r1=rsi(k1),r4=rsi(k4),e20=ema(k1,20),e50=ema(k1,50),e200=ema(k1d,50);
+    const rl=r=>r>70?'🔴 Aşırı Alım':r<30?'🟢 Aşırı Satım':'🟡 Nötr';
+    let sc=0;
+    if(r1<35)sc+=2;else if(r1>65)sc-=2;
+    if(r4<35)sc+=2;else if(r4>65)sc-=2;
+    if(pr>e20)sc++;if(pr>e50)sc++;if(pr>e200)sc+=2;if(p24>0)sc++;
+    const sl=sc>=4?'🟢 AL':sc<=-2?'🔴 SAT':'🟡 BEKLE';
+    el.innerHTML=`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><div style="font-size:16px;font-weight:700">${s}</div>
+        <div style="font-size:20px;font-weight:700;color:${p24>=0?'var(--green)':'var(--red)'}">$${fp(pr)}</div></div>
+        <div style="text-align:right">${pb(p24)}<div style="margin-top:5px;font-size:14px;font-weight:700">${sl}</div></div></div>
+      <div style="background:var(--bg);border-radius:6px;padding:9px">
+        ${[['RSI 1s',`${r1.toFixed(1)} ${rl(r1)}`],['RSI 4s',`${r4.toFixed(1)} ${rl(r4)}`],
+           ['EMA 20',`${pr>=e20?'🟢':'🔴'} $${fp(e20)}`],['EMA 50',`${pr>=e50?'🟢':'🔴'} $${fp(e50)}`],
+           ['EMA 200 (1g)',`${pr>=e200?'🟢':'🔴'} $${fp(e200)}`],
+           ['Sinyal Skoru',`${sc>0?'+':''}${sc} / 8`],
+           ['24s Hacim',fv(tk.quoteVolume)],
+           ['24s En Yük.',`<span class="up">$${fp(tk.highPrice)}</span>`],
+           ['24s En Düş.',`<span class="down">$${fp(tk.lowPrice)}</span>`]
+          ].map(([k,v])=>`<div class="arow"><span class="akey">${k}</span><span class="aval">${v}</span></div>`).join('')}
+      </div></div>`;
+  }catch(e){el.innerHTML=`<div class="loader">⚠️ ${e.message}</div>`;}
+}
+
+async function doFib(){
+  let s=document.getElementById('fIn').value.toUpperCase().trim();
+  if(!s){toast('Sembol girin!');return;}
+  if(!s.endsWith('USDT'))s+='USDT';
+  const iv=document.getElementById('fInt').value;
+  const el=document.getElementById('fRes');
+  el.innerHTML='<div class="loader"><div class="spin"></div>Fibonacci hesaplanıyor...</div>';
+  try{
+    const k=await fetch(`${B}/klines?symbol=${s}&interval=${iv}&limit=100`).then(r=>r.json());
+    if(!Array.isArray(k)||k.length<20){el.innerHTML='<div class="loader">❌ Yeterli veri yok.</div>';return;}
+    const hi=k.map(x=>parseFloat(x[2])),lo=k.map(x=>parseFloat(x[3])),cl=k.map(x=>parseFloat(x[4]));
+    const H=Math.max(...hi),L=Math.min(...lo),cur=cl[cl.length-1],D=H-L,up=cur>cl[0];
+    const FL=[0,.236,.382,.5,.618,.786,1],FC=['#FFD700','#FF8C00','#FF4500','#00CED1','#1E90FF','#9370DB','#32CD32'];
+    const FN=['0%','23.6%','38.2%','50%','61.8%','78.6%','100%'];
+    const FP=FL.map(l=>up?H-D*l:L+D*l);
+    const ni=FP.reduce((b,p,i)=>Math.abs(p-cur)<Math.abs(FP[b]-cur)?i:b,0);
+    const p2pct=p=>Math.max(0,Math.min(100,((p-L)/(H-L))*100));
+    const cp=p2pct(cur);
+    el.innerHTML=`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><div style="font-size:16px;font-weight:700">${s}</div>
+        <div style="font-size:11px;color:var(--muted)">${iv} • ${k.length} mum • ${up?'📈 Yükseliş':'📉 Düşüş'}</div></div>
+        <div style="font-size:17px;font-weight:700">$${fp(cur)}</div></div>
+      <div style="margin:12px 0">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:3px">
+          <span>$${fp(L)}</span><span>$${fp(H)}</span></div>
+        <div class="fib-bar">
+          ${FL.map((l,i)=>`<div class="fib-mk" style="left:${p2pct(FP[i])}%;background:${FC[i]}"></div>`).join('')}
+          <div class="fib-cur" style="left:${cp}%"></div></div>
+        <div style="font-size:9px;color:var(--muted);text-align:center;margin-top:4px">▲ Mevcut konum</div></div>
+      <div style="background:var(--bg);border-radius:6px;padding:8px">
+        ${FL.map((l,i)=>{const p=FP[i],isN=i===ni;
+          return`<div class="arow" style="${isN?'background:rgba(30,144,255,.1);border-radius:4px;padding:3px 4px':''}">
+            <span class="akey"><span style="color:${FC[i]};font-weight:700">${FN[i]}</span>${isN?' ◀':''}</span>
+            <span class="aval" style="color:${p<cur?'var(--green)':p>cur?'var(--red)':'var(--text)'}">$${fp(p)}</span></div>`;}).join('')}
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted)">📈 High: $${fp(H)} &nbsp;|&nbsp; 📉 Low: $${fp(L)}</div></div>`;
+  }catch(e){el.innerHTML=`<div class="loader">⚠️ ${e.message}</div>`;}
+}
+
+async function doSent(){
+  let s=document.getElementById('sIn').value.toUpperCase().trim();
+  if(!s){toast('Sembol girin!');return;}
+  const base=s.replace('USDT','');
+  const el=document.getElementById('sRes');
+  el.innerHTML='<div class="loader"><div class="spin"></div>Analiz yapılıyor...</div>';
+  try{
+    const cgMap={BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',
+      ADA:'cardano',XRP:'ripple',DOT:'polkadot',DOGE:'dogecoin',AVAX:'avalanche-2',
+      MATIC:'matic-network',LINK:'chainlink',UNI:'uniswap',LTC:'litecoin',
+      SHIB:'shiba-inu',TON:'the-open-network',NEAR:'near',ARB:'arbitrum'};
+    const id=cgMap[base]||base.toLowerCase();
+    const cg=await fetch(`${CG}/coins/${id}?localization=false&tickers=false&market_data=true&community_data=true`).then(r=>r.json()).catch(()=>null);
+    let up=50,dn=50,pr=0,p24=0;
+    if(cg&&!cg.error){
+      up=cg.sentiment_votes_up_percentage||50;dn=cg.sentiment_votes_down_percentage||50;
+      pr=cg.market_data?.current_price?.usd||0;p24=cg.market_data?.price_change_percentage_24h||0;}
+    const sc=up/100,bf=Math.round(sc*10);
+    const bar='🟩'.repeat(bf)+'⬜'.repeat(10-bf);
+    const lbl=up>55?'🟢 Pozitif':up<45?'🔴 Negatif':'🟡 Nötr';
+    const lc=up>55?'var(--green)':up<45?'var(--red)':'var(--yellow)';
+    el.innerHTML=`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><div style="font-size:16px;font-weight:700">${base}</div>
+        <div style="font-size:11px;color:var(--muted)">Topluluk Sentiment</div></div>
+        ${pr?`<div style="text-align:right"><div style="font-size:17px;font-weight:700">$${fp(pr)}</div>${pb(p24)}</div>`:''}
+      </div>
+      <div style="text-align:center;padding:10px 0">
+        <div style="font-size:28px;margin-bottom:4px">${lbl.split(' ')[0]}</div>
+        <div style="font-size:16px;font-weight:700;color:${lc}">${lbl.substring(2)}</div>
+        <div style="font-size:22px;letter-spacing:2px;margin:7px 0">${bar}</div>
+        <div style="font-size:11px;color:var(--muted)">${sc.toFixed(2)} / 1.00</div></div>
+      <div style="background:var(--bg);border-radius:6px;padding:8px">
+        <div class="arow"><span class="akey">🟢 Yükseliş Beklentisi</span><span class="aval up">${up.toFixed(1)}%</span></div>
+        <div class="arow"><span class="akey">🔴 Düşüş Beklentisi</span><span class="aval down">${dn.toFixed(1)}%</span></div>
+        <div class="arow"><span class="akey">Kaynak</span><span class="aval">CoinGecko</span></div>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted);text-align:center">
+        Daha detaylı analiz için botta /sentiment ${base} yazın</div></div>`;
+  }catch(e){el.innerHTML=`<div class="loader">⚠️ ${e.message}</div>`;}
+}
+
+function loadCal(){
+  const el=document.getElementById('calRes');
+  if(el.querySelector('.card'))return;
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const evs=[
+    {t:'🏦 FOMC Toplantısı',d:18,imp:'high',desc:'Fed faiz kararı. Kripto için kritik.'},
+    {t:'📊 ABD CPI Verisi',d:12,imp:'high',desc:'Enflasyon. Yüksekse kripto baskı altında.'},
+    {t:'💼 NFP İstihdam',d:7,imp:'medium',desc:'Tarım dışı istihdam raporu.'},
+    {t:'📈 PCE Endeksi',d:28,imp:'high',desc:"Fed'in tercih ettiği enflasyon göstergesi."},
+  ].map(e=>{let dt=new Date(y,m,e.d);if(dt<now)dt=new Date(y,m+1,e.d);return{...e,dt};})
+   .sort((a,b)=>a.dt-b.dt);
+  const ic={high:'var(--red)',medium:'var(--yellow)',low:'var(--green)'};
+  el.innerHTML=evs.map(e=>{
+    const diff=Math.ceil((e.dt-now)/86400000);
+    const w=diff===0?'⚡ BUGÜN':diff===1?'🔜 Yarın':`📆 ${diff}g sonra`;
+    return`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1"><div style="font-size:13px;font-weight:700">${e.t}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${e.desc}</div></div>
+        <div style="text-align:right;margin-left:8px;flex-shrink:0">
+          <div style="font-size:11px;color:${ic[e.imp]};font-weight:700">${w}</div>
+          <div style="font-size:9px;color:var(--muted);margin-top:1px">${e.dt.toLocaleDateString('tr-TR')}</div>
+        </div></div></div>`;}).join('')+
+    `<div class="card" style="border-color:var(--blue);text-align:center">
+      <div style="font-size:11px;color:var(--muted)">📅 Bildirimler için botta <b>/takvim</b> yazın</div></div>`;
+}
+
+loadMarket();
+setInterval(()=>{if(cur==='market')loadMarket();},60000);
+</script>
+</body>
+</html>"""
+
+async def _start_miniapp_server(bot):
+    """
+    Mini App'i bot ile aynı process içinde çalıştırır.
+    Railway otomatik PORT atar ve public URL verir.
+    """
+    try:
+        from aiohttp import web as aiohttp_web
+
+        port = int(os.getenv("PORT", 8080))
+
+        async def handle_index(request):
+            return aiohttp_web.Response(
+                text=MINIAPP_HTML,
+                content_type="text/html",
+                charset="utf-8",
+                headers={"X-Frame-Options": "ALLOWALL",
+                         "Content-Security-Policy": "frame-ancestors *"}
+            )
+
+        async def handle_health(request):
+            return aiohttp_web.Response(text="OK")
+
+        web_app = aiohttp_web.Application()
+        web_app.router.add_get("/",        handle_index)
+        web_app.router.add_get("/miniapp", handle_index)
+        web_app.router.add_get("/health",  handle_health)
+
+        runner = aiohttp_web.AppRunner(web_app)
+        await runner.setup()
+        site = aiohttp_web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+
+        # Railway public domain'i otomatik al
+        domain = (os.getenv("RAILWAY_PUBLIC_DOMAIN") or
+                  os.getenv("RAILWAY_STATIC_URL", "").replace("https://",""))
+        if domain:
+            url = f"https://{domain}"
+            log.info(f"✅ Mini App aktif: {url}")
+            # Global MINIAPP_URL'yi güncelle (start komutunda kullanılır)
+            global MINIAPP_URL
+            MINIAPP_URL = url
+        else:
+            log.info(f"✅ Mini App aktif: http://0.0.0.0:{port}")
+
+    except Exception as e:
+        log.warning(f"Mini App başlatılamadı: {e}")
+
 # ================= WEBSOCKET =================
 
 async def binance_engine():
@@ -4365,16 +4834,10 @@ async def binance_engine():
 async def post_init(app):
     await init_db()
     asyncio.create_task(binance_engine())
-    # Bot restart sonrası bekleyen silme işlemlerini yeniden zamanla
     await replay_pending_deletes(app.bot)
 
-    # Mini App web sunucusunu başlat
-    try:
-        from miniapp.server import start_web_server
-        asyncio.create_task(start_web_server())
-        log.info("Mini App sunucu başlatıldı.")
-    except Exception as e:
-        log.warning(f"Mini App sunucu başlatılamadı: {e}")
+    # ── Mini App web sunucusu (bot ile aynı process) ──
+    asyncio.create_task(_start_miniapp_server(app.bot))
 
     from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
 
