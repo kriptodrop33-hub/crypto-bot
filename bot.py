@@ -29,6 +29,8 @@ from telegram.ext import (
 TOKEN         = os.getenv("TELEGRAM_TOKEN")
 GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
 DATABASE_URL  = os.getenv("DATABASE_URL")
+ADMIN_ID      = int(os.getenv("ADMIN_ID", "0"))        # Bot sahibinin Telegram ID'si
+BOT_USERNAME  = os.getenv("BOT_USERNAME", "botunuz")   # Örnek: KriptoDrop_alertbot (@ olmadan)
 
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
@@ -174,6 +176,17 @@ async def init_db():
                 note       TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(user_id, symbol)
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_users (
+                user_id      BIGINT PRIMARY KEY,
+                username     TEXT,
+                full_name    TEXT,
+                first_seen   TIMESTAMPTZ DEFAULT NOW(),
+                last_active  TIMESTAMPTZ DEFAULT NOW(),
+                command_count INTEGER DEFAULT 1,
+                chat_type    TEXT DEFAULT 'private'
             )
         """)
 
@@ -1068,7 +1081,7 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
     try:
         redir = await context.bot.send_message(
             chat_id=chat.id,
-            text=f"🔒 {fname} için lütfen DM'den kullanın 👇 @KriptoDrop_alertbot",
+            text=f"🔒 {fname} için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
         )
         asyncio.create_task(auto_delete(context.bot, chat.id, redir.message_id, 10))
     except Exception:
@@ -1096,6 +1109,33 @@ async def is_group_admin(bot, chat_id, user_id) -> bool:
         return member.status in ("administrator", "creator")
     except Exception:
         return False
+
+def is_bot_admin(user_id: int) -> bool:
+    """Kullanıcı botun sahibi (ADMIN_ID) mi?"""
+    return ADMIN_ID != 0 and user_id == ADMIN_ID
+
+async def register_user(update: Update):
+    """Her komutta kullanıcıyı bot_users tablosuna kaydet / güncelle."""
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user:
+        return
+    try:
+        chat_type = chat.type if chat else "private"
+        full_name = ((user.first_name or "") + " " + (user.last_name or "")).strip()
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO bot_users (user_id, username, full_name, first_seen, last_active, command_count, chat_type)
+                VALUES ($1, $2, $3, NOW(), NOW(), 1, $4)
+                ON CONFLICT (user_id) DO UPDATE
+                SET username     = EXCLUDED.username,
+                    full_name    = EXCLUDED.full_name,
+                    last_active  = NOW(),
+                    command_count = bot_users.command_count + 1,
+                    chat_type    = EXCLUDED.chat_type
+            """, user.id, user.username, full_name, chat_type)
+    except Exception as e:
+        log.warning(f"register_user hata: {e}")
 
 async def get_member_delete_delay() -> int:
     """Grup üyesi komutları için silme süresini döndürür (saniye)."""
@@ -1220,33 +1260,48 @@ async def build_set_panel(context):
     return text, InlineKeyboardMarkup(threshold_buttons)
 
 async def set_command(update: Update, context):
-    if not await check_group_access(update, context, "Admin Ayarları"):
-        return
-    chat = update.effective_chat
-    if chat.type != "private":
+    chat    = update.effective_chat
+    user_id = update.effective_user.id if update.effective_user else None
+
+    # Grupta /set yazılırsa komutu sil ve sessizce geç
+    if chat and chat.type in ("group", "supergroup"):
         try:
-            member = await context.bot.get_chat_member(chat.id, update.effective_user.id)
+            await update.message.delete()
+        except Exception:
+            pass
+        return
+
+    # Private chat: sadece bot sahibi veya grup admini erişebilir
+    if not is_bot_admin(user_id):
+        try:
+            member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
             if member.status not in ("administrator", "creator"):
-                await update.message.reply_text("🚫 *Bu komut sadece grup adminlerine açıktır.*", parse_mode="Markdown")
+                await update.message.reply_text(
+                    "🚫 *Bu panel sadece grup adminlerine açıktır.*",
+                    parse_mode="Markdown"
+                )
                 return
         except Exception as e:
-            log.warning(f"Admin kontrol: {e}")
+            log.warning(f"set_command admin kontrol: {e}")
             await update.message.reply_text("⚠️ Yetki kontrol edilemedi.", parse_mode="Markdown")
             return
+
     text, keyboard = await build_set_panel(context)
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 async def set_callback(update: Update, context):
     q = update.callback_query
-    try:
-        member = await context.bot.get_chat_member(GROUP_CHAT_ID, q.from_user.id)
-        if member.status not in ("administrator", "creator"):
-            await q.answer("🚫 Sadece grup adminleri.", show_alert=True)
+    # Bot sahibi her zaman erişebilir
+    if not is_bot_admin(q.from_user.id):
+        try:
+            member = await context.bot.get_chat_member(GROUP_CHAT_ID, q.from_user.id)
+            if member.status not in ("administrator", "creator"):
+                await q.answer("🚫 Sadece grup adminleri.", show_alert=True)
+                return
+        except Exception as e:
+            log.warning(f"set_callback admin: {e}")
+            await q.answer("🚫 Yetki kontrol edilemedi.", show_alert=True)
             return
-    except Exception as e:
-        log.warning(f"set_callback admin: {e}")
-        await q.answer("🚫 Yetki kontrol edilemedi.", show_alert=True)
-        return
 
     await q.answer()
 
@@ -1414,6 +1469,8 @@ async def reply_symbol(update: Update, context):
     if not symbol.endswith("USDT"):
         return
 
+    await register_user(update)   # kullanıcıyı kaydet/güncelle
+
     chat     = update.effective_chat
     is_group = chat.type in ("group", "supergroup")
 
@@ -1436,6 +1493,7 @@ async def reply_symbol(update: Update, context):
 async def my_alarm_v2(update: Update, context):
     if not await check_group_access(update, context, "Kişisel Alarmlar"):
         return
+    await register_user(update)
     user_id = update.effective_user.id
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -1496,6 +1554,7 @@ async def my_alarm_v2(update: Update, context):
 async def alarm_ekle_v2(update: Update, context):
     if not await check_group_access(update, context, "Alarm Ekle"):
         return
+    await register_user(update)
     user_id  = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     args     = context.args or []
@@ -1662,6 +1721,7 @@ async def my_alarm(update: Update, context):
 async def favori_command(update: Update, context):
     if not await check_group_access(update, context, "Favoriler"):
         return
+    await register_user(update)
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -1933,6 +1993,7 @@ async def hedef_liste_goster(bot, chat_id, user_id, show_all=False, edit_message
 async def hedef_command(update: Update, context):
     if not await check_group_access(update, context, "Fiyat Hedefi"):
         return
+    await register_user(update)
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -2105,6 +2166,7 @@ async def hedef_job(context: ContextTypes.DEFAULT_TYPE):
 async def kar_command(update: Update, context):
     if not await check_group_access(update, context, "Kar/Zarar"):
         return
+    await register_user(update)
     user_id = update.effective_user.id
     args    = context.args or []
 
@@ -2605,6 +2667,9 @@ async def start(update: Update, context):
     if in_group and user_id:
         admin_in_group = await is_group_admin(context.bot, chat.id, user_id)
 
+    # Kullanıcıyı kaydet/güncelle
+    await register_user(update)
+
     base_buttons = [
         [InlineKeyboardButton("📊 Market",        callback_data="market"),
          InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
@@ -2617,8 +2682,21 @@ async def start(update: Update, context):
         [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
          InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
     ]
-    if in_group and admin_in_group:
-        base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
+
+    # Admin Ayarları ve İstatistik butonları SADECE DM'de görünür
+    if not in_group and user_id:
+        if is_bot_admin(user_id):
+            # Bot sahibi: her iki panel de açık
+            base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
+            base_buttons.append([InlineKeyboardButton("📊 İstatistikler",  callback_data="stat_refresh")])
+        else:
+            # Grup admini DM'den gelirse sadece admin ayarları
+            try:
+                member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+                if member.status in ("administrator", "creator"):
+                    base_buttons.append([InlineKeyboardButton("🛠 Admin Ayarları", callback_data="set_open")])
+            except Exception:
+                pass
 
     keyboard = InlineKeyboardMarkup(base_buttons)
     welcome_text = (
@@ -2764,6 +2842,159 @@ async def status(update: Update, context):
     target = update.callback_query.message if update.callback_query else update.message
     await target.reply_text(text, parse_mode="Markdown")
 
+async def istatistik(update: Update, context):
+    """Bot istatistiklerini sadece ADMIN_ID'ye gösterir."""
+    user_id = update.effective_user.id if update.effective_user else None
+    if not is_bot_admin(user_id):
+        await update.message.reply_text("🚫 Bu komut sadece bot sahibine açıktır.", parse_mode="Markdown")
+        return
+    await send_istatistik(update.message, context)
+
+async def send_istatistik(target, context):
+    """İstatistik mesajını oluşturur ve gönderir (mesaj veya callback_query.message)."""
+    try:
+        async with db_pool.acquire() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM bot_users")
+            today = await conn.fetchval(
+                "SELECT COUNT(*) FROM bot_users WHERE last_active >= NOW() - INTERVAL '1 day'"
+            )
+            week = await conn.fetchval(
+                "SELECT COUNT(*) FROM bot_users WHERE last_active >= NOW() - INTERVAL '7 days'"
+            )
+            new_today = await conn.fetchval(
+                "SELECT COUNT(*) FROM bot_users WHERE first_seen >= NOW() - INTERVAL '1 day'"
+            )
+            top_users = await conn.fetch("""
+                SELECT user_id, username, full_name, command_count, last_active, first_seen
+                FROM bot_users
+                ORDER BY command_count DESC
+                LIMIT 10
+            """)
+            total_alarms = await conn.fetchval("SELECT COUNT(*) FROM user_alarms WHERE active=1")
+            total_favs   = await conn.fetchval("SELECT COUNT(*) FROM favorites")
+            total_hedef  = await conn.fetchval("SELECT COUNT(*) FROM price_targets WHERE active=1")
+            total_zamanla = await conn.fetchval("SELECT COUNT(*) FROM scheduled_tasks WHERE active=1")
+            alarm_hist   = await conn.fetchval("SELECT COUNT(*) FROM alarm_history")
+
+        now = datetime.utcnow()
+        text = (
+            "📊 *BOT İSTATİSTİKLERİ*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 *Toplam Kullanıcı:* `{total}`\n"
+            f"🆕 *Bugün Yeni:* `{new_today}`\n"
+            f"🟢 *Bugün Aktif:* `{today}`\n"
+            f"📅 *7 Günde Aktif:* `{week}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔔 *Aktif Alarmlar:* `{total_alarms}`\n"
+            f"⭐ *Toplam Favori:* `{total_favs}`\n"
+            f"🎯 *Aktif Fiyat Hedefi:* `{total_hedef}`\n"
+            f"⏰ *Zamanlanmış Görev:* `{total_zamanla}`\n"
+            f"📜 *Alarm Tetiklenme (toplam):* `{alarm_hist}`\n"
+            f"📡 *Takip Edilen Sembol:* `{len(price_memory)}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "🏆 *En Aktif 10 Kullanıcı*\n"
+        )
+        for i, row in enumerate(top_users, 1):
+            name = row["full_name"] or row["username"] or f"id:{row['user_id']}"
+            uname = f"@{row['username']}" if row["username"] else f"`{row['user_id']}`"
+            last = row["last_active"]
+            diff = now - last.replace(tzinfo=None) if last else None
+            if diff:
+                if diff.total_seconds() < 3600:
+                    ago = f"{int(diff.total_seconds()//60)}dk önce"
+                elif diff.days == 0:
+                    ago = f"{int(diff.total_seconds()//3600)}sa önce"
+                else:
+                    ago = f"{diff.days}g önce"
+            else:
+                ago = "?"
+            medal = ["🥇","🥈","🥉"] [i-1] if i <= 3 else f"{i}."
+            text += f"{medal} {uname} — `{row['command_count']}` komut — _{ago}_\n"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Tüm Kullanıcı Listesi", callback_data="stat_users_0")],
+            [InlineKeyboardButton("🔄 Yenile", callback_data="stat_refresh")],
+        ])
+        if hasattr(target, "edit_text"):
+            try:
+                await target.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+                return
+            except Exception:
+                pass
+        await target.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    except Exception as e:
+        log.error(f"istatistik hata: {e}")
+        try:
+            await target.reply_text(f"⚠️ İstatistik alınamadı: {e}")
+        except Exception:
+            pass
+
+async def send_user_list(target, context, page: int = 0):
+    """Tüm kullanıcıları sayfalı listeler (sayfa başı 20 kullanıcı)."""
+    PAGE_SIZE = 20
+    try:
+        async with db_pool.acquire() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM bot_users")
+            rows = await conn.fetch("""
+                SELECT user_id, username, full_name, command_count, last_active, first_seen, chat_type
+                FROM bot_users
+                ORDER BY last_active DESC
+                LIMIT $1 OFFSET $2
+            """, PAGE_SIZE, page * PAGE_SIZE)
+
+        now = datetime.utcnow()
+        start_idx = page * PAGE_SIZE + 1
+        text = (
+            f"👥 *TÜM KULLANICILAR* (Sayfa {page+1})\n"
+            f"Toplam: `{total}` kullanıcı — Son aktife göre\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+        for i, row in enumerate(rows, start_idx):
+            uname = f"@{row['username']}" if row["username"] else f"`{row['user_id']}`"
+            fname = row["full_name"] or ""
+            last  = row["last_active"]
+            diff  = now - last.replace(tzinfo=None) if last else None
+            if diff:
+                if diff.total_seconds() < 3600:
+                    ago = f"{int(diff.total_seconds()//60)}dk"
+                elif diff.days == 0:
+                    ago = f"{int(diff.total_seconds()//3600)}sa"
+                else:
+                    ago = f"{diff.days}g"
+            else:
+                ago = "?"
+            ct_icon = "👤" if row["chat_type"] == "private" else "👥"
+            text += f"`{i}.` {ct_icon} {uname}"
+            if fname:
+                text += f" _{fname}_"
+            text += f" — `{row['command_count']}` — _{ago}_\n"
+
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton("⬅️ Önceki", callback_data=f"stat_users_{page-1}"))
+        if (page + 1) * PAGE_SIZE < total:
+            nav_buttons.append(InlineKeyboardButton("Sonraki ➡️", callback_data=f"stat_users_{page+1}"))
+
+        keyboard_rows = []
+        if nav_buttons:
+            keyboard_rows.append(nav_buttons)
+        keyboard_rows.append([InlineKeyboardButton("🔙 İstatistiklere Dön", callback_data="stat_refresh")])
+        keyboard = InlineKeyboardMarkup(keyboard_rows)
+
+        if hasattr(target, "edit_text"):
+            try:
+                await target.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+                return
+            except Exception:
+                pass
+        await target.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    except Exception as e:
+        log.error(f"send_user_list hata: {e}")
+        try:
+            await target.reply_text(f"⚠️ Liste alınamadı: {e}")
+        except Exception:
+            pass
+
 # ================= CALLBACK =================
 
 async def button_handler(update: Update, context):
@@ -2771,6 +3002,19 @@ async def button_handler(update: Update, context):
 
     if q.data.startswith("set_"):
         await set_callback(update, context)
+        return
+
+    # İstatistik callback'leri — sadece bot adminine
+    if q.data.startswith("stat_"):
+        if not is_bot_admin(q.from_user.id):
+            await q.answer("🚫 Bu panel sadece bot sahibine açıktır.", show_alert=True)
+            return
+        await q.answer()
+        if q.data == "stat_refresh":
+            await send_istatistik(q.message, context)
+        elif q.data.startswith("stat_users_"):
+            page = int(q.data.split("_")[-1])
+            await send_user_list(q.message, context, page)
         return
 
     chat = q.message.chat if q.message else None
@@ -2803,7 +3047,7 @@ async def button_handler(update: Update, context):
         try:
             tip = await context.bot.send_message(
                 chat_id=chat.id,
-                text=f"🔒 {feature_name} için lütfen DM'den kullanın 👇 @KriptoDrop_alertbot",
+                text=f"🔒 {feature_name} için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
             )
             asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
         except Exception:
@@ -2943,7 +3187,7 @@ async def button_handler(update: Update, context):
             try:
                 tip = await context.bot.send_message(
                     chat_id=chat.id,
-                    text="🔒 Fiyat Hedefi için lütfen DM'den kullanın 👇 @KriptoDrop_alertbot",
+                    text=f"🔒 Fiyat Hedefi için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
                 )
                 asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
             except Exception:
@@ -3027,17 +3271,20 @@ async def button_handler(update: Update, context):
 
     # ── Admin ──
     elif q.data == "set_open":
-        if q.message.chat.type != "private":
+        # Grupta admin paneli açılmaz — kullanıcıyı DM'e yönlendir
+        if q.message.chat.type in ("group", "supergroup"):
+            await q.answer(f"⚙️ Admin paneli için bota DM'den yazın: @{BOT_USERNAME}", show_alert=True)
+            return
+        # DM'de: bot sahibi veya grubun admini olmalı
+        if not is_bot_admin(q.from_user.id):
             try:
-                member = await context.bot.get_chat_member(q.message.chat.id, q.from_user.id)
+                member = await context.bot.get_chat_member(GROUP_CHAT_ID, q.from_user.id)
                 if member.status not in ("administrator", "creator"):
-                    await q.message.reply_text(
-                        "🚫 *Bu panel sadece grup adminlerine açıktır.*",
-                        parse_mode="Markdown"
-                    )
+                    await q.answer("🚫 Bu panel sadece grup adminlerine açıktır.", show_alert=True)
                     return
             except Exception as e:
                 log.warning(f"set_open admin kontrol: {e}")
+                await q.answer("🚫 Yetki kontrol edilemedi.", show_alert=True)
                 return
         text, keyboard = await build_set_panel(context)
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
@@ -3196,7 +3443,11 @@ async def post_init(app):
     asyncio.create_task(binance_engine())
     # Bot restart sonrası bekleyen silme işlemlerini yeniden zamanla
     await replay_pending_deletes(app.bot)
-    await app.bot.set_my_commands([
+
+    from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
+
+    # ── Private chat komutları (tüm kullanıcılar) ──
+    private_commands = [
         BotCommand("start",          "Botu başlat / Ana menü"),
         BotCommand("hedef",          "Fiyat hedefi ekle / listele"),
         BotCommand("alarmim",        "Kişisel alarmlarım"),
@@ -3212,8 +3463,12 @@ async def post_init(app):
         BotCommand("top5",           "5dk hareketliler"),
         BotCommand("market",         "Piyasa duyarlılığı"),
         BotCommand("status",         "Bot durumu"),
-        BotCommand("set",            "Admin ayarları"),
-    ])
+        BotCommand("istatistik",     "Bot istatistikleri (sadece admin)"),
+    ]
+    await app.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+
+    # ── Grup komutları: hiç komut gösterilmesin ──
+    await app.bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
 
 # ================= MAIN =================
 
@@ -3227,6 +3482,7 @@ def main():
     app.job_queue.run_repeating(marketcap_refresh_job,interval=600,  first=5)
 
     app.add_handler(CommandHandler("start",          start))
+    app.add_handler(CommandHandler("istatistik",     istatistik))
     app.add_handler(CommandHandler("top24",          top24))
     app.add_handler(CommandHandler("top5",           top5))
     app.add_handler(CommandHandler("market",         market))
