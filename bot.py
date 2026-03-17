@@ -4866,7 +4866,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
 
 <!-- ALARMLAR -->
 <div id="p-alarmlar" class="page">
-  <div id="alarmOut"><div class="ld"><div class="spin"></div></div></div>
+  <div class="kz-tab">
+    <div class="kz-t on" id="alTL" onclick="alarmSwitch('liste')">🔔 Alarmlarım</div>
+    <div class="kz-t"    id="alTE" onclick="alarmSwitch('ekle')">➕ Alarm Ekle</div>
+  </div>
+  <div id="alListe"><div class="ld"><div class="spin"></div></div></div>
+  <div id="alEkle" style="display:none">
+    <div class="card co">
+      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:12px">🔔 YENİ ALARM EKLE</div>
+      <div class="row"><input class="inp" id="alSym" placeholder="BTC veya BTCUSDT" maxlength="15" style="text-transform:uppercase"></div>
+      <div class="g2" style="margin-bottom:10px">
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Alarm Türü</div>
+          <select class="sel" id="alType" style="width:100%">
+            <option value="percent">📊 Yüzde Değişim (%)</option>
+            <option value="price">💰 Hedef Fiyat ($)</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Değer</div>
+          <input class="inp" id="alThr" placeholder="3.5" type="number" step="0.1" style="width:100%">
+        </div>
+      </div>
+      <button class="btn" style="width:100%;padding:14px" onclick="alarmEkle()">🔔 Alarm Ekle</button>
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;text-align:center">
+        Yüzde: fiyat %3.5 değişince · Fiyat: belirli fiyata ulaşınca
+      </div>
+    </div>
+  </div>
 </div>
 
 </div><!-- /scroll -->
@@ -4934,10 +4961,10 @@ function go(t){
   if(ni>=0&&nbs[ni])nbs[ni].classList.add('on');
   CUR=t;
   document.getElementById('scroll').scrollTop=0;
-  if(t==='mkt'&&!allCoins.length)loadMkt();
-  if(t==='top'&&!topData.g.length)loadTop();
-  if(t==='alarmlar')loadAlarms();
-  if(t==='kar'&&kzMode==='pozisyon')loadKarPoz();
+  if(t==='mkt') loadMkt();
+  if(t==='top') loadTop();
+  if(t==='alarmlar') loadAlarms();
+  if(t==='kar'&&kzMode==='pozisyon') loadKarPoz();
 }
 
 // ── DASHBOARD (ana sayfa) — sunucudan tek istek ──
@@ -5009,12 +5036,15 @@ async function loadHome(){
 
 // ── PİYASA ──
 async function loadMkt(){
-  document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';
-  if(!allCoins.length){
-    const d=await api('/api/dashboard');
-    if(d&&d.coins){allCoins=d.coins;filtCoins=[...allCoins];}
+  // Cache varsa hemen göster, sonra arkaplanda güncelle
+  if(allCoins.length){applyF();renderMkt();}
+  else{document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';}
+  const d=await api('/api/dashboard');
+  if(d&&d.coins){
+    allCoins=d.coins;
+    if(d.top_data)topData=d.top_data;
+    applyF();renderMkt();
   }
-  applyF();renderMkt();
 }
 function applyF(){
   let c=[...allCoins];
@@ -5048,12 +5078,14 @@ function setF(f){
 
 // ── LİDERLER ──
 async function loadTop(){
-  document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';
-  if(!topData.g.length){
-    const d=await api('/api/dashboard');
-    if(d&&d.top_data)topData=d.top_data;
+  if(topData.g.length){showTop(topMode);}
+  else{document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';}
+  const d=await api('/api/dashboard');
+  if(d&&d.top_data){
+    topData=d.top_data;
+    if(d.coins&&d.coins.length){allCoins=d.coins;}
+    showTop(topMode);
   }
-  showTop('g');
 }
 function showTop(m){
   topMode=m;
@@ -5102,15 +5134,46 @@ async function doFib(){
   out.innerHTML='<div class="ld"><div class="spin"></div>Hesaplanıyor...</div>';
   const d=await api(`/api/fib?symbol=${sym}&interval=${tf}`);
   if(!d||!d.levels){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
-  out.innerHTML=`<div class="card">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📐 ${sym} — ${tf.toUpperCase()}</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-      Yüksek: <span class="up">$${fp(d.high)}</span> · Düşük: <span class="dn">$${fp(d.low)}</span> · Şu An: <span class="bl">$${fp(d.cur)}</span>
+
+  // SVG Grafik
+  const W=320,H=200,PAD=8;
+  const prices=d.levels.map(l=>l.price);
+  const minP=Math.min(...prices),maxP=Math.max(...prices);
+  const rng=maxP-minP||1;
+  const y=(p)=>PAD+(H-PAD*2)*(1-(p-minP)/rng);
+  const fibColors={0:'#ff3d6b',23.6:'#ff8c42',38.2:'#f0c040',50:'#aaaaaa',61.8:'#00e5a0',78.6:'#3a9fff',100:'#9b6fff'};
+  const curY=y(d.cur);
+  const svgLines=d.levels.map(l=>{
+    const ly=y(l.price);
+    const col=fibColors[l.pct]||'#5577aa';
+    const isCur=Math.abs(l.price-d.cur)/d.cur<0.005;
+    return `<line x1="${PAD}" y1="${ly}" x2="${W-PAD}" y2="${ly}" stroke="${col}" stroke-width="${isCur?2.5:1}" stroke-dasharray="${isCur?'none':'4,3'}" opacity="${isCur?1:0.6}"/>
+    <text x="${W-PAD+2}" y="${ly+4}" font-size="8" fill="${col}" font-family="monospace">%${l.pct}</text>`;
+  }).join('');
+  // Fiyat çizgisi
+  const curLine=`<line x1="${PAD}" y1="${curY}" x2="${W-PAD}" y2="${curY}" stroke="#3a9fff" stroke-width="2" opacity="1"/>
+    <circle cx="${PAD+10}" cy="${curY}" r="4" fill="#3a9fff"/>
+    <text x="${PAD+16}" y="${curY+4}" font-size="9" fill="#3a9fff" font-family="monospace">$${fp(d.cur)}</text>`;
+
+  out.innerHTML=`
+  <div class="card" style="margin-bottom:8px">
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:6px">📐 ${sym} — ${tf.toUpperCase()} FİBONACCİ GRAFİK</div>
+    <svg width="100%" viewBox="0 0 ${W+40} ${H}" style="display:block;background:var(--card2);border-radius:8px">
+      <rect width="${W+40}" height="${H}" fill="var(--card2)" rx="8"/>
+      ${svgLines}
+      ${curLine}
+    </svg>
+    <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:center">
+      🔴 Yüksek: <span class="up">$${fp(d.high)}</span> · 🟢 Düşük: <span class="dn">$${fp(d.low)}</span>
     </div>
+  </div>
+  <div class="card">
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📊 SEVİYELER</div>
     ${d.levels.map(l=>{
       const isCur=Math.abs(l.price-d.cur)/d.cur<0.005;
-      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${isCur?'background:rgba(58,159,255,.07);border-radius:6px;padding:7px 6px':''}">
-        <span style="font-size:10px;color:var(--muted)">%${l.pct}</span>
+      const col=fibColors[l.pct]||'#5577aa';
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${isCur?'background:rgba(58,159,255,.08);border-radius:6px;padding:7px 8px':''}">
+        <span style="font-size:10px;color:${col};font-weight:700">%${l.pct}</span>
         <span style="font-size:13px;font-weight:800">$${fp(l.price)}</span>
         <span style="font-size:10px;${l.dist>=0?'color:var(--g)':'color:var(--r)'}">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
       </div>`;
@@ -5198,19 +5261,60 @@ async function kzDel(sym){
 }
 
 // ── ALARMLAR ──
+let alarmTab='liste';
+function alarmSwitch(m){
+  alarmTab=m;
+  document.getElementById('alTL').classList.toggle('on',m==='liste');
+  document.getElementById('alTE').classList.toggle('on',m==='ekle');
+  document.getElementById('alListe').style.display=m==='liste'?'block':'none';
+  document.getElementById('alEkle').style.display=m==='ekle'?'block':'none';
+  if(m==='liste')loadAlarms();
+}
+async function alarmEkle(){
+  if(!UID){toast('⚠️ Telegram hesabı gerekli');return;}
+  const sym=(document.getElementById('alSym').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const symF=sym.endsWith('USDT')?sym:sym+'USDT';
+  const type=document.getElementById('alType').value;
+  const thr=parseFloat(document.getElementById('alThr').value);
+  if(!sym||isNaN(thr)||thr<=0){toast('⚠️ Sembol ve değer zorunlu');return;}
+  const d=await api(`/api/alarm_ekle?uid=${UID}&symbol=${symF}&type=${type}&threshold=${thr}`);
+  if(d?.ok){
+    toast('✅ Alarm eklendi!');
+    document.getElementById('alSym').value='';
+    document.getElementById('alThr').value='';
+    alarmSwitch('liste');
+  } else {
+    toast('⚠️ '+(d?.error||'Hata'));
+  }
+}
+async function alarmSil(sym){
+  if(!UID||!confirm('Alarm silinsin mi?'))return;
+  const d=await api(`/api/alarm_sil?uid=${UID}&symbol=${sym}`);
+  if(d?.ok){toast('🗑 Silindi');loadAlarms();}else toast('⚠️ Silinemedi');
+}
 async function loadAlarms(){
-  if(!UID){document.getElementById('alarmOut').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';return;}
-  document.getElementById('alarmOut').innerHTML='<div class="ld"><div class="spin"></div></div>';
+  if(!UID){
+    document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';
+    return;
+  }
+  document.getElementById('alListe').innerHTML='<div class="ld"><div class="spin"></div></div>';
   const d=await api(`/api/alarms?uid=${UID}`);
   const alarms=d?.alarms||[];
-  if(!alarms.length){document.getElementById('alarmOut').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">/alarm_ekle BTCUSDT 3.5</div></div>';return;}
-  document.getElementById('alarmOut').innerHTML=alarms.map(a=>{
+  if(!alarms.length){
+    document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">+ Ekle butonuna basın</div></div>';
+    return;
+  }
+  document.getElementById('alListe').innerHTML=alarms.map(a=>{
     const st=a.active?'<span class="bdg bg">Aktif</span>':a.paused?'<span class="bdg by">Duraklı</span>':'<span class="bdg br">Pasif</span>';
     return`<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:14px;font-weight:900">${a.symbol.replace('USDT','')}</span>${st}
+        <span style="font-size:14px;font-weight:900">${a.symbol.replace('USDT','')}</span>
+        <div style="display:flex;align-items:center;gap:7px">${st}
+          <span style="font-size:18px;cursor:pointer;opacity:.6" onclick="alarmSil('${a.symbol}')">🗑</span>
+        </div>
       </div>
-      <div style="font-size:11px;color:var(--muted)">${a.type} · ${a.type==='percent'?'%'+a.threshold:'$'+a.threshold}</div>
+      <div style="font-size:11px;color:var(--muted)">${a.type==='percent'?'📊 Yüzde %'+a.threshold:a.type==='price'?'💰 Fiyat $'+a.threshold:'📌 '+a.type+' '+a.threshold}</div>
+      ${a.last_triggered?`<div style="font-size:10px;color:var(--muted);margin-top:3px">Son tetik: ${a.last_triggered}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -5685,11 +5789,48 @@ async def _start_miniapp_server(bot):
         web_app.router.add_get("/api/kar_pozisyon",   handle_kar_pozisyon)
         web_app.router.add_get("/api/kar_kaydet",     handle_kar_kaydet)
         web_app.router.add_get("/api/kar_sil",        handle_kar_sil)
+        async def handle_alarm_ekle_api(request):
+            uid_str   = request.rel_url.query.get("uid","")
+            symbol    = request.rel_url.query.get("symbol","").upper()
+            alarm_type= request.rel_url.query.get("type","percent")
+            try: threshold = float(request.rel_url.query.get("threshold","0"))
+            except Exception: return aiohttp_web.Response(text='{"ok":false,"error":"invalid threshold"}',content_type="application/json",headers=CORS_HEADERS)
+            if not uid_str or not uid_str.isdigit() or not symbol or threshold<=0:
+                return aiohttp_web.Response(text='{"ok":false,"error":"missing params"}',content_type="application/json",headers=CORS_HEADERS)
+            if alarm_type not in ("percent","price"):
+                alarm_type = "percent"
+            try:
+                async with db_pool.acquire() as conn:
+                    await conn.execute(
+                        """INSERT INTO user_alarms(user_id,symbol,threshold,alarm_type,active)
+                           VALUES($1,$2,$3,$4,1)
+                           ON CONFLICT(user_id,symbol) DO UPDATE
+                           SET threshold=$3,alarm_type=$4,active=1,paused_until=NULL""",
+                        int(uid_str), symbol, threshold, alarm_type
+                    )
+                return aiohttp_web.Response(text='{"ok":true}',content_type="application/json",headers=CORS_HEADERS)
+            except Exception as e:
+                return aiohttp_web.Response(text=_json.dumps({"ok":False,"error":str(e)}),content_type="application/json",headers=CORS_HEADERS)
+
+        async def handle_alarm_sil_api(request):
+            uid_str = request.rel_url.query.get("uid","")
+            symbol  = request.rel_url.query.get("symbol","").upper()
+            if not uid_str or not uid_str.isdigit() or not symbol:
+                return aiohttp_web.Response(text='{"ok":false,"error":"missing params"}',content_type="application/json",headers=CORS_HEADERS)
+            try:
+                async with db_pool.acquire() as conn:
+                    await conn.execute("DELETE FROM user_alarms WHERE user_id=$1 AND symbol=$2",int(uid_str),symbol)
+                return aiohttp_web.Response(text='{"ok":true}',content_type="application/json",headers=CORS_HEADERS)
+            except Exception as e:
+                return aiohttp_web.Response(text=_json.dumps({"ok":False,"error":str(e)}),content_type="application/json",headers=CORS_HEADERS)
+
         web_app.router.add_get("/api/dashboard",      handle_dashboard)
         web_app.router.add_get("/api/price",          handle_price)
         web_app.router.add_get("/api/prices",         handle_prices)
         web_app.router.add_get("/api/analiz",         handle_analiz)
         web_app.router.add_get("/api/fib",            handle_fib)
+        web_app.router.add_get("/api/alarm_ekle",     handle_alarm_ekle_api)
+        web_app.router.add_get("/api/alarm_sil",      handle_alarm_sil_api)
 
         runner = aiohttp_web.AppRunner(web_app)
         await runner.setup()
