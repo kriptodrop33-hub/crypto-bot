@@ -3717,11 +3717,37 @@ async def status(update: Update, context):
     await target.reply_text(text, parse_mode="Markdown")
 
 async def dashboard_command(update: Update, context):
-    """/dashboard — Mini App'i açar veya URL bilgisi verir."""
+    """/dashboard — Mini App'i açar; grupta üyeler için DM yönlendirme yapar."""
     await register_user(update)
     chat    = update.effective_chat
     user_id = update.effective_user.id if update.effective_user else None
     is_group = chat and chat.type in ("group", "supergroup")
+
+    # Grupta üyeler için DM yönlendirme
+    if is_group and user_id and not await is_group_admin(context.bot, chat.id, user_id):
+        if update.message:
+            try: await context.bot.delete_message(chat.id, update.message.message_id)
+            except Exception: pass
+        murl = get_miniapp_url()
+        try:
+            dm_kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🖥 Dashboard'u Aç", web_app=WebAppInfo(url=murl))
+            ]]) if murl else None
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="🖥 *Kripto Drop Dashboard*\nAşağıdaki butona tıklayarak açın 👇",
+                parse_mode="Markdown",
+                reply_markup=dm_kb
+            )
+        except Exception: pass
+        try:
+            tip = await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"🖥 Dashboard için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+            )
+            asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+        except Exception: pass
+        return
 
     murl = get_miniapp_url()
 
@@ -3736,7 +3762,6 @@ async def dashboard_command(update: Update, context):
             reply_markup=keyboard
         )
     else:
-        # URL henüz hazır değil — kullanıcıya bilgi ver
         msg = await context.bot.send_message(
             chat.id,
             "⚙️ *Dashboard Kurulum Gerekiyor*\n"
