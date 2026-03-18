@@ -4994,7 +4994,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
         <button class="tf-btn" onclick="loadCandleChart('4h')">4s</button>
         <button class="tf-btn" onclick="loadCandleChart('1d')">1g</button>
       </div>
-      <canvas id="candleCanvas" height="160"></canvas>
+      <canvas id="candleCanvas" height="220"></canvas>
     </div>
   </div>
 
@@ -5153,78 +5153,156 @@ async function loadCoinDetail(sym){
 
 // ── MUM GRAFİK ──
 let candleRAF=null;
+let curFibData=null;
 async function loadCandleChart(tf){
   candleTF=tf;
-  document.querySelectorAll('.tf-btn').forEach(b=>{b.classList.toggle('on',b.textContent===({m:'15d','1h':'1s','4h':'4s','1d':'1g'}[tf.replace('15','')] || b.textContent));});
-  // tf-btn eşleştir
   const tfMap={'15m':'15d','1h':'1s','4h':'4s','1d':'1g'};
-  document.querySelectorAll('.tf-btn').forEach(b=>{b.classList.toggle('on',b.textContent===tfMap[tf]);});
+  document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent===tfMap[tf]));
   const sym=curCoinSym+'USDT';
-  const d=await api(`/api/klines?symbol=${sym}&interval=${tf}&limit=80`);
-  if(!d||!d.klines||d.klines.length<2)return;
-  candleData=d.klines;
-  drawCandles(d.klines);
+  // Hem klines hem fib paralel çek (4h fib hep göster)
+  const [klRes, fibRes] = await Promise.all([
+    api(`/api/klines?symbol=${sym}&interval=${tf}&limit=80`),
+    (tf==='4h'||!curFibData)?api(`/api/fib?symbol=${sym}&interval=${tf}`):Promise.resolve(curFibData)
+  ]);
+  if(!klRes||!klRes.klines||klRes.klines.length<2)return;
+  candleData=klRes.klines;
+  if(fibRes&&fibRes.levels)curFibData=fibRes;
+  setTimeout(()=>drawCandleFib('candleCanvas', candleData, curFibData, 'cdOHLC'), 30);
 }
-function drawCandles(klines){
-  const canvas=document.getElementById('candleCanvas');
-  if(!canvas)return;
-  const W=canvas.offsetWidth||300;
+// ── EVRENSEL MUM + FİBONACCİ GRAFİK FONKSİYONU ──
+const FCOL_FIB={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','61.8':'#05d890','78.6':'#0a84ff','100':'#bf5af2'};
+
+function drawCandleFib(canvasId, klines, fibData, ohlcElId){
+  const canvas=document.getElementById(canvasId);
+  if(!canvas||!klines||!klines.length)return;
+  const W=canvas.offsetWidth||320, H=parseInt(canvas.getAttribute('height'))||220;
   canvas.width=W*window.devicePixelRatio;
-  canvas.height=160*window.devicePixelRatio;
+  canvas.height=H*window.devicePixelRatio;
   const ctx=canvas.getContext('2d');
   ctx.scale(window.devicePixelRatio,window.devicePixelRatio);
-  const H=160,PAD_L=0,PAD_R=4,PAD_T=8,PAD_B=22,VPAD=18;
+
+  const hasFib=fibData&&fibData.levels&&fibData.levels.length;
+  // Sol: fiyat ekseni, Sağ: fib etiketleri (sadece fib varsa)
+  const PAD_L=2, PAD_R=hasFib?52:48, PAD_T=6, PAD_B=28, VOL_H=28;
+  const chartW=W-PAD_L-PAD_R;
+  const chartH=H-PAD_T-PAD_B-VOL_H;
   const n=klines.length;
-  const cW=Math.max(2,(W-PAD_L-PAD_R)/n);
-  const bodyW=Math.max(1,cW*.6);
-  const prices=klines.flatMap(k=>[k[1],k[2],k[3],k[4]]);
-  const minP=Math.min(...prices),maxP=Math.max(...prices);
-  const pRng=maxP-minP||1;
-  const y=(p)=>PAD_T+VPAD+(H-PAD_T-PAD_B-VPAD*2)*(1-(p-minP)/pRng);
-  // BG
-  ctx.fillStyle='#06090f';ctx.fillRect(0,0,W,H);
-  // Grid lines
-  ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;
-  for(let i=0;i<=4;i++){const gy=PAD_T+VPAD+i*(H-PAD_T-PAD_B-VPAD*2)/4;ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
-  // Volume bars
-  const vols=klines.map(k=>k[5]);const maxV=Math.max(...vols)||1;
-  const VH=20;
+  const cW=Math.max(2,chartW/n);
+  const bodyW=Math.max(1.5,cW*.6);
+
+  // Fiyat aralığı
+  let allP=klines.flatMap(k=>[k[1],k[2],k[3],k[4]]);
+  if(hasFib){allP.push(fibData.high,fibData.low);}
+  const minP=Math.min(...allP), maxP=Math.max(...allP);
+  const pad=(maxP-minP)*0.04;
+  const pMin=minP-pad, pMax=maxP+pad, pRng=pMax-pMin||1;
+  const yP=(p)=>PAD_T+chartH*(1-(p-pMin)/pRng);
+
+  // ── BG ──
+  ctx.fillStyle='#06090f'; ctx.fillRect(0,0,W,H);
+
+  // ── GRID ──
+  ctx.strokeStyle='rgba(255,255,255,.04)'; ctx.lineWidth=.5;
+  for(let i=0;i<=5;i++){
+    const gy=PAD_T+i*chartH/5;
+    ctx.beginPath();ctx.moveTo(PAD_L,gy);ctx.lineTo(W-PAD_R,gy);ctx.stroke();
+  }
+
+  // ── FİBONACCİ ÇİZGİLERİ (mumların altında) ──
+  if(hasFib){
+    fibData.levels.forEach(l=>{
+      const ly=yP(l.price);
+      if(ly<PAD_T||ly>PAD_T+chartH+8)return;
+      const col=FCOL_FIB[String(l.pct)]||'#5577aa';
+      // Dolgu bölgesi (bir sonraki seviyeye kadar çok hafif)
+      ctx.save();
+      ctx.strokeStyle=col; ctx.lineWidth=.8; ctx.setLineDash([4,3]); ctx.globalAlpha=.5;
+      ctx.beginPath();ctx.moveTo(PAD_L,ly);ctx.lineTo(W-PAD_R,ly);ctx.stroke();
+      ctx.setLineDash([]);
+      // Sağ etiket — pct
+      ctx.globalAlpha=.85; ctx.fillStyle=col;
+      ctx.font=`bold 8px 'Space Mono',monospace`; ctx.textAlign='left';
+      ctx.fillText(`${l.pct}%`,W-PAD_R+3,ly+3);
+      // Fiyat küçük etiket
+      ctx.globalAlpha=.55; ctx.font=`7px 'Space Mono',monospace`;
+      ctx.fillText(`$${fp(l.price)}`,W-PAD_R+3,ly+12);
+      ctx.restore();
+    });
+  }
+
+  // ── HACİM BARLARI ──
+  const vols=klines.map(k=>k[5]||0); const maxV=Math.max(...vols)||1;
+  const volY=H-PAD_B;
   klines.forEach((k,i)=>{
     const x=PAD_L+i*cW;
     const isUp=k[4]>=k[1];
-    const vh=(k[5]/maxV)*VH;
-    ctx.fillStyle=isUp?'rgba(5,216,144,.25)':'rgba(255,45,85,.2)';
-    ctx.fillRect(x+(cW-bodyW)/2,H-PAD_B-vh,bodyW,vh);
+    const vh=Math.max(1,(k[5]/maxV)*VOL_H);
+    ctx.fillStyle=isUp?'rgba(5,216,144,.22)':'rgba(255,45,85,.18)';
+    ctx.fillRect(x+(cW-bodyW)/2, volY-vh, bodyW, vh);
   });
-  // Candles
+
+  // ── MUM GRAFİĞİ ──
   klines.forEach((k,i)=>{
     const x=PAD_L+i*cW+cW/2;
     const isUp=k[4]>=k[1];
     const col=isUp?'#05d890':'#ff2d55';
-    const o=y(k[1]),c2=y(k[4]),h=y(k[2]),l=y(k[3]);
-    ctx.strokeStyle=col;ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(x,h);ctx.lineTo(x,l);ctx.stroke();
-    const top=Math.min(o,c2),bot=Math.max(o,c2),bh=Math.max(1,bot-top);
+    const o=yP(k[1]), c2=yP(k[4]), hi=yP(k[2]), lo=yP(k[3]);
+    // Fitil
+    ctx.strokeStyle=col; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,hi); ctx.lineTo(x,lo); ctx.stroke();
+    // Gövde
+    const top=Math.min(o,c2), bh=Math.max(1.5,Math.abs(c2-o));
     ctx.fillStyle=isUp?'#05d890':'#ff2d55';
-    ctx.fillRect(x-bodyW/2,top,bodyW,bh);
+    ctx.fillRect(x-bodyW/2, top, bodyW, bh);
   });
-  // Price labels (y ekseni)
-  ctx.fillStyle='rgba(74,106,138,.7)';ctx.font=`9px 'Space Mono',monospace`;ctx.textAlign='right';
-  for(let i=0;i<=4;i++){
-    const p=minP+i*pRng/4;
-    const gy=PAD_T+VPAD+(H-PAD_T-PAD_B-VPAD*2)*(1-i/4);
-    ctx.fillText('$'+fp(p),W-2,gy+3);
+
+  // ── SOL Y EKSENİ (fiyat etiketleri) ──
+  ctx.fillStyle='rgba(74,106,138,.65)';
+  ctx.font=`8px 'Space Mono',monospace`; ctx.textAlign='left';
+  for(let i=0;i<=5;i++){
+    const p=pMin+i*pRng/5;
+    const gy=PAD_T+chartH*(1-i/5);
+    ctx.fillText('$'+fp(p), PAD_L+2, gy-2);
   }
-  // Son kapanış fiyatı çizgisi
+
+  // ── SON FİYAT YATAY ÇİZGİSİ + BALON ──
   const lastClose=klines[klines.length-1][4];
-  const lastY=y(lastClose);
-  ctx.strokeStyle='rgba(10,132,255,.5)';ctx.lineWidth=1;ctx.setLineDash([4,3]);
-  ctx.beginPath();ctx.moveTo(0,lastY);ctx.lineTo(W,lastY);ctx.stroke();
+  const lastY=yP(lastClose);
+  ctx.save();
+  ctx.strokeStyle='rgba(10,132,255,.7)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(PAD_L,lastY); ctx.lineTo(W-PAD_R,lastY); ctx.stroke();
   ctx.setLineDash([]);
-  // OHLC bilgisi
+  // Fiyat balonu sağda
+  const priceLabel='$'+fp(lastClose);
+  ctx.font=`bold 9px 'Space Mono',monospace`;
+  const tw=ctx.measureText(priceLabel).width;
+  const bx=W-PAD_R+2, by=lastY-8, bw=tw+8, bh2=14;
+  ctx.fillStyle='rgba(10,132,255,.85)'; ctx.beginPath();
+  ctx.roundRect?ctx.roundRect(bx,by,bw,bh2,3):ctx.fillRect(bx,by,bw,bh2);
+  ctx.fill();
+  ctx.fillStyle='#fff'; ctx.textAlign='left';
+  ctx.fillText(priceLabel, bx+4, by+10);
+  ctx.restore();
+
+  // ── ALT X EKSENİ (tarih etiketleri) ──
+  ctx.fillStyle='rgba(74,106,138,.5)';
+  ctx.font=`7px 'Space Mono',monospace`; ctx.textAlign='center';
+  const step=Math.ceil(n/5);
+  for(let i=0;i<n;i+=step){
+    const x=PAD_L+i*cW+cW/2;
+    // Kline timestamp yok, sadece index göster
+    ctx.fillText(String(n-1-i)+'↑',x,H-PAD_B+9);
+  }
+
+  // ── OHLC BİLGİSİ ──
   const last=klines[klines.length-1];
-  const ohlcEl=document.getElementById('cdOHLC');
-  if(ohlcEl)ohlcEl.textContent=`O:${fp(last[1])} H:${fp(last[2])} L:${fp(last[3])} C:${fp(last[4])}`;
+  const oEl=document.getElementById(ohlcElId);
+  if(oEl)oEl.textContent=`O:${fp(last[1])} H:${fp(last[2])} L:${fp(last[3])} C:${fp(last[4])}`;
+}
+
+// drawCandles artık drawCandleFib'i çağırıyor (geriye uyumluluk)
+function drawCandles(klines){
+  drawCandleFib('candleCanvas', klines, null, 'cdOHLC');
 }
 
 // ── HOME ──
@@ -5534,101 +5612,8 @@ async function doFibPage(){
         </div>`;}).join('')}
     </div>`:''}`;
 
-  // Canvas üzerine mum + fib çiz
-  requestAnimationFrame(()=>{
-    const canvas=document.getElementById('fibCanvas');
-    if(!canvas)return;
-    const W=canvas.offsetWidth||300, H=220;
-    canvas.width=W*window.devicePixelRatio;
-    canvas.height=H*window.devicePixelRatio;
-    const ctx=canvas.getContext('2d');
-    ctx.scale(window.devicePixelRatio,window.devicePixelRatio);
-
-    const PAD_L=4,PAD_R=44,PAD_T=8,PAD_B=24,VPAD=12;
-    const chartW=W-PAD_L-PAD_R, chartH=H-PAD_T-PAD_B-VPAD*2;
-    const n=klines.length;
-    const cW=Math.max(2,chartW/n);
-    const bodyW=Math.max(1,cW*.65);
-
-    // Fiyat aralığı — fib levels dahil et
-    let allPrices=klines.flatMap(k=>[k[1],k[2],k[3],k[4]]);
-    if(fib&&fib.high)allPrices.push(fib.high,fib.low);
-    const minP=Math.min(...allPrices),maxP=Math.max(...allPrices);
-    const pRng=(maxP-minP)||1;
-    const yPos=(p)=>PAD_T+VPAD+chartH*(1-(p-minP)/pRng);
-
-    // BG
-    ctx.fillStyle='#06090f';ctx.fillRect(0,0,W,H);
-
-    // Grid
-    ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=.5;
-    for(let i=0;i<=4;i++){
-      const gy=PAD_T+VPAD+i*chartH/4;
-      ctx.beginPath();ctx.moveTo(PAD_L,gy);ctx.lineTo(W-PAD_R,gy);ctx.stroke();
-    }
-
-    // Fibonacci çizgileri (arka planda, mumların altında)
-    if(fib&&fib.levels){
-      fib.levels.forEach(l=>{
-        const ly=yPos(l.price);
-        const col=FCOL[String(l.pct)]||'#5577aa';
-        ctx.save();
-        ctx.globalAlpha=0.45;
-        ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([5,4]);
-        ctx.beginPath();ctx.moveTo(PAD_L,ly);ctx.lineTo(W-PAD_R,ly);ctx.stroke();
-        ctx.setLineDash([]);
-        // Sağ etiket
-        ctx.globalAlpha=0.8;
-        ctx.fillStyle=col;ctx.font=`bold 8px 'Space Mono',monospace`;ctx.textAlign='left';
-        ctx.fillText(`${l.pct}%`,W-PAD_R+3,ly+3);
-        ctx.restore();
-      });
-    }
-
-    // Hacim barları
-    const vols=klines.map(k=>k[5]);const maxV=Math.max(...vols)||1;
-    const VH_=18;
-    klines.forEach((k,i)=>{
-      const x=PAD_L+i*cW;
-      const isUp=k[4]>=k[1];
-      ctx.fillStyle=isUp?'rgba(5,216,144,.2)':'rgba(255,45,85,.15)';
-      ctx.fillRect(x+(cW-bodyW)/2,H-PAD_B-(k[5]/maxV)*VH_,bodyW,(k[5]/maxV)*VH_);
-    });
-
-    // Mum grafik (Fibonacci çizgilerinin üstünde)
-    klines.forEach((k,i)=>{
-      const x=PAD_L+i*cW+cW/2;
-      const isUp=k[4]>=k[1];
-      const col=isUp?'#05d890':'#ff2d55';
-      const o=yPos(k[1]),c2=yPos(k[4]),hi=yPos(k[2]),lo=yPos(k[3]);
-      ctx.strokeStyle=col;ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(x,hi);ctx.lineTo(x,lo);ctx.stroke();
-      const top=Math.min(o,c2),bh=Math.max(1,Math.abs(c2-o));
-      ctx.fillStyle=col;
-      ctx.fillRect(x-bodyW/2,top,bodyW,bh);
-    });
-
-    // Şu anki fiyat yatay çizgisi
-    if(fib&&fib.cur){
-      const cy=yPos(fib.cur);
-      ctx.save();ctx.globalAlpha=.7;ctx.strokeStyle='#0a84ff';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
-      ctx.beginPath();ctx.moveTo(PAD_L,cy);ctx.lineTo(W-PAD_R,cy);ctx.stroke();
-      ctx.setLineDash([]);ctx.restore();
-    }
-
-    // Y ekseni fiyat etiketleri
-    ctx.fillStyle='rgba(74,106,138,.7)';ctx.font=`8px 'Space Mono',monospace`;ctx.textAlign='right';
-    for(let i=0;i<=4;i++){
-      const p=minP+i*pRng/4;
-      const gy=PAD_T+VPAD+(1-i/4)*chartH;
-      ctx.fillText('$'+fp(p),W-PAD_R-1,gy+3);
-    }
-
-    // OHLC
-    const last=klines[klines.length-1];
-    const oEl=document.getElementById('fibOHLC');
-    if(oEl)oEl.textContent=`C:$${fp(last[4])}`;
-  });
+  // Kısa gecikme ile canvas render (DOM'a eklendikten sonra)
+  setTimeout(()=>drawCandleFib('fibCanvas', klines, fib, 'fibOHLC'), 60);
 }
 
 // ── INIT ──
