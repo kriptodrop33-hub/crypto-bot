@@ -4574,15 +4574,16 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .t-ch{font-size:8px;font-weight:700;margin-left:1px}
 
 /* SIDEBAR */
-#sidenav{width:var(--nav-w);flex-shrink:0;background:rgba(9,14,26,.95);border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;overflow-y:auto;scrollbar-width:none;position:relative;z-index:10}
+#sidenav{width:var(--nav-w);flex-shrink:0;background:rgba(9,14,26,.95);border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;overflow-y:auto;scrollbar-width:none;position:relative;z-index:10;touch-action:none}
 #sidenav::-webkit-scrollbar{display:none}
 #sidenav::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--b),transparent)}
-.nb{width:50px;height:50px;border-radius:12px;background:transparent;border:none;color:var(--muted2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:8px;font-weight:700;transition:all .18s;padding:0;letter-spacing:.3px;text-transform:uppercase;position:relative}
+.nb{width:50px;height:50px;border-radius:12px;background:transparent;border:none;color:var(--muted2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:8px;font-weight:700;transition:all .18s;padding:0;letter-spacing:.3px;text-transform:uppercase;position:relative;-webkit-tap-highlight-color:transparent;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.nb *{pointer-events:none}
 .nb:active{transform:scale(.88)}
 .nb.on{background:rgba(10,132,255,.15);color:var(--b2);box-shadow:inset 0 0 0 1px rgba(10,132,255,.3)}
 .nb.on::before{content:'';position:absolute;left:-1px;top:50%;transform:translateY(-50%);width:2px;height:60%;background:var(--b);border-radius:0 2px 2px 0}
 .nb .ic{font-size:18px;line-height:1}
-.nb-div{width:28px;height:1px;background:rgba(255,255,255,.05);margin:4px 0;flex-shrink:0}
+.nb-div{width:28px;height:1px;background:rgba(255,255,255,.05);margin:4px 0;flex-shrink:0;pointer-events:none}
 
 /* SCROLL */
 #scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:10px}
@@ -4760,18 +4761,16 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 </div>
 
 <div id="main">
-<div id="sidenav">
-  <button class="nb on"  onclick="go('home')">   <span class="ic">🏠</span>Ana</button>
-  <button class="nb"     onclick="go('mkt')">    <span class="ic">📈</span>Piyasa</button>
-  <button class="nb"     onclick="go('top')">    <span class="ic">🏆</span>Lider</button>
-  <div class="nb-div"></div>
-  <button class="nb"     onclick="go('analiz')"> <span class="ic">🔬</span>Analiz</button>
-  <button class="nb"     onclick="go('fib')">    <span class="ic">📐</span>Fib</button>
-  <div class="nb-div"></div>
-  <button class="nb"     onclick="go('kar')">    <span class="ic">💰</span>K/Z</button>
+<nav id="sidenav">
+  <button class="nb on"  onclick="go('home')"   ><span class="ic">🏠</span>Ana</button>
+  <button class="nb"     onclick="go('mkt')"    ><span class="ic">📈</span>Piyasa</button>
+  <button class="nb"     onclick="go('top')"    ><span class="ic">🏆</span>Lider</button>
+  <button class="nb"     onclick="go('analiz')" style="margin-top:8px"><span class="ic">🔬</span>Analiz</button>
+  <button class="nb"     onclick="go('fib')"    ><span class="ic">📐</span>Fib</button>
+  <button class="nb"     onclick="go('kar')"    style="margin-top:8px"><span class="ic">💰</span>K/Z</button>
   <button class="nb"     onclick="go('alarmlar')"><span class="ic">🔔</span>Alarm</button>
-  <button class="nb"     onclick="go('takvim')"> <span class="ic">📅</span>Takvim</button>
-</div>
+  <button class="nb"     onclick="go('takvim')" ><span class="ic">📅</span>Takvim</button>
+</nav>
 
 <div id="scroll">
 
@@ -5047,86 +5046,56 @@ function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
 
-// CoinGecko sayısal ID'leri olan coinler (kesin doğru ikonlar)
-const CGICO={
-  BTC:[1,'bitcoin'],ETH:[279,'ethereum'],BNB:[825,'bnb'],SOL:[4128,'solana'],
-  XRP:[44,'xrp'],DOGE:[5,'dogecoin'],ADA:[2010,'cardano'],
-  AVAX:[12559,'avalanche'],DOT:[6636,'polkadot'],LINK:[877,'chainlink'],
-  UNI:[12504,'uniswap'],ATOM:[3794,'cosmos'],LTC:[2,'litecoin'],
-  BCH:[1831,'bitcoin-cash'],TRX:[1094,'tron'],NEAR:[10365,'near'],
-  MATIC:[4713,'polygon-matic'],ARB:[11841,'arbitrum'],OP:[25244,'optimism'],
-  SUI:[26375,'sui'],INJ:[7226,'injective-protocol'],SHIB:[11939,'shiba-inu'],
-  HBAR:[4642,'hedera-hashgraph'],FIL:[2638,'filecoin'],ICP:[8916,'internet-computer'],
-  VET:[3077,'vechain'],ALGO:[4030,'algorand'],PEPE:[29850,'pepe'],
-  WLD:[13502,'worldcoin-wld'],FET:[3773,'fetch-ai'],RNDR:[11636,'render-token'],
-  AAVE:[7278,'aave'],MKR:[1900,'maker'],CRV:[6538,'curve-dao-token'],
-  SAND:[12767,'the-sandbox'],MANA:[1966,'decentraland'],AXS:[6783,'axie-infinity'],
-  GRT:[6719,'the-graph'],CHZ:[3890,'chiliz'],XLM:[512,'stellar'],
-  ETC:[1321,'ethereum-classic'],ZEC:[486,'zcash'],XMR:[328,'monero'],
-  DASH:[131,'dash'],EOS:[1765,'eos'],LDO:[8000,'lido-dao'],
-  APT:[18876,'aptos'],SEI:[28205,'sei-network'],TIA:[22861,'celestia'],
-  FLOKI:[10804,'floki'],FTM:[3513,'fantom'],SNX:[2586,'havven'],
-  PENDLE:[21420,'pendle'],JUP:[34188,'jupiter-exchange-solana'],
-  WIF:[33566,'dogwifcoin'],BONK:[28600,'bonk'],PYTH:[25021,'pyth-network'],
-  STX:[4847,'blockstack'],CFX:[7334,'conflux-token'],KAVA:[4846,'kava'],
-  IMX:[10603,'immutable-x'],LRC:[1558,'loopring'],CAKE:[7186,'pancakeswap-token'],
-  ONE:[3945,'harmony'],ZIL:[2469,'zilliqa'],ENS:[13855,'ethereum-name-service'],
-  FLOW:[4558,'flow'],EGLD:[6892,'elrond-erd-2'],
+// Binance ikon CDN — tüm Binance'deki coinleri destekler, CORS yok
+// Format: https://bin.bnbstatic.com/image/admin_mgs_image_upload/20201110/{hash}.png
+// Daha basit format: https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons/128/color/{sym}.png
+// En güvenilir: Binance kendi asset servisi
+function coinIconUrl(sym){
+  // Binance asset CDN — küçük harf sembol kullanır
+  const s = sym.toLowerCase();
+  return `https://bin.bnbstatic.com/image/pgc/202309/${s}.png`;
+}
+
+// Fallback renk sistemi
+const COIN_COL={
+  BTC:'#f7931a',ETH:'#627eea',BNB:'#f3ba2f',SOL:'#9945ff',XRP:'#0085c0',
+  DOGE:'#c2a633',ADA:'#0033ad',AVAX:'#e84142',DOT:'#e6007a',LINK:'#2a5ada',
+  UNI:'#ff007a',ATOM:'#4a4d6b',LTC:'#bfbbbb',BCH:'#8dc351',TRX:'#ef0027',
+  NEAR:'#00c08b',MATIC:'#8247e5',ARB:'#2d374b',OP:'#ff0420',SUI:'#4ca3ff',
+  INJ:'#00b4d8',SHIB:'#ffa409',HBAR:'#00b388',FIL:'#0090ff',ICP:'#f15a24',
+  VET:'#15bdff',ALGO:'#000000',PEPE:'#00a86b',WLD:'#191c1e',FET:'#1d2c4a',
+  RNDR:'#e6394a',AAVE:'#b6509e',MKR:'#1aab9b',CRV:'#3a3a3a',XLM:'#14b6e7',
+  ETC:'#328332',ZEC:'#ecb244',XMR:'#ff6600',DASH:'#008ce7',
+  USDC:'#2775ca',USDT:'#26a17b',CHZ:'#cd0124',GRT:'#6747ed',
 };
 
-// İkon başarısız cache
-const _iconFailed = new Set();
-// Dinamik CoinGecko ID cache (sunucudan gelir)
-const _dynIco = {};
-
 function cIco(sym){
-  const ci = sym.charCodeAt(0) % PAL.length;
-  const col = PAL[ci];
-  const fallbackHtml = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900">${sym.slice(0,3)}</div>`;
-  if(_iconFailed.has(sym)) return fallbackHtml;
+  const col = COIN_COL[sym] || PAL[sym.charCodeAt(0)%PAL.length];
+  // SVG fallback — her zaman çalışır, güzel görünür
+  const lbl = sym.slice(0,sym.length<=3?sym.length:3);
+  const r=parseInt(col.slice(1,3)||'3a',16);
+  const g=parseInt(col.slice(3,5)||'9f',16);
+  const b=parseInt(col.slice(5,7)||'ff',16);
+  const lum=(r*299+g*587+b*114)/1000;
+  const txt=lum>130?'#111':'#fff';
+  const fs=lbl.length<=2?'12':'9';
 
-  // 1. Statik CGICO listesi
-  const info = CGICO[sym];
-  if(info){
-    const url=`https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
-    return _imgDiv(url, sym, col, '1');
-  }
+  const svgFallback=`<svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style="border-radius:50%;flex-shrink:0;display:block">
+    <circle cx="17" cy="17" r="17" fill="${col}" opacity=".9"/>
+    <circle cx="17" cy="17" r="17" fill="url(#sh${sym})" opacity=".3"/>
+    <defs><radialGradient id="sh${sym}" cx="35%" cy="30%" r="60%"><stop offset="0%" stop-color="#fff" stop-opacity=".4"/><stop offset="100%" stop-color="#000" stop-opacity=".2"/></radialGradient></defs>
+    <text x="17" y="${lbl.length<=2?'21.5':'21'}" text-anchor="middle" fill="${txt}" font-size="${fs}" font-weight="700" font-family="'Space Mono',monospace" letter-spacing="-0.5">${lbl}</text>
+  </svg>`;
 
-  // 2. Dinamik cache (sunucudan gelmiş olabilir)
-  if(_dynIco[sym]){
-    return _imgDiv(_dynIco[sym], sym, col, '3');
-  }
-
-  // 3. cryptocurrency-icons CDN — küçük/orta coinler
-  const slug = sym.toLowerCase();
-  // Kendi sunucumuzdan proxy ile çek (CORS sorunu yok)
-  const url2 = `/api/icon?sym=${slug}`;
-  return _imgDiv(url2, sym, col, '2');
-}
-
-function _imgDiv(url, sym, col, step){
-  return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.07);overflow:hidden;background:#0a1020">
-    <img src="${url}" width="34" height="34"
-      style="border-radius:50%;display:block;object-fit:cover"
-      data-sym="${sym}" data-col="${col}" data-step="${step}"
-      onerror="onIconErr(this)"
+  // Önce gerçek ikonları dene (Binance CDN), başarısız olursa SVG göster
+  return `<div class="cico" style="padding:0;border:1px solid ${col}30;overflow:hidden;background:${col}12;position:relative" data-sym="${sym}">
+    <img src="https://bin.bnbstatic.com/image/pgc/202309/${sym.toLowerCase()}.png"
+      width="34" height="34"
+      style="display:block;border-radius:50%;object-fit:cover"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
       loading="lazy">
+    <div style="display:none;position:absolute;inset:0">${svgFallback}</div>
   </div>`;
-}
-
-async function onIconErr(img){
-  img.onerror=null;
-  const sym=img.dataset.sym, col=img.dataset.col, step=img.dataset.step;
-  if(step==='1'){
-    // CoinGecko başarısız → cryptocurrency-icons dene
-    img.dataset.step='2';
-    img.onerror=onIconErr;
-    img.src=`/api/icon?sym=${sym.toLowerCase()}`;
-  } else {
-    // Hepsi başarısız → harf göster
-    _iconFailed.add(sym);
-    img.closest('.cico').outerHTML=`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900">${sym.slice(0,3)}</div>`;
-  }
 }
 
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
