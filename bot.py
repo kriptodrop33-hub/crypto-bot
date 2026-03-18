@@ -4672,7 +4672,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 
 /* KZ / ALARM TABS */
 .kz-tab{display:flex;gap:6px;margin-bottom:12px}
-.kz-t{flex:1;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,.07);background:rgba(19,31,51,.6);text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s}
+.kz-t{flex:1;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,.07);background:rgba(19,31,51,.6);text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
+.kz-t:focus{outline:none}
 .kz-t.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.35);color:var(--b2)}
 .kz-result{background:rgba(15,26,46,.8);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:14px;margin-top:10px}
 .kz-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}
@@ -4920,8 +4921,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <!-- KAR/ZARAR -->
 <div id="p-kar" class="page">
   <div class="kz-tab">
-    <div class="kz-t on" id="kzT1" onclick="kzSwitch('hesap')">🧮 Hesap</div>
-    <div class="kz-t"    id="kzT2" onclick="kzSwitch('pozisyon')">📦 Pozisyonlarım</div>
+    <button class="kz-t on" id="kzT1" onclick="kzSwitch('hesap')">🧮 Hesap</button>
+    <button class="kz-t"    id="kzT2" onclick="kzSwitch('pozisyon')">📦 Pozisyonlarım</button>
   </div>
   <div id="kzHesap">
     <div class="card co">
@@ -4951,8 +4952,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <!-- ALARMLAR -->
 <div id="p-alarmlar" class="page">
   <div class="kz-tab">
-    <div class="kz-t on" id="alTL" onclick="alarmSwitch('liste')">🔔 Alarmlarım</div>
-    <div class="kz-t"    id="alTE" onclick="alarmSwitch('ekle')">➕ Alarm Ekle</div>
+    <button class="kz-t on" id="alTL" onclick="alarmSwitch('liste')">🔔 Alarmlarım</button>
+    <button class="kz-t"    id="alTE" onclick="alarmSwitch('ekle')">➕ Alarm Ekle</button>
   </div>
   <div id="alListe"><div class="ld"><div class="spin"></div></div></div>
   <div id="alEkle" style="display:none">
@@ -5073,51 +5074,58 @@ const CGICO={
   FLOW:[4558,'flow'],EGLD:[6892,'elrond-erd-2'],
 };
 
-// İkon ön belleği — başarısız olanları tekrar deneme
+// İkon başarısız cache
 const _iconFailed = new Set();
+// Dinamik CoinGecko ID cache (sunucudan gelir)
+const _dynIco = {};
 
 function cIco(sym){
   const ci = sym.charCodeAt(0) % PAL.length;
   const col = PAL[ci];
+  const fallbackHtml = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900">${sym.slice(0,3)}</div>`;
+  if(_iconFailed.has(sym)) return fallbackHtml;
 
-  // Harf bazlı fallback HTML
-  const fallback = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900;letter-spacing:-.5px">${sym.slice(0,3)}</div>`;
-
-  if (_iconFailed.has(sym)) return fallback;
-
-  // Önce CoinGecko (kesin ikonlar)
+  // 1. Statik CGICO listesi
   const info = CGICO[sym];
-  if (info) {
-    const url = `https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
-    return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.07);overflow:hidden;background:#0a1020">
-      <img src="${url}" width="34" height="34"
-        style="border-radius:50%;display:block;object-fit:cover"
-        onerror="this.onerror=null;tryAltIcon(this,'${sym}','${col}')"
-        loading="lazy">
-    </div>`;
+  if(info){
+    const url=`https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
+    return _imgDiv(url, sym, col, '1');
   }
 
-  // Diğer coinler için cryptocurrency-icons CDN (3000+ coin destekler)
+  // 2. Dinamik cache (sunucudan gelmiş olabilir)
+  if(_dynIco[sym]){
+    return _imgDiv(_dynIco[sym], sym, col, '3');
+  }
+
+  // 3. cryptocurrency-icons CDN — küçük/orta coinler
   const slug = sym.toLowerCase();
-  const altUrl = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/${slug}.png`;
+  // Kendi sunucumuzdan proxy ile çek (CORS sorunu yok)
+  const url2 = `/api/icon?sym=${slug}`;
+  return _imgDiv(url2, sym, col, '2');
+}
+
+function _imgDiv(url, sym, col, step){
   return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.07);overflow:hidden;background:#0a1020">
-    <img src="${altUrl}" width="34" height="34"
+    <img src="${url}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover"
-      onerror="this.onerror=null;tryAltIcon(this,'${sym}','${col}')"
+      data-sym="${sym}" data-col="${col}" data-step="${step}"
+      onerror="onIconErr(this)"
       loading="lazy">
   </div>`;
 }
 
-// İkon yükleme başarısız olunca alternatif dene
-function tryAltIcon(img, sym, col){
-  const slug = sym.toLowerCase();
-  // Daha önce CoinGecko denendiyse jsdelivr dene, aksi hâlde harf göster
-  if (!img.dataset.tried) {
-    img.dataset.tried = '1';
-    img.src = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/${slug}.png`;
+async function onIconErr(img){
+  img.onerror=null;
+  const sym=img.dataset.sym, col=img.dataset.col, step=img.dataset.step;
+  if(step==='1'){
+    // CoinGecko başarısız → cryptocurrency-icons dene
+    img.dataset.step='2';
+    img.onerror=onIconErr;
+    img.src=`/api/icon?sym=${sym.toLowerCase()}`;
   } else {
+    // Hepsi başarısız → harf göster
     _iconFailed.add(sym);
-    img.parentNode.outerHTML = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900;letter-spacing:-.5px">${sym.slice(0,3)}</div>`;
+    img.closest('.cico').outerHTML=`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900">${sym.slice(0,3)}</div>`;
   }
 }
 
@@ -6476,7 +6484,33 @@ async def _start_miniapp_server(bot):
                 return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
                     content_type="application/json", headers=CORS_HEADERS)
 
+        async def handle_icon(request):
+            sym = request.rel_url.query.get("sym","btc").lower()
+            import re as _re2
+            if not _re2.match(r'^[a-z0-9]{1,10}$', sym):
+                return aiohttp_web.Response(status=404)
+            cdn_urls = [
+                f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png",
+            ]
+            for cdn_url in cdn_urls:
+                try:
+                    async with aiohttp.ClientSession() as s:
+                        async with s.get(cdn_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                            if r.status == 200:
+                                data = await r.read()
+                                return aiohttp_web.Response(
+                                    body=data, content_type="image/png",
+                                    headers={
+                                        "Cache-Control": "public, max-age=86400",
+                                        "Access-Control-Allow-Origin": "*"
+                                    }
+                                )
+                except Exception:
+                    pass
+            return aiohttp_web.Response(status=404)
+
         web_app.router.add_get("/api/dashboard",      handle_dashboard)
+        web_app.router.add_get("/api/icon",           handle_icon)
         web_app.router.add_get("/api/price",          handle_price_with_change)
         web_app.router.add_get("/api/prices",         handle_prices)
         web_app.router.add_get("/api/analiz",         handle_analiz)
