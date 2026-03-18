@@ -224,6 +224,7 @@ cooldowns:          dict = {}
 chart_cache:        dict = {}
 whale_vol_mem:      dict = {}
 scheduled_last_run: dict = {}
+coin_image_cache:   dict = {}
 
 # ================= YARDIMCI =================
 
@@ -263,9 +264,10 @@ def _build_binance_rank_cache(data: list) -> dict:
 
 async def _refresh_marketcap_cache():
     """CoinGecko marketcap sıralaması, başarısız olursa Binance hacim sırası."""
-    global marketcap_rank_cache
+    global marketcap_rank_cache, coin_image_cache
     now = datetime.utcnow()
     cg_cache = {}
+    new_img_cache = {}
     try:
         async with aiohttp.ClientSession() as session:
             for page in range(1, 6):
@@ -298,12 +300,18 @@ async def _refresh_marketcap_cache():
                                 binance_sym = cg_sym
                             if binance_sym and binance_sym not in cg_cache:
                                 cg_cache[binance_sym] = int(mc_rank)
+                            _img = coin.get('image') or ''
+                            if _img and raw_sym and raw_sym.lower() not in new_img_cache:
+                                new_img_cache[raw_sym.lower()] = _img
                 except asyncio.TimeoutError:
                     log.warning(f"CoinGecko sayfa {page} timeout")
                     break
                 await asyncio.sleep(1.5)
     except Exception as e:
         log.warning(f"CoinGecko hata: {e}")
+
+    if new_img_cache:
+        coin_image_cache.update(new_img_cache)
 
     if len(cg_cache) >= 50:
         marketcap_rank_cache = {"_updated": now, "_fallback": False, **cg_cache}
@@ -4704,7 +4712,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .chart-toolbar{display:flex;gap:5px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.04)}
 .tf-btn{background:transparent;border:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .12s;font-family:'Space Mono',monospace}
 .tf-btn.on{background:rgba(10,132,255,.2);color:var(--b2)}
-#candleCanvas{display:block;width:100%}
+#candleCanvas{display:block;width:100%;height:220px}
 
 /* NEWS */
 .news-card{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);margin-bottom:7px;overflow:hidden;cursor:pointer;transition:border-color .15s}
@@ -5085,19 +5093,13 @@ function cIco(sym){
   // Sunucu proxy - Railway kendi domain'inden serve eder, CORS yok
   const proxyUrl=`/api/icon?sym=${sym.toLowerCase()}`;
   const id=`ico_${sym}_${Math.random().toString(36).slice(2,6)}`;
-  // onerror: inline script yerine global fonksiyon çağrısı - Telegram CSP ile uyumlu
   return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden" id="${id}">
     <img src="${proxyUrl}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
       onload="_icoOk['${sym}']=1"
-      onerror="_icoErr(this,'${sym}','${id}')"
+      onerror="_icoFail.add('${sym}');document.getElementById('${id}').innerHTML='${_svgIco(sym).replace(/'/g,"\'")}'"
       loading="lazy">
   </div>`;
-}
-function _icoErr(img, sym, id){
-  _icoFail.add(sym);
-  const el=document.getElementById(id);
-  if(el)el.innerHTML=_svgIco(sym);
 }
 
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
@@ -5143,7 +5145,17 @@ function openCoin(symBase){
   const ci=curCoinSym.charCodeAt(0)%PAL.length;const col=PAL[ci];
   // İkon
   const ico=document.getElementById('cdIco');
-  if(ico){ico.style.background=col+'20';ico.style.color=col;ico.style.borderColor=col+'40';ico.textContent=curCoinSym.slice(0,2);}
+  if(ico){
+    ico.style.background=col+'20';ico.style.borderColor=col+'40';
+    ico.textContent='';
+    const proxyUrl='/api/icon?sym='+curCoinSym.toLowerCase();
+    const imgEl=document.createElement('img');
+    imgEl.src=proxyUrl;
+    imgEl.width=36;imgEl.height=36;
+    imgEl.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
+    imgEl.onerror=function(){ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';ico.removeChild(imgEl);};
+    ico.appendChild(imgEl);
+  }
   document.getElementById('cdSym').textContent=curCoinSym;
   document.getElementById('cdName').textContent=sym;
   document.getElementById('cdPrice').textContent='Yükleniyor...';
@@ -5242,7 +5254,7 @@ const FCOL_FIB={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','
 function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const canvas=document.getElementById(canvasId);
   if(!canvas||!klines||klines.length<2)return;
-  const W=canvas.offsetWidth||320;
+  const W=(canvas.parentElement?canvas.parentElement.clientWidth:canvas.offsetWidth)||320;
   const H=parseInt(canvas.getAttribute('height'))||220;
   canvas.width=Math.round(W*devicePixelRatio);
   canvas.height=Math.round(H*devicePixelRatio);
@@ -5771,7 +5783,7 @@ async function doFibPage(){
         <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;font-weight:700">${sym} — ${tf.toUpperCase()} FİBONACCİ</span>
         <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace" id="fibOHLC"></span>
       </div>
-      <canvas id="fibCanvas" height="220" style="display:block;width:100%"></canvas>
+      <canvas id="fibCanvas" height="220" style="display:block;width:100%;height:220px"></canvas>
     </div>
     ${fib&&fib.levels?`<div class="card">
       <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:9px;font-family:'Space Mono',monospace">📊 Seviyeler</div>
@@ -6511,11 +6523,14 @@ async def _start_miniapp_server(bot):
                     headers={"Cache-Control":"public,max-age=604800","Access-Control-Allow-Origin":"*"})
 
             # Kaynak listesi - sirayla dene
-            sources = [
+            sources = []
+            cg_img = coin_image_cache.get(sym)
+            if cg_img:
+                sources.append((cg_img, "image/png"))
+            sources += [
                 (f"https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/{sym}.svg", "image/svg+xml"),
-                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png", "image/png"),
                 (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/svg/color/{sym}.svg", "image/svg+xml"),
-                (f"https://assets.coingecko.com/coins/images/1/thumb/{sym}.png", "image/png"),
+                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png", "image/png"),
             ]
             for url, ct in sources:
                 try:
