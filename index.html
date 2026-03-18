@@ -274,12 +274,12 @@
 
 <!-- Tabs -->
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('market')">📊 Market</div>
-  <div class="tab" onclick="switchTab('top')">🏆 Liderler</div>
-  <div class="tab" onclick="switchTab('analyse')">🔍 Analiz</div>
-  <div class="tab" onclick="switchTab('fib')">📐 Fibonacci</div>
-  <div class="tab" onclick="switchTab('sentiment')">🧠 Sentiment</div>
-  <div class="tab" onclick="switchTab('calendar')">📅 Takvim</div>
+  <div class="tab active" data-tab="market" onclick="switchTab('market')">📊 Market</div>
+  <div class="tab" data-tab="top" onclick="switchTab('top')">🏆 Liderler</div>
+  <div class="tab" data-tab="analyse" onclick="switchTab('analyse')">🔍 Analiz</div>
+  <div class="tab" data-tab="fib" onclick="switchTab('fib')">📐 Fibonacci</div>
+  <div class="tab" data-tab="sentiment" onclick="switchTab('sentiment')">🧠 Sentiment</div>
+  <div class="tab" data-tab="calendar" onclick="switchTab('calendar')">📅 Takvim</div>
 </div>
 
 <!-- Pages -->
@@ -347,12 +347,12 @@
 
 <!-- Bottom Nav -->
 <div class="bottom-nav">
-  <button class="nav-btn active" onclick="switchTab('market')"><span class="icon">📊</span>Market</button>
-  <button class="nav-btn" onclick="switchTab('top')"><span class="icon">🏆</span>Liderler</button>
-  <button class="nav-btn" onclick="switchTab('analyse')"><span class="icon">🔍</span>Analiz</button>
-  <button class="nav-btn" onclick="switchTab('fib')"><span class="icon">📐</span>Fib</button>
-  <button class="nav-btn" onclick="switchTab('sentiment')"><span class="icon">🧠</span>Duygu</button>
-  <button class="nav-btn" onclick="switchTab('calendar')"><span class="icon">📅</span>Takvim</button>
+  <button class="nav-btn active" data-tab="market" onclick="switchTab('market')"><span class="icon">📊</span>Market</button>
+  <button class="nav-btn" data-tab="top" onclick="switchTab('top')"><span class="icon">🏆</span>Liderler</button>
+  <button class="nav-btn" data-tab="analyse" onclick="switchTab('analyse')"><span class="icon">🔍</span>Analiz</button>
+  <button class="nav-btn" data-tab="fib" onclick="switchTab('fib')"><span class="icon">📐</span>Fib</button>
+  <button class="nav-btn" data-tab="sentiment" onclick="switchTab('sentiment')"><span class="icon">🧠</span>Duygu</button>
+  <button class="nav-btn" data-tab="calendar" onclick="switchTab('calendar')"><span class="icon">📅</span>Takvim</button>
 </div>
 
 <div id="toast"></div>
@@ -379,16 +379,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
-  document.querySelectorAll('.tab').forEach(t => {
-    if (t.getAttribute('onclick') && t.getAttribute('onclick').includes("'" + tab + "'")) {
-      t.classList.add('active');
-    }
-  });
-  document.querySelectorAll('.nav-btn').forEach(b => {
-    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + tab + "'")) {
-      b.classList.add('active');
-    }
-  });
+  document.querySelectorAll('.tab[data-tab="' + tab + '"]').forEach(t => t.classList.add('active'));
+  document.querySelectorAll('.nav-btn[data-tab="' + tab + '"]').forEach(b => b.classList.add('active'));
   currentTab = tab;
   if (tab === 'top' && !document.querySelector('#topGainers .coin-row')) loadTop();
   if (tab === 'calendar') loadCalendar();
@@ -562,8 +554,8 @@ async function loadTop() {
         const base = c.symbol.replace('USDT','');
         const coin = cgMap[base] || {};
         const imgHtml = coin.img
-          ? `<img src="${coin.img}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0" onerror="this.style.display='none'">`
-          : `<div style="width:24px;height:24px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0">${base.slice(0,2)}</div>`;
+          ? `<img src="${coin.img}" width="24" height="24" style="border-radius:50%;flex-shrink:0" onerror="this.outerHTML='<div style=\'width:24px;height:24px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);flex-shrink:0\'>${base.slice(0,2)}</div>'">`
+          : `<div style="width:24px;height:24px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);flex-shrink:0">${base.slice(0,2)}</div>`;
         return `<div class="coin-row">
           <div class="coin-info">
             <span class="coin-rank">${i+1}</span>
@@ -930,7 +922,7 @@ async function loadCalendar() {
           </div>
         </div>
       </div>
-      <div style="margin-top:6px"><span class="badge" style="color:${impColor[ev.importance]};background:${impColor[ev.importance]}22">${impLabel[ev.importance]}</span></div>
+      <div style="margin-top:6px"><span class="badge" style="background:${impColor[ev.importance]}22;color:${impColor[ev.importance]}">${impLabel[ev.importance]}</span></div>
     </div>`;
   }).join('') +
   `<div class="card" style="border-color:var(--blue)">
