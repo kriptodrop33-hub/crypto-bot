@@ -5015,10 +5015,49 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
       </div>
     </div>
 
-    <!-- LİDERLER -->
-    <div class="card" style="margin-bottom:10px">
-      <div class="sh"><div class="sh-t">🚀 <span>Liderler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
-      <div id="hGain"></div>
+    <!-- 24s ÖZET -->
+    <div class="card" style="margin-bottom:10px;padding:11px 13px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:9px;font-family:'Space Mono',monospace">📊 24s Piyasa Özeti</div>
+      <div style="display:flex;gap:0;background:rgba(6,9,15,.8);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.05)">
+        <div style="flex:1;padding:10px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.05)">
+          <div style="font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">BTC Dom</div>
+          <div style="font-size:14px;font-weight:800;color:var(--o);font-family:'Space Mono',monospace" id="hDom2">--</div>
+        </div>
+        <div style="flex:1;padding:10px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.05)">
+          <div style="font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">Ort. Değ.</div>
+          <div style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace" id="hAvg2">--</div>
+        </div>
+        <div style="flex:1;padding:10px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.05)">
+          <div style="font-size:8px;color:var(--g);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">↑ Yükselen</div>
+          <div style="font-size:14px;font-weight:800;color:var(--g);font-family:'Space Mono',monospace" id="hUp2">--</div>
+        </div>
+        <div style="flex:1;padding:10px 8px;text-align:center">
+          <div style="font-size:8px;color:var(--r);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">↓ Düşen</div>
+          <div style="font-size:14px;font-weight:800;color:var(--r);font-family:'Space Mono',monospace" id="hDn2">--</div>
+        </div>
+      </div>
+      <!-- Boğa/ayı bar -->
+      <div style="margin-top:9px">
+        <div style="display:flex;justify-content:space-between;font-size:8.5px;color:var(--muted);margin-bottom:4px">
+          <span id="hMood2">--</span>
+          <span style="font-family:'Space Mono',monospace" id="hAvgPct2">--</span>
+        </div>
+        <div style="height:5px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden">
+          <div id="hSentBar2" style="height:100%;border-radius:3px;width:50%;background:linear-gradient(90deg,var(--r),var(--y) 50%,var(--g));transition:width .8s"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LİDERLER + DÜŞENLER YAN YANA -->
+    <div class="g2" style="margin-bottom:10px">
+      <div class="card cg" style="padding:11px">
+        <div class="sh" style="margin-bottom:7px"><div class="sh-t" style="font-size:8.5px">🚀 <span>Yükselenler</span></div><span class="sh-btn" style="font-size:9px" onclick="go('top')">→</span></div>
+        <div id="hGain"></div>
+      </div>
+      <div class="card" style="padding:11px;border-color:rgba(255,45,85,.18);background:linear-gradient(135deg,var(--card) 70%,rgba(255,45,85,.04))">
+        <div class="sh" style="margin-bottom:7px"><div class="sh-t" style="font-size:8.5px">💥 <span>Düşenler</span></div><span class="sh-btn" style="font-size:9px" onclick="go('top')">→</span></div>
+        <div id="hLose"></div>
+      </div>
     </div>
 
     <!-- AKTİF ALARMLAR -->
@@ -5244,7 +5283,7 @@ function go(t){
 async function loadHome(){
   document.getElementById('homeLoad').style.display='flex';
   document.getElementById('homeContent').style.display='none';
-  const d=await api('/api/dashboard');
+  const d=await api(`/api/dashboard${UID?'?uid='+UID:''}`);
   document.getElementById('homeLoad').style.display='none';
   document.getElementById('homeContent').style.display='block';
   if(!d){
@@ -5286,11 +5325,34 @@ async function loadHome(){
   const mood=avg>1.5?'🐂 Boğa':avg<-1.5?'🐻 Ayı':'😐 Nötr';
   const moodColor=avg>1.5?'var(--g)':avg<-1.5?'var(--r)':'var(--y)';
   document.getElementById('hMood').innerHTML=`<span style="color:${moodColor}">${mood}</span>`;
-  // Liderler
+  // Liderler + Düşenler
   const tops=d.top5||[];
+  const botRow=(c,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)">`+
+    `<span style="font-size:8.5px;color:var(--muted);width:14px;text-align:center;font-family:'Space Mono',monospace">${i+1}</span>`+
+    `${cIco(c.s.replace('USDT',''))}`+
+    `<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:800">${c.s.replace('USDT','')}</div></div>`+
+    `<div>${pb(c.ch)}</div></div>`;
   document.getElementById('hGain').innerHTML=tops.length
-    ?tops.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">$${fp(c.p)}</div></div><div class="cr-r">${pb(c.ch)}</div></div>`).join('')
-    :'<div style="font-size:11px;color:var(--muted)">Veri yok</div>';
+    ?tops.slice(0,4).map((c,i)=>botRow(c,i)).join('')
+    :'<div style="font-size:10px;color:var(--muted)">Veri yok</div>';
+  const loses=(d.top_data&&d.top_data.l)||[];
+  document.getElementById('hLose').innerHTML=loses.length
+    ?loses.slice(0,4).map((c,i)=>botRow(c,i)).join('')
+    :'<div style="font-size:10px;color:var(--muted)">Veri yok</div>';
+  // Özet bar (yeni elementler)
+  const e2=(id,v)=>{const el=document.getElementById(id);if(el)el.innerHTML=v;};
+  const et2=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  et2('hDom2',(d.btc_dom||0).toFixed(1)+'%');
+  e2('hAvg2',pb(parseFloat(d.avg_change||0)));
+  et2('hUp2',d.rising||'--');
+  et2('hDn2',d.falling||'--');
+  const avg2=parseFloat(d.avg_change||0);
+  const sent2=Math.max(0,Math.min(100,(avg2+3)/6*100));
+  const sb2=document.getElementById('hSentBar2');if(sb2)sb2.style.width=sent2+'%';
+  const mood2=avg2>1.5?'🐂 Boğa Piyasası':avg2<-1.5?'🐻 Ayı Piyasası':'😐 Nötr Piyasa';
+  const mc2=avg2>1.5?'var(--g)':avg2<-1.5?'var(--r)':'var(--y)';
+  e2('hMood2',`<span style="color:${mc2};font-weight:700">${mood2}</span>`);
+  et2('hAvgPct2',(avg2>0?'+':'')+avg2.toFixed(2)+'%');
   // Alarmlar
   const alarms=d.alarms||[];
   document.getElementById('hAlarm').innerHTML=alarms.length
@@ -5312,7 +5374,7 @@ async function loadHome(){
 async function loadMkt(){
   if(allCoins.length)applyAndRender();
   else document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';
-  const d=await api('/api/dashboard');
+  const d=await api(`/api/dashboard${UID?'?uid='+UID:''}`);
   if(d&&d.coins){
     allCoins=d.coins;
     if(d.top_data)topData=d.top_data;
@@ -5363,7 +5425,7 @@ function setF(f){
 async function loadTop(){
   if(topData.g.length)showTop(topMode);
   else document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';
-  const d=await api('/api/dashboard');
+  const d=await api(`/api/dashboard${UID?'?uid='+UID:''}`);
   if(d&&d.top_data){topData=d.top_data;if(d.coins)allCoins=d.coins;showTop(topMode);}
 }
 function showTop(m){
@@ -5413,50 +5475,75 @@ async function doFib(){
   out.innerHTML='<div class="ld"><div class="spin"></div>Hesaplanıyor...</div>';
   const d=await api(`/api/fib?symbol=${sym}&interval=${tf}`);
   if(!d||!d.levels){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
-  const VW=340,VH=220,LEFT=8,RIGHT=70,TOP=12,BOT=12;
-  const chartW=VW-LEFT-RIGHT;
-  const pad=(d.high-d.low)*0.06;
-  const pMin=d.low-pad,pMax=d.high+pad,pRng=pMax-pMin||1;
-  const yPos=(p)=>TOP+(VH-TOP-BOT)*(1-(p-pMin)/pRng);
+
   const FCOL={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','61.8':'#05d890','78.6':'#0a84ff','100':'#bf5af2'};
-  const curY=yPos(d.cur);
-  const lines=d.levels.map(l=>{
-    const ly=yPos(l.price);
+
+  // ── Dikey şerit grafik — her bölge ayrı renkte ──
+  const VW=320, VH=260, BAR=28, LGAP=4;
+  const pMin=d.low, pMax=d.high, pRng=pMax-pMin||1;
+  const yPx=(p)=>Math.round(VH*(1-(p-pMin)/pRng));
+
+  // Şeritler arası bölgeler (her iki seviye arası dolgu)
+  const levs=d.levels;
+  let bands='';
+  for(let i=0;i<levs.length-1;i++){
+    const y1=yPx(levs[i].price), y2=yPx(levs[i+1].price);
+    const col=FCOL[String(levs[i].pct)]||'#5577aa';
+    bands+=`<rect x="${BAR+LGAP}" y="${Math.min(y1,y2)}" width="${VW-BAR-LGAP*2}" height="${Math.abs(y2-y1)||1}" fill="${col}" opacity=".08"/>`;
+  }
+
+  // Seviye çizgileri
+  const lines=levs.map(l=>{
+    const ly=yPx(l.price);
     const col=FCOL[String(l.pct)]||'#5577aa';
-    return`<line x1="${LEFT}" y1="${ly}" x2="${LEFT+chartW}" y2="${ly}" stroke="${col}" stroke-width="1" stroke-dasharray="5,3" opacity=".65"/>
-<text x="${LEFT+chartW+5}" y="${ly+3}" font-size="8" fill="${col}" font-family="monospace" font-weight="700">%${l.pct}</text>
-<text x="${LEFT+chartW+5}" y="${ly+12}" font-size="6.5" fill="${col}99" font-family="monospace">$${fp(l.price)}</text>`;
+    const isTop=l.pct===0, isBot=l.pct===100;
+    return`<line x1="${BAR+LGAP}" y1="${ly}" x2="${VW-LGAP}" y2="${ly}" stroke="${col}" stroke-width="${isTop||isBot?1.5:1}" opacity="${isTop||isBot?0.9:0.6}"/>
+<text x="${BAR-2}" y="${ly+4}" font-size="7.5" fill="${col}" font-family="monospace" text-anchor="end" font-weight="700">${l.pct}%</text>`;
   }).join('');
-  const cur=`<line x1="${LEFT}" y1="${curY}" x2="${LEFT+chartW}" y2="${curY}" stroke="#0a84ff" stroke-width="2.5"/>
-<polygon points="${LEFT},${curY-5} ${LEFT+9},${curY} ${LEFT},${curY+5}" fill="#0a84ff"/>
-<rect x="${LEFT+11}" y="${curY-9}" width="95" height="17" fill="rgba(10,132,255,.15)" rx="3" stroke="rgba(10,132,255,.5)" stroke-width="1"/>
-<text x="${LEFT+15}" y="${curY+4}" font-size="9" fill="#64b5f6" font-family="monospace" font-weight="700">$${fp(d.cur)} ← ŞU AN</text>`;
+
+  // Fiyat barı (sol taraf — mevcut fiyatın konumunu gösterir)
+  const curY=yPx(d.cur);
+  const barPct=(d.cur-pMin)/pRng;
+  const barGrad=`<defs>
+    <linearGradient id="barG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff2d55"/><stop offset="38%" stop-color="#ffd60a"/>
+      <stop offset="62%" stop-color="#05d890"/><stop offset="100%" stop-color="#bf5af2"/>
+    </linearGradient>
+  </defs>`;
+  const bar=`<rect x="${LGAP}" y="${LGAP}" width="${BAR-LGAP*2}" height="${VH-LGAP*2}" rx="4" fill="url(#barG)" opacity=".15"/>
+<rect x="${LGAP}" y="${curY}" width="${BAR-LGAP*2}" height="${VH-curY-LGAP}" rx="4" fill="url(#barG)" opacity=".35"/>
+<circle cx="${BAR/2}" cy="${curY}" r="5" fill="#0a84ff" stroke="#fff" stroke-width="1.5"/>`;
+
+  // Mevcut fiyat çizgisi + etiket
+  const curLine=`<line x1="${BAR+LGAP}" y1="${curY}" x2="${VW-LGAP}" y2="${curY}" stroke="#0a84ff" stroke-width="2"/>
+<rect x="${BAR+LGAP+4}" y="${curY-10}" width="105" height="19" fill="rgba(10,132,255,.2)" rx="4" stroke="rgba(10,132,255,.6)" stroke-width="1"/>
+<text x="${BAR+LGAP+8}" y="${curY+4}" font-size="9.5" fill="#64b5f6" font-family="monospace" font-weight="700">$${fp(d.cur)} ← Şu an</text>`;
+
   out.innerHTML=`
-  <div class="card" style="margin-bottom:9px;padding:11px">
-    <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Mono',monospace">📐 ${sym} — ${tf.toUpperCase()}</div>
-    <svg width="100%" viewBox="0 0 ${VW} ${VH}" style="display:block;background:#070e1a;border-radius:10px;border:1px solid rgba(255,255,255,.06)">
-      <defs>
-        <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0a84ff" stop-opacity=".03"/>
-          <stop offset="100%" stop-color="#060a12" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <rect width="${VW}" height="${VH}" fill="url(#bgGrad)" rx="10"/>
-      ${lines}${cur}
+  <div class="card" style="margin-bottom:9px;padding:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-family:'Space Mono',monospace">📐 ${sym} — ${tf.toUpperCase()}</span>
+      <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace">${fp(d.high)} / ${fp(d.low)}</span>
+    </div>
+    <svg width="100%" viewBox="0 0 ${VW} ${VH}" style="display:block;background:#06090f;border-radius:10px;border:1px solid rgba(255,255,255,.07);overflow:visible">
+      ${barGrad}
+      <rect width="${VW}" height="${VH}" fill="#06090f" rx="10"/>
+      ${bands}${lines}${bar}${curLine}
     </svg>
-    <div style="display:flex;justify-content:space-around;margin-top:8px;font-size:9.5px;font-family:'Space Mono',monospace">
-      <span style="color:var(--r)">↑ $${fp(d.high)}</span>
-      <span style="color:var(--b)">◆ $${fp(d.cur)}</span>
-      <span style="color:var(--g)">↓ $${fp(d.low)}</span>
+    <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+      ${levs.map(l=>{const col=FCOL[String(l.pct)]||'#5577aa';const isCur=Math.abs(l.price-d.cur)/d.cur<0.008;return`<div style="background:${col}15;border:1px solid ${col}40;border-radius:6px;padding:3px 8px;font-size:8.5px;font-family:'Space Mono',monospace;${isCur?'border-color:'+col+';background:'+col+'25':''}">${l.pct}%</div>`;}).join('')}
     </div>
   </div>
   <div class="card">
-    <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Mono',monospace">Seviyeler</div>
-    ${d.levels.map(l=>{
+    <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:9px;font-family:'Space Mono',monospace">Seviyeler</div>
+    ${levs.map(l=>{
       const isCur=Math.abs(l.price-d.cur)/d.cur<0.008;
       const col=FCOL[String(l.pct)]||'#5577aa';
-      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04);${isCur?'background:rgba(10,132,255,.07);border-radius:8px;padding:8px 9px;margin:0 -9px':''}">
-        <span style="font-size:10px;color:${col};font-weight:700;font-family:'Space Mono',monospace">%${l.pct}</span>
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px ${isCur?'9':'0'}px;border-bottom:1px solid rgba(255,255,255,.04);border-radius:${isCur?'8':'0'}px;background:${isCur?'rgba(10,132,255,.07)':'transparent'};margin:${isCur?'0 -9px':'0'}">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div style="width:3px;height:16px;border-radius:2px;background:${col};flex-shrink:0"></div>
+          <span style="font-size:10px;color:${col};font-weight:700;font-family:'Space Mono',monospace">%${l.pct}</span>
+        </div>
         <span style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace">$${fp(l.price)}</span>
         <span style="font-size:10px;${l.dist>=0?'color:var(--g)':'color:var(--r)'};font-family:'Space Mono',monospace">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
       </div>`;
