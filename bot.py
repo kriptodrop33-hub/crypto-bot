@@ -5697,17 +5697,29 @@ function applyAndRender(resetPage){
     renderCoinList(c, 'mktList', true);
     return;
   }
+  // Yükselen/Düşen filtrelerinde topData'yı kullan (ana sayfayla tutarlı)
+  if(coinFilter==='up'){
+    const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
+    let c=topData.g&&topData.g.length?[...topData.g]:[...allCoins].filter(x=>x.ch>0).sort((a,b)=>b.ch-a.ch);
+    if(q)c=c.filter(x=>x.s.includes(q));
+    renderCoinList(c,'mktList',false);
+    return;
+  }
+  if(coinFilter==='dn'){
+    const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
+    let c=topData.l&&topData.l.length?[...topData.l]:[...allCoins].filter(x=>x.ch<0).sort((a,b)=>a.ch-b.ch);
+    if(q)c=c.filter(x=>x.s.includes(q));
+    renderCoinList(c,'mktList',false);
+    return;
+  }
   let c=[...allCoins];
-  if(coinFilter==='up')c=c.filter(x=>x.ch>0);
-  else if(coinFilter==='dn')c=c.filter(x=>x.ch<0);
   const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
   if(q)c=c.filter(x=>x.s.includes(q));
   const sv=document.getElementById('mSrt')?.value||'vol';
-  // Sıralama: varsayılan marketcap (rank), yoksa hacim
-  if(sv==='up'||coinFilter==='up') c.sort((a,b)=>b.ch-a.ch);
-  else if(sv==='dn'||coinFilter==='dn') c.sort((a,b)=>a.ch-b.ch);
+  if(sv==='up') c.sort((a,b)=>b.ch-a.ch);
+  else if(sv==='dn') c.sort((a,b)=>a.ch-b.ch);
   else if(sv==='mc') c.sort((a,b)=>(a.rank||9999)-(b.rank||9999));
-  else c.sort((a,b)=>b.v-a.v); // hacim (default)
+  else c.sort((a,b)=>b.v-a.v);
   renderCoinList(c, 'mktList', false);
 }
 
@@ -6364,7 +6376,22 @@ async def _start_miniapp_server(bot):
                          for x in usdt if float(x.get("quoteVolume",0))>100000]
             # Marketcap'e göre sırala, rank yoksa hacme göre
             coins_raw.sort(key=lambda x: (x["rank"] if x["rank"]<9000 else 9999, -x["v"]))
-            coins = coins_raw[:120]  # İlk 120, JS tarafında 50 gösterilecek
+            coins_base = coins_raw[:120]
+
+            # Top gainers/losers'ı coins listesine ekle (piyasa sayfasıyla tutarlılık)
+            coins_syms = {c["s"] for c in coins_base}
+            extra_top = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:30]
+            extra_bot = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)))[:30]
+            for x in extra_top + extra_bot:
+                if x["symbol"] not in coins_syms:
+                    base = x["symbol"].replace("USDT","").lower()
+                    coins_base.append({"s":x["symbol"],"p":float(x.get("lastPrice",0)),
+                                       "ch":float(x.get("priceChangePercent",0)),
+                                       "v":float(x.get("quoteVolume",0)),
+                                       "rank": marketcap_rank_cache.get(x["symbol"], 9999),
+                                       "img": coin_image_cache.get(base,"")})
+                    coins_syms.add(x["symbol"])
+            coins = coins_base
 
             # Top data
             top_g = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:20]
