@@ -5037,43 +5037,48 @@ async function loadHome(){
 // ── PİYASA ──
 async function loadMkt(){
   // Cache varsa hemen göster, sonra arkaplanda güncelle
-  if(allCoins.length){applyF();renderMkt();}
+  if(allCoins.length){applyAndRender();}
   else{document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';}
   const d=await api('/api/dashboard');
   if(d&&d.coins){
     allCoins=d.coins;
     if(d.top_data)topData=d.top_data;
-    applyF();renderMkt();
+    applyAndRender();
   }
 }
-function applyF(){
+function applyAndRender(){
+  // Filtrele
   let c=[...allCoins];
-  if(coinFilter==='up')c=c.filter(x=>x.ch>0);
-  else if(coinFilter==='dn')c=c.filter(x=>x.ch<0);
+  if(coinFilter==='up')   c=c.filter(x=>x.ch>0);
+  else if(coinFilter==='dn')  c=c.filter(x=>x.ch<0);
   else if(coinFilter==='pump')c=c.filter(x=>x.ch>5);
   else if(coinFilter==='dump')c=c.filter(x=>x.ch<-5);
   const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
-  if(q)c=c.filter(x=>x.s.includes(q));
+  if(q) c=c.filter(x=>x.s.includes(q));
+  // Sırala — filtre seçimine göre otomatik sırala
   const sv=document.getElementById('mSrt')?.value||'vol';
-  if(sv==='up')c.sort((a,b)=>b.ch-a.ch);
-  else if(sv==='dn')c.sort((a,b)=>a.ch-b.ch);
-  else c.sort((a,b)=>b.v-a.v);
-  filtCoins=c;
+  if(sv==='up' || coinFilter==='up' || coinFilter==='pump')
+    c.sort((a,b)=>b.ch-a.ch);
+  else if(sv==='dn' || coinFilter==='dn' || coinFilter==='dump')
+    c.sort((a,b)=>a.ch-b.ch);
+  else
+    c.sort((a,b)=>b.v-a.v);
+  // Render
+  const cnt=c.length;
+  document.getElementById('mktList').innerHTML=
+    (cnt===0?'<div class="mt"><div class="mt-i">🔍</div><div class="mt-t">Sonuç yok</div></div>':'')+
+    c.slice(0,120).map(x=>
+      `<div class="cr">${cIco(x.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${x.s.replace('USDT','')}</div><div class="cname">${fv(x.v)}</div></div><div class="cr-r"><div class="cpct ${pc(x.ch)}">${pb(x.ch)}</div><div class="cprice">$${fp(x.p)}</div></div></div>`
+    ).join('');
 }
-function renderMkt(){
-  applyF();
-  document.getElementById('mktList').innerHTML=filtCoins.slice(0,100).map(c=>
-    `<div class="cr">${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`
-  ).join('');
-}
-function fltMkt(){applyF();renderMkt();}
-function srtMkt(){applyF();renderMkt();}
+function fltMkt(){applyAndRender();}
+function srtMkt(){applyAndRender();}
 function setF(f){
   coinFilter=f;
   ['All','Up','Dn','Pump','Dump'].forEach(x=>{const e=document.getElementById('f'+x);if(e)e.classList.remove('on');});
   const m={all:'fAll',up:'fUp',dn:'fDn',pump:'fPump',dump:'fDump'};
   const e=document.getElementById(m[f]);if(e)e.classList.add('on');
-  applyF();renderMkt();
+  applyAndRender();
 }
 
 // ── LİDERLER ──
@@ -5135,36 +5140,59 @@ async function doFib(){
   const d=await api(`/api/fib?symbol=${sym}&interval=${tf}`);
   if(!d||!d.levels){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
 
-  // SVG Grafik
-  const W=320,H=200,PAD=8;
-  const prices=d.levels.map(l=>l.price);
-  const minP=Math.min(...prices),maxP=Math.max(...prices);
-  const rng=maxP-minP||1;
-  const y=(p)=>PAD+(H-PAD*2)*(1-(p-minP)/rng);
-  const fibColors={0:'#ff3d6b',23.6:'#ff8c42',38.2:'#f0c040',50:'#aaaaaa',61.8:'#00e5a0',78.6:'#3a9fff',100:'#9b6fff'};
-  const curY=y(d.cur);
+  // SVG Grafik — sol taraf: fiyat çubuğu, sağ: etiketler
+  const VW=340, VH=220, LEFT=8, RIGHT=60, TOP=10, BOT=10;
+  const chartW=VW-LEFT-RIGHT;
+  // Fiyat aralığı: high'dan low'a, biraz padding
+  const priceHigh=d.high, priceLow=d.low;
+  const priceRng=priceHigh-priceLow||1;
+  const pad=priceRng*0.05;
+  const pMin=priceLow-pad, pMax=priceHigh+pad, pRng=pMax-pMin;
+  const yPos=(p)=>TOP+(VH-TOP-BOT)*(1-(p-pMin)/pRng);
+
+  // Renk haritası — key olarak string kullan
+  const FCOL={'0':'#ff3d6b','23.6':'#ff8c42','38.2':'#f0c040','50':'#888888','61.8':'#00e5a0','78.6':'#3a9fff','100':'#9b6fff'};
+
   const svgLines=d.levels.map(l=>{
-    const ly=y(l.price);
-    const col=fibColors[l.pct]||'#5577aa';
-    const isCur=Math.abs(l.price-d.cur)/d.cur<0.005;
-    return `<line x1="${PAD}" y1="${ly}" x2="${W-PAD}" y2="${ly}" stroke="${col}" stroke-width="${isCur?2.5:1}" stroke-dasharray="${isCur?'none':'4,3'}" opacity="${isCur?1:0.6}"/>
-    <text x="${W-PAD+2}" y="${ly+4}" font-size="8" fill="${col}" font-family="monospace">%${l.pct}</text>`;
+    const ly=yPos(l.price);
+    const pctKey=String(l.pct);
+    const col=FCOL[pctKey]||'#5577aa';
+    const isCur=Math.abs(l.price-d.cur)/d.cur<0.008;
+    const lw=isCur?0:1;
+    const dash=isCur?'':'5,3';
+    const opa=isCur?0:0.7;
+    return `<line x1="${LEFT}" y1="${ly}" x2="${LEFT+chartW}" y2="${ly}" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${dash}" opacity="${opa}"/>
+<text x="${LEFT+chartW+4}" y="${ly+4}" font-size="9" fill="${col}" font-family="monospace" font-weight="600">%${l.pct}</text>
+<text x="${LEFT+chartW+4}" y="${ly+14}" font-size="7" fill="${col}88" font-family="monospace">$${fp(l.price)}</text>`;
   }).join('');
-  // Fiyat çizgisi
-  const curLine=`<line x1="${PAD}" y1="${curY}" x2="${W-PAD}" y2="${curY}" stroke="#3a9fff" stroke-width="2" opacity="1"/>
-    <circle cx="${PAD+10}" cy="${curY}" r="4" fill="#3a9fff"/>
-    <text x="${PAD+16}" y="${curY+4}" font-size="9" fill="#3a9fff" font-family="monospace">$${fp(d.cur)}</text>`;
+
+  // Mevcut fiyat çizgisi — en üstte
+  const curY=yPos(d.cur);
+  const curLine=`
+<line x1="${LEFT}" y1="${curY}" x2="${LEFT+chartW}" y2="${curY}" stroke="#3a9fff" stroke-width="2.5"/>
+<polygon points="${LEFT},${curY-5} ${LEFT+8},${curY} ${LEFT},${curY+5}" fill="#3a9fff"/>
+<rect x="${LEFT+10}" y="${curY-9}" width="90" height="17" fill="#3a9fff22" rx="3" stroke="#3a9fff" stroke-width="0.5"/>
+<text x="${LEFT+14}" y="${curY+4}" font-size="9" fill="#3a9fff" font-family="monospace" font-weight="700">$${fp(d.cur)} ◄ ŞU AN</text>`;
+
+  // Yüksek/düşük işaretleri
+  const highY=yPos(d.high), lowY=yPos(d.low);
+  const hilo=`
+<line x1="${LEFT}" y1="${highY}" x2="${LEFT+chartW}" y2="${highY}" stroke="#ff3d6b" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>
+<line x1="${LEFT}" y1="${lowY}" x2="${LEFT+chartW}" y2="${lowY}" stroke="#00e5a0" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>`;
 
   out.innerHTML=`
-  <div class="card" style="margin-bottom:8px">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:6px">📐 ${sym} — ${tf.toUpperCase()} FİBONACCİ GRAFİK</div>
-    <svg width="100%" viewBox="0 0 ${W+40} ${H}" style="display:block;background:var(--card2);border-radius:8px">
-      <rect width="${W+40}" height="${H}" fill="var(--card2)" rx="8"/>
+  <div class="card" style="margin-bottom:8px;padding:10px">
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📐 ${sym} — ${tf.toUpperCase()} FİBONACCİ GRAFİK</div>
+    <svg width="100%" viewBox="0 0 ${VW} ${VH}" style="display:block;background:#0a111d;border-radius:8px;border:1px solid var(--border)">
+      <rect width="${VW}" height="${VH}" fill="#0a111d" rx="8"/>
       ${svgLines}
+      ${hilo}
       ${curLine}
     </svg>
-    <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:center">
-      🔴 Yüksek: <span class="up">$${fp(d.high)}</span> · 🟢 Düşük: <span class="dn">$${fp(d.low)}</span>
+    <div style="display:flex;justify-content:space-around;margin-top:8px;font-size:10px">
+      <span>🔴 Yüksek: <span class="up" style="font-weight:700">$${fp(d.high)}</span></span>
+      <span>🔵 Şu An: <span class="bl" style="font-weight:700">$${fp(d.cur)}</span></span>
+      <span>🟢 Düşük: <span class="dn" style="font-weight:700">$${fp(d.low)}</span></span>
     </div>
   </div>
   <div class="card">
