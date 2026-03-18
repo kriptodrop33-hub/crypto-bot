@@ -4541,83 +4541,87 @@ MINIAPP_HTML = r"""<!DOCTYPE html>
 :root{
   --bg:#060a12;--surface:#0b1220;--card:#0f1a2e;--card2:#131f33;--card3:#17263d;
   --border:#1a2d47;--border2:#243d5e;--text:#e8f4ff;--muted:#4a6a8a;--muted2:#3a5570;
-  --g:#05d890;--gd:rgba(5,216,144,.1);
-  --r:#ff2d55;--rd:rgba(255,45,85,.1);
+  --g:#05d890;--gd:rgba(5,216,144,.1);--gs:rgba(5,216,144,.18);
+  --r:#ff2d55;--rd:rgba(255,45,85,.1);--rs:rgba(255,45,85,.18);
   --y:#ffd60a;--yd:rgba(255,214,10,.1);
   --b:#0a84ff;--b2:#64b5f6;--bd:rgba(10,132,255,.12);--bs:0 0 20px rgba(10,132,255,.25);
   --p:#bf5af2;--o:#ff9f0a;--t:#5ac8fa;
-  --nav-w:60px;--radius:14px;--radius-sm:9px;
+  --nav-w:60px;--radius:14px;--radius-sm:10px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
 body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px}
 #app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-#app::before{content:'';position:fixed;top:-40%;left:-20%;width:60%;height:70%;background:radial-gradient(ellipse,rgba(10,132,255,.05) 0%,transparent 70%);pointer-events:none;z-index:0}
+#app::before{content:'';position:fixed;top:-40%;left:-20%;width:60%;height:70%;background:radial-gradient(ellipse,rgba(10,132,255,.06) 0%,transparent 70%);pointer-events:none;z-index:0}
+#app::after{content:'';position:fixed;bottom:-30%;right:-10%;width:50%;height:60%;background:radial-gradient(ellipse,rgba(5,216,144,.03) 0%,transparent 70%);pointer-events:none;z-index:0}
 #main{flex:1;display:flex;overflow:hidden;position:relative;z-index:1}
 
 /* HEADER */
-.hdr{height:46px;flex-shrink:0;background:rgba(11,18,32,.92);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;padding:0 14px;backdrop-filter:blur(20px);position:relative;z-index:100}
-.logo{display:flex;align-items:center;gap:9px}
-.logo-box{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#0a84ff,#0055cc);box-shadow:var(--bs);display:flex;align-items:center;justify-content:center;font-size:15px}
+.hdr{height:50px;flex-shrink:0;background:rgba(11,18,32,.96);border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;padding:0 14px;backdrop-filter:blur(24px);position:relative;z-index:100}
+.hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(10,132,255,.3),transparent)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-box{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#0a84ff,#005fcc);box-shadow:0 0 16px rgba(10,132,255,.4);display:flex;align-items:center;justify-content:center;font-size:16px}
 .logo-txt{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;background:linear-gradient(135deg,#64b5f6,#5ac8fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo-sub{font-size:7px;color:var(--muted);font-weight:700;letter-spacing:1.2px;text-transform:uppercase}
+.logo-sub{font-size:7px;color:var(--muted);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-top:1px}
 .hdr-r{display:flex;align-items:center;gap:8px}
-.live-pill{display:flex;align-items:center;gap:4px;background:rgba(5,216,144,.1);border:1px solid rgba(5,216,144,.25);border-radius:20px;padding:4px 9px}
-.ldot{width:5px;height:5px;border-radius:50%;background:var(--g);animation:blink 1.4s ease infinite}
-@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px var(--g)}50%{opacity:.3;box-shadow:none}}
+.live-pill{display:flex;align-items:center;gap:5px;background:rgba(5,216,144,.08);border:1px solid rgba(5,216,144,.22);border-radius:20px;padding:4px 10px}
+.ldot{width:6px;height:6px;border-radius:50%;background:var(--g);animation:blink 1.4s ease infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 8px var(--g)}50%{opacity:.3;box-shadow:none}}
 .ltxt{font-size:9px;font-weight:700;color:var(--g);letter-spacing:.8px;font-family:'Space Mono',monospace}
-#clk{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace}
+#clk{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;letter-spacing:.3px}
 
 /* TICKER */
-.ticker{height:24px;flex-shrink:0;background:rgba(6,10,18,.95);border-bottom:1px solid rgba(255,255,255,.04);display:flex;align-items:center;overflow:hidden;position:relative;z-index:10}
-.ticker::before,.ticker::after{content:'';position:absolute;top:0;bottom:0;width:24px;z-index:2;pointer-events:none}
+.ticker{height:26px;flex-shrink:0;background:rgba(6,10,18,.97);border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;overflow:hidden;position:relative;z-index:10}
+.ticker::before,.ticker::after{content:'';position:absolute;top:0;bottom:0;width:32px;z-index:2;pointer-events:none}
 .ticker::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
 .ticker::after{right:0;background:linear-gradient(-90deg,var(--bg),transparent)}
-.t-inner{display:flex;animation:ts 38s linear infinite}
+.t-inner{display:flex;animation:ts 42s linear infinite}
 .t-inner:hover{animation-play-state:paused}
 @keyframes ts{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-.t-item{display:flex;align-items:center;gap:4px;padding:0 12px;border-right:1px solid rgba(255,255,255,.04);white-space:nowrap;height:24px;flex-shrink:0;cursor:pointer}
+.t-item{display:flex;align-items:center;gap:5px;padding:0 13px;border-right:1px solid rgba(255,255,255,.04);white-space:nowrap;height:26px;flex-shrink:0;cursor:pointer;transition:background .12s}
+.t-item:hover{background:rgba(255,255,255,.03)}
 .t-sym{font-size:9px;font-weight:700;color:var(--muted);font-family:'Space Mono',monospace}
-.t-px{font-size:10px;font-weight:600;font-family:'Space Mono',monospace}
+.t-px{font-size:10px;font-weight:700;font-family:'Space Mono',monospace}
 .t-ch{font-size:8px;font-weight:700;margin-left:1px}
 
 /* SIDEBAR */
-#sidenav{width:var(--nav-w);flex-shrink:0;background:rgba(9,14,26,.95);border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;overflow-y:auto;scrollbar-width:none;position:relative;z-index:10;touch-action:none}
+#sidenav{width:var(--nav-w);flex-shrink:0;background:rgba(8,13,24,.97);border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:2px;overflow-y:auto;scrollbar-width:none;position:relative;z-index:10;touch-action:none}
 #sidenav::-webkit-scrollbar{display:none}
-#sidenav::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--b),transparent)}
-.nb{width:50px;height:50px;border-radius:12px;background:transparent;border:none;color:var(--muted2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:8px;font-weight:700;transition:all .18s;padding:0;letter-spacing:.3px;text-transform:uppercase;position:relative;-webkit-tap-highlight-color:transparent;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#sidenav::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(10,132,255,.5),transparent)}
+.nb{width:50px;height:52px;border-radius:13px;background:transparent;border:none;color:var(--muted2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:7.5px;font-weight:700;transition:all .2s;padding:0;letter-spacing:.4px;text-transform:uppercase;position:relative;-webkit-tap-highlight-color:transparent;outline:none;user-select:none;-webkit-user-select:none;touch-action:manipulation}
 .nb *{pointer-events:none}
-.nb:active{transform:scale(.88)}
-.nb.on{background:rgba(10,132,255,.15);color:var(--b2);box-shadow:inset 0 0 0 1px rgba(10,132,255,.3)}
-.nb.on::before{content:'';position:absolute;left:-1px;top:50%;transform:translateY(-50%);width:2px;height:60%;background:var(--b);border-radius:0 2px 2px 0}
-.nb .ic{font-size:18px;line-height:1}
-.nb-div{width:28px;height:1px;background:rgba(255,255,255,.05);margin:4px 0;flex-shrink:0;pointer-events:none}
+.nb:active{transform:scale(.86)}
+.nb.on{background:rgba(10,132,255,.14);color:var(--b2);box-shadow:inset 0 0 0 1px rgba(10,132,255,.28)}
+.nb.on::before{content:'';position:absolute;left:-1px;top:50%;transform:translateY(-50%);width:3px;height:55%;background:linear-gradient(180deg,var(--b),var(--t));border-radius:0 3px 3px 0;box-shadow:0 0 8px rgba(10,132,255,.5)}
+.nb .ic{font-size:19px;line-height:1}
+.nb-div{width:30px;height:1px;background:rgba(255,255,255,.05);margin:5px 0;flex-shrink:0;pointer-events:none}
 
 /* SCROLL */
-#scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:10px}
+#scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:12px}
 #scroll::-webkit-scrollbar{width:2px}
 #scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:1px}
 
 /* PAGES */
-.page{display:none;padding:11px;animation:fadeIn .18s ease}
+.page{display:none;padding:12px;animation:fadeIn .2s ease}
 .page.on{display:block}
-@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
 /* CARDS */
-.card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:13px;margin-bottom:10px;position:relative;overflow:hidden;backdrop-filter:blur(10px)}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)}
-.cg{border-color:rgba(5,216,144,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(5,216,144,.03))}
-.cb{border-color:rgba(10,132,255,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(10,132,255,.03))}
-.cy{border-color:rgba(255,214,10,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,214,10,.03))}
-.cp{border-color:rgba(191,90,242,.2)}
-.co{border-color:rgba(255,159,10,.2)}
+.card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:14px;margin-bottom:10px;position:relative;overflow:hidden;backdrop-filter:blur(12px)}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent)}
+.cg{border-color:rgba(5,216,144,.2);background:linear-gradient(145deg,var(--card) 65%,rgba(5,216,144,.04))}
+.cb{border-color:rgba(10,132,255,.2);background:linear-gradient(145deg,var(--card) 65%,rgba(10,132,255,.04))}
+.cy{border-color:rgba(255,214,10,.2);background:linear-gradient(145deg,var(--card) 65%,rgba(255,214,10,.04))}
+.cp{border-color:rgba(191,90,242,.2);background:linear-gradient(145deg,var(--card) 70%,rgba(191,90,242,.03))}
+.co{border-color:rgba(255,159,10,.2);background:linear-gradient(145deg,var(--card) 70%,rgba(255,159,10,.03))}
+.cr-card{border-color:rgba(255,45,85,.2);background:linear-gradient(145deg,var(--card) 65%,rgba(255,45,85,.04))}
 
 /* GRID */
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 
 /* STAT */
-.sb{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);padding:10px 7px;text-align:center}
+.sb{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);padding:11px 7px;text-align:center;transition:border-color .15s}
 .sv{font-size:15px;font-weight:800;line-height:1.1;font-family:'Space Mono',monospace}
 .sl{font-size:8px;color:var(--muted);margin-top:4px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
 
@@ -4625,114 +4629,133 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}
 
 /* BADGE */
-.bdg{display:inline-flex;align-items:center;padding:4px 9px;border-radius:7px;font-size:12px;font-weight:700;font-family:'Space Mono',monospace}
-.bg{background:var(--gd);color:var(--g);border:1px solid rgba(5,216,144,.25)}
-.br{background:var(--rd);color:var(--r);border:1px solid rgba(255,45,85,.25)}
+.bdg{display:inline-flex;align-items:center;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:800;font-family:'Space Mono',monospace;letter-spacing:-.2px}
+.bg{background:var(--gs);color:var(--g);border:1px solid rgba(5,216,144,.28)}
+.br{background:var(--rs);color:var(--r);border:1px solid rgba(255,45,85,.28)}
 .by{background:var(--yd);color:var(--y);border:1px solid rgba(255,214,10,.2)}
-.bb{background:var(--bd);color:var(--b);border:1px solid rgba(10,132,255,.25)}
+.bb{background:var(--bd);color:var(--b);border:1px solid rgba(10,132,255,.28)}
 
 /* COIN ROW */
-.cr{display:flex;align-items:center;gap:9px;padding:9px 5px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;border-radius:var(--radius-sm);margin:0 -5px;transition:background .1s}
+.cr{display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;border-radius:var(--radius-sm);margin:0 -6px;transition:all .14s}
 .cr:last-child{border-bottom:none}
-.cr:active{background:rgba(255,255,255,.04)}
-.cico{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;border:1px solid;flex-shrink:0;font-family:'Space Mono',monospace}
+.cr:active{background:rgba(255,255,255,.05);transform:scale(.99)}
+.cico{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;border:1px solid;flex-shrink:0;font-family:'Space Mono',monospace;overflow:hidden}
 .cinfo{flex:1;min-width:0}
-.csym{font-size:13px;font-weight:800}
+.csym{font-size:13px;font-weight:800;letter-spacing:-.2px}
 .cname{font-size:9px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
 .cr-r{text-align:right;flex-shrink:0}
-.cpct{font-size:14px;font-weight:800;font-family:'Space Mono',monospace}
+.cpct{font-size:14px;font-weight:800;font-family:'Space Mono',monospace;letter-spacing:-.3px}
 .cprice{font-size:11px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
-.crank{font-size:9px;color:var(--muted);width:16px;text-align:center;flex-shrink:0;font-weight:700;font-family:'Space Mono',monospace}
+.crank{font-size:9px;color:var(--muted2);width:18px;text-align:center;flex-shrink:0;font-weight:700;font-family:'Space Mono',monospace}
+
+/* SECTION HEADER */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sh-t{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);display:flex;align-items:center;gap:6px;font-family:'Space Mono',monospace}
+.sh-t span{color:var(--text);font-size:11px}
+.sh-btn{font-size:10px;color:var(--b);font-weight:700;cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid rgba(10,132,255,.3);background:rgba(10,132,255,.08);transition:all .15s}
+.sh-btn:active{background:rgba(10,132,255,.16)}
 
 /* FORMS */
 .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-.inp{flex:1;background:rgba(19,31,51,.8);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);padding:12px 14px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;min-width:0;transition:border-color .15s,box-shadow .15s}
-.inp:focus{border-color:rgba(10,132,255,.5);box-shadow:0 0 0 3px rgba(10,132,255,.1)}
-.inp::placeholder{color:var(--muted)}
-.sel{background:rgba(19,31,51,.8);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);padding:12px 8px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;flex-shrink:0}
-.btn{background:linear-gradient(135deg,#0a84ff,#0055cc);border:none;border-radius:var(--radius-sm);padding:12px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:0 4px 15px rgba(10,132,255,.3);transition:transform .12s}
-.btn:active{transform:scale(.95)}
-.btn-g{background:linear-gradient(135deg,#05d890,#00a86b);box-shadow:0 4px 15px rgba(5,216,144,.25)}
+.inp{flex:1;background:rgba(19,31,51,.9);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-sm);padding:13px 14px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;min-width:0;transition:border-color .15s,box-shadow .15s}
+.inp:focus{border-color:rgba(10,132,255,.55);box-shadow:0 0 0 3px rgba(10,132,255,.1)}
+.inp::placeholder{color:var(--muted2)}
+.sel{background:rgba(19,31,51,.9);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-sm);padding:13px 9px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;flex-shrink:0}
+.btn{background:linear-gradient(135deg,#0a84ff,#0058cc);border:none;border-radius:var(--radius-sm);padding:13px 18px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:0 4px 18px rgba(10,132,255,.35);transition:transform .12s,box-shadow .12s}
+.btn:active{transform:scale(.95);box-shadow:0 2px 8px rgba(10,132,255,.2)}
+.btn-g{background:linear-gradient(135deg,#05d890,#00a86b);box-shadow:0 4px 18px rgba(5,216,144,.28)}
 
-.frow{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-.fc{background:rgba(19,31,51,.7);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:6px 13px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center}
-.fc:active{transform:scale(.94)}
+.frow{display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap}
+.fc{background:rgba(19,31,51,.8);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:4px}
+.fc:active{transform:scale(.93)}
 .fc:focus{outline:none}
-.fc.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.4);color:var(--b2)}
-
-/* SH */
-.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
-.sh-t{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:flex;align-items:center;gap:5px;font-family:'Space Mono',monospace}
-.sh-t span{color:var(--text)}
-.sh-btn{font-size:10px;color:var(--b);font-weight:600;cursor:pointer;padding:4px 9px;border-radius:6px;border:1px solid rgba(10,132,255,.25);background:rgba(10,132,255,.07)}
+.fc.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.4);color:var(--b2);box-shadow:0 0 12px rgba(10,132,255,.15)}
 
 /* MISC */
-.pb{background:rgba(255,255,255,.05);border-radius:4px;height:5px;overflow:hidden}
-.pbf{height:5px;border-radius:4px;transition:width .6s}
-.mt{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:35px 20px;gap:10px;opacity:.55}
-.mt-i{font-size:38px}.mt-t{font-size:14px;font-weight:700}.mt-s{font-size:11px;color:var(--muted);text-align:center;line-height:1.4}
+.pb{background:rgba(255,255,255,.06);border-radius:6px;height:6px;overflow:hidden}
+.pbf{height:6px;border-radius:6px;transition:width .7s cubic-bezier(.4,0,.2,1)}
+.mt{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;gap:10px;opacity:.5}
+.mt-i{font-size:40px}.mt-t{font-size:14px;font-weight:700}.mt-s{font-size:11px;color:var(--muted);text-align:center;line-height:1.5}
 .spin{width:20px;height:20px;border:2px solid rgba(255,255,255,.06);border-top-color:var(--b);border-radius:50%;animation:sp .65s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
-.ld{display:flex;align-items:center;justify-content:center;gap:8px;padding:24px;color:var(--muted);font-size:11px}
+.ld{display:flex;align-items:center;justify-content:center;gap:9px;padding:28px;color:var(--muted);font-size:11px}
+
+/* SKELETON PULSE */
+@keyframes skPulse{0%,100%{opacity:.3}50%{opacity:.7}}
+.sk{background:rgba(255,255,255,.06);border-radius:6px;animation:skPulse 1.5s ease infinite}
 
 /* TOAST */
-#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:rgba(19,31,51,.95);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:9px 18px;font-size:12px;font-weight:600;opacity:0;transition:all .22s;pointer-events:none;z-index:9999;white-space:nowrap;backdrop-filter:blur(20px)}
+#toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(14px);background:rgba(15,24,44,.97);border:1px solid rgba(255,255,255,.12);border-radius:26px;padding:10px 20px;font-size:12px;font-weight:700;opacity:0;transition:all .24s cubic-bezier(.4,0,.2,1);pointer-events:none;z-index:9999;white-space:nowrap;backdrop-filter:blur(24px);box-shadow:0 8px 32px rgba(0,0,0,.4)}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* KZ / ALARM TABS */
-.kz-tab{display:flex;gap:6px;margin-bottom:12px}
-.kz-t{flex:1;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,.07);background:rgba(19,31,51,.6);text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
+.kz-tab{display:flex;gap:6px;margin-bottom:13px;background:rgba(10,16,30,.6);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius-sm);padding:4px}
+.kz-t{flex:1;padding:10px;border-radius:8px;border:none;background:transparent;text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
 .kz-t:focus{outline:none}
-.kz-t.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.35);color:var(--b2)}
-.kz-result{background:rgba(15,26,46,.8);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:14px;margin-top:10px}
-.kz-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.kz-t.on{background:rgba(10,132,255,.18);border-radius:8px;color:var(--b2);box-shadow:inset 0 0 0 1px rgba(10,132,255,.3)}
+.kz-result{background:rgba(15,26,46,.9);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:15px;margin-top:10px}
+.kz-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .kz-row:last-child{border-bottom:none}
 .kz-label{font-size:12px;color:var(--muted);font-weight:600}
 .kz-val{font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
-.kz-big{font-size:26px;font-weight:900;text-align:center;padding:13px 0;font-family:'Space Mono',monospace;letter-spacing:-1px}
-.pos-card{background:rgba(15,26,46,.7);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:13px;margin-bottom:9px}
-.pos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.kz-big{font-size:28px;font-weight:900;text-align:center;padding:14px 0;font-family:'Space Mono',monospace;letter-spacing:-1px}
+.pos-card{background:var(--card);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:14px;margin-bottom:9px;transition:border-color .15s}
+.pos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .pos-sym{font-size:15px;font-weight:800;font-family:'Space Mono',monospace}
 .pos-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-.pos-item{background:rgba(23,38,61,.8);border-radius:var(--radius-sm);padding:9px;border:1px solid rgba(255,255,255,.04)}
+.pos-item{background:rgba(20,32,54,.9);border-radius:var(--radius-sm);padding:10px;border:1px solid rgba(255,255,255,.05)}
 .pos-item-l{font-size:8px;color:var(--muted);margin-bottom:3px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
 .pos-item-v{font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
 
 /* COIN DETAIL PAGE */
 #p-coin{display:none;padding:0}
 #p-coin.on{display:block}
-.coin-detail-hdr{display:flex;align-items:center;gap:10px;padding:12px 11px 8px;border-bottom:1px solid rgba(255,255,255,.06)}
-.back-btn{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.07);border:none;color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.back-btn:active{opacity:.7}
-.coin-detail-sym{font-size:16px;font-weight:900;font-family:'Space Mono',monospace}
+.coin-detail-hdr{display:flex;align-items:center;gap:11px;padding:13px 13px 10px;border-bottom:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg,rgba(15,26,46,.6),transparent)}
+.back-btn{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+.back-btn:active{background:rgba(255,255,255,.12)}
+.coin-detail-sym{font-size:17px;font-weight:900;font-family:'Space Mono',monospace;letter-spacing:-.3px}
 .coin-detail-name{font-size:10px;color:var(--muted);margin-top:1px}
 
 /* CANDLE CHART */
-.chart-wrap{position:relative;background:#06090f;border-radius:var(--radius-sm);overflow:hidden;border:1px solid rgba(255,255,255,.06)}
-.chart-toolbar{display:flex;gap:5px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.04)}
-.tf-btn{background:transparent;border:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .12s;font-family:'Space Mono',monospace}
-.tf-btn.on{background:rgba(10,132,255,.2);color:var(--b2)}
+.chart-wrap{position:relative;background:#05080f;border-radius:var(--radius-sm);overflow:hidden;border:1px solid rgba(255,255,255,.07)}
+.chart-toolbar{display:flex;gap:5px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.04);align-items:center}
+.tf-btn{background:transparent;border:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;padding:5px 9px;border-radius:7px;transition:all .14s;font-family:'Space Mono',monospace}
+.tf-btn.on{background:rgba(10,132,255,.2);color:var(--b2);box-shadow:inset 0 0 0 1px rgba(10,132,255,.35)}
 #candleCanvas{display:block;width:100%}
 
 /* NEWS */
-.news-card{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);margin-bottom:7px;overflow:hidden;cursor:pointer;transition:border-color .15s}
-.news-card:active{background:var(--card3)}
-.news-head{display:flex;gap:10px;padding:11px}
-.news-icon{width:44px;height:44px;border-radius:8px;background:rgba(10,132,255,.15);border:1px solid rgba(10,132,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.news-title{font-size:11.5px;font-weight:700;line-height:1.4;flex:1}
-.news-src{font-size:8.5px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace}
-.news-body{padding:0 11px 11px;font-size:11px;color:var(--muted);line-height:1.5;display:none}
+.news-card{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);margin-bottom:8px;overflow:hidden;cursor:pointer;transition:all .15s}
+.news-card:active{background:var(--card3);transform:scale(.99)}
+.news-head{display:flex;gap:11px;padding:12px}
+.news-icon{width:42px;height:42px;border-radius:9px;background:linear-gradient(135deg,rgba(10,132,255,.15),rgba(10,132,255,.05));border:1px solid rgba(10,132,255,.2);display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.news-title{font-size:12px;font-weight:700;line-height:1.4;flex:1;letter-spacing:-.1px}
+.news-src{font-size:8.5px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px}
+.news-body{padding:0 12px 12px;font-size:11px;color:var(--muted);line-height:1.6;display:none;border-top:1px solid rgba(255,255,255,.04);padding-top:10px;margin-top:-2px}
 .news-body.open{display:block}
 
 /* TAKVIM */
-.cal-item{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.cal-item{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.04)}
 .cal-item:last-child{border-bottom:none}
 .cal-imp{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
-.imp-high{background:var(--r);box-shadow:0 0 6px var(--r)}
-.imp-med{background:var(--y)}
+.imp-high{background:var(--r);box-shadow:0 0 8px rgba(255,45,85,.5)}
+.imp-med{background:var(--y);box-shadow:0 0 6px rgba(255,214,10,.3)}
 .imp-low{background:var(--muted)}
-.cal-name{font-size:12px;font-weight:700;margin-bottom:3px}
+.cal-name{font-size:12.5px;font-weight:700;margin-bottom:3px;letter-spacing:-.1px}
 .cal-date{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace}
+
+/* MARKET SUMMARY BAR */
+.mkt-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:11px}
+.mkt-bar-item{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);padding:9px 8px;text-align:center}
+.mkt-bar-v{font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
+.mkt-bar-l{font-size:7.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px}
+
+/* PULSE ANIMATION for new data */
+@keyframes pulseBg{0%{background-color:rgba(10,132,255,.12)}100%{background-color:transparent}}
+.flash-update{animation:pulseBg .6s ease-out}
+
+/* ALARM CARD */
+.alarm-card{background:var(--card2);border:1px solid rgba(255,255,255,.07);border-radius:var(--radius);padding:13px;margin-bottom:9px;cursor:pointer;transition:all .15s;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.alarm-card:active{transform:scale(.99);border-color:rgba(10,132,255,.3)}
 </style>
 </head>
 <body>
@@ -4786,66 +4809,88 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <div id="p-home" class="page on">
   <div id="homeLoad" class="ld"><div class="spin"></div>Yükleniyor...</div>
   <div id="homeContent" style="display:none">
-    <div class="g2" style="margin-bottom:9px">
-      <div class="card cg" style="padding:13px;cursor:pointer" onclick="openCoin('BTC')">
-        <div style="font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px;font-family:'Space Mono',monospace">₿ Bitcoin</div>
-        <div style="font-size:19px;font-weight:800;font-family:'Space Mono',monospace;color:var(--g)" id="hBP">--</div>
-        <div id="hBB" style="margin-top:5px;font-size:11px">--</div>
-        <div style="font-size:8.5px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace" id="hBV">Vol: --</div>
+    <!-- BTC / ETH -->
+    <div class="g2" style="margin-bottom:10px">
+      <div class="card cg" style="padding:14px;cursor:pointer" onclick="openCoin('BTC')">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
+          <div style="width:26px;height:26px;border-radius:50%;background:rgba(247,147,26,.15);border:1px solid rgba(247,147,26,.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">₿</div>
+          <div>
+            <div style="font-size:10px;font-weight:800;letter-spacing:-.1px">Bitcoin</div>
+            <div style="font-size:7.5px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase">BTC</div>
+          </div>
+        </div>
+        <div style="font-size:20px;font-weight:900;font-family:'Space Mono',monospace;color:var(--g);letter-spacing:-.5px" id="hBP">--</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:7px">
+          <div id="hBB" style="font-size:12px">--</div>
+          <div style="font-size:8.5px;color:var(--muted);font-family:'Space Mono',monospace" id="hBV">--</div>
+        </div>
       </div>
-      <div class="card cb" style="padding:13px;cursor:pointer" onclick="openCoin('ETH')">
-        <div style="font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px;font-family:'Space Mono',monospace">Ξ Ethereum</div>
-        <div style="font-size:19px;font-weight:800;font-family:'Space Mono',monospace;color:var(--b2)" id="hEP">--</div>
-        <div id="hEB" style="margin-top:5px;font-size:11px">--</div>
-        <div style="font-size:8.5px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace" id="hEV">Vol: --</div>
+      <div class="card cb" style="padding:14px;cursor:pointer" onclick="openCoin('ETH')">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
+          <div style="width:26px;height:26px;border-radius:50%;background:rgba(98,126,234,.15);border:1px solid rgba(98,126,234,.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">Ξ</div>
+          <div>
+            <div style="font-size:10px;font-weight:800;letter-spacing:-.1px">Ethereum</div>
+            <div style="font-size:7.5px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase">ETH</div>
+          </div>
+        </div>
+        <div style="font-size:20px;font-weight:900;font-family:'Space Mono',monospace;color:var(--b2);letter-spacing:-.5px" id="hEP">--</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:7px">
+          <div id="hEB" style="font-size:12px">--</div>
+          <div style="font-size:8.5px;color:var(--muted);font-family:'Space Mono',monospace" id="hEV">--</div>
+        </div>
       </div>
     </div>
 
     <!-- PIYASA DUYARLILIĞI -->
-    <div class="card" style="margin-bottom:9px;padding:12px 13px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
-        <span style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:'Space Mono',monospace">Piyasa Duyarlılığı</span>
-        <div style="display:flex;gap:10px;font-size:10px">
-          <span id="hMood">--</span>
-          <span style="color:var(--muted);font-family:'Space Mono',monospace" id="hAvgPct">--</span>
+    <div class="card" style="margin-bottom:10px;padding:13px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:9.5px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:'Space Mono',monospace">Piyasa Duyarlılığı</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="hMood" style="font-size:11px;font-weight:800">--</span>
+          <span class="bdg bb" id="hAvgPct" style="font-size:10px;padding:3px 7px">--</span>
         </div>
       </div>
-      <div style="height:5px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden;margin-bottom:6px">
-        <div id="hSentBar" style="height:100%;border-radius:3px;width:50%;background:linear-gradient(90deg,var(--r),var(--y) 50%,var(--g));transition:width .8s"></div>
+      <div style="height:7px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden;margin-bottom:10px;position:relative">
+        <div style="position:absolute;inset:0;background:linear-gradient(90deg,var(--r) 0%,var(--y) 50%,var(--g) 100%);opacity:.3;border-radius:6px"></div>
+        <div id="hSentBar" style="height:100%;border-radius:6px;width:50%;background:linear-gradient(90deg,rgba(10,132,255,.7),rgba(10,132,255,1));transition:width .9s cubic-bezier(.4,0,.2,1);position:relative">
+          <div style="position:absolute;right:-1px;top:-2px;width:3px;height:11px;background:#fff;border-radius:2px;box-shadow:0 0 8px rgba(255,255,255,.6)"></div>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
-        <div style="text-align:center;background:rgba(6,9,15,.6);border-radius:8px;padding:8px 4px">
-          <div style="font-size:13px;font-weight:800;color:var(--o);font-family:'Space Mono',monospace" id="hDom">--</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.3px">BTC Dom</div>
+        <div style="text-align:center;background:rgba(6,9,15,.7);border-radius:9px;padding:9px 4px;border:1px solid rgba(255,255,255,.04)">
+          <div style="font-size:14px;font-weight:900;color:var(--o);font-family:'Space Mono',monospace;letter-spacing:-.3px" id="hDom">--</div>
+          <div style="font-size:7.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">BTC Dom</div>
         </div>
-        <div style="text-align:center;background:rgba(6,9,15,.6);border-radius:8px;padding:8px 4px">
-          <div style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace" id="hAvg">--</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.3px">Ort Değ</div>
+        <div style="text-align:center;background:rgba(6,9,15,.7);border-radius:9px;padding:9px 4px;border:1px solid rgba(255,255,255,.04)">
+          <div style="font-size:12px;font-weight:900;font-family:'Space Mono',monospace" id="hAvg">--</div>
+          <div style="font-size:7.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">Ort Değ</div>
         </div>
-        <div style="text-align:center;background:rgba(6,9,15,.6);border-radius:8px;padding:8px 4px">
-          <div style="font-size:13px;font-weight:800;color:var(--g);font-family:'Space Mono',monospace" id="hUp">--</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.3px">↑ Yükselen</div>
+        <div style="text-align:center;background:rgba(5,216,144,.06);border-radius:9px;padding:9px 4px;border:1px solid rgba(5,216,144,.1)">
+          <div style="font-size:14px;font-weight:900;color:var(--g);font-family:'Space Mono',monospace;letter-spacing:-.3px" id="hUp">--</div>
+          <div style="font-size:7.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">↑ Yükselen</div>
         </div>
-        <div style="text-align:center;background:rgba(6,9,15,.6);border-radius:8px;padding:8px 4px">
-          <div style="font-size:13px;font-weight:800;color:var(--r);font-family:'Space Mono',monospace" id="hDn">--</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.3px">↓ Düşen</div>
+        <div style="text-align:center;background:rgba(255,45,85,.06);border-radius:9px;padding:9px 4px;border:1px solid rgba(255,45,85,.1)">
+          <div style="font-size:14px;font-weight:900;color:var(--r);font-family:'Space Mono',monospace;letter-spacing:-.3px" id="hDn">--</div>
+          <div style="font-size:7.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">↓ Düşen</div>
         </div>
       </div>
     </div>
 
     <!-- YÜKSELENLER -->
-    <div class="card cg" style="margin-bottom:9px;padding:11px">
-      <div class="sh" style="margin-bottom:7px"><div class="sh-t">🚀 <span>Yükselenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+    <div class="card cg" style="margin-bottom:10px;padding:13px">
+      <div class="sh" style="margin-bottom:8px"><div class="sh-t">🚀 <span>Yükselenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
       <div id="hGain"></div>
     </div>
     <!-- DÜŞENLER -->
-    <div class="card" style="margin-bottom:9px;padding:11px;border-color:rgba(255,45,85,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,45,85,.03))">
-      <div class="sh" style="margin-bottom:7px"><div class="sh-t">💥 <span>Düşenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+    <div class="card cr-card" style="margin-bottom:10px;padding:13px">
+      <div class="sh" style="margin-bottom:8px"><div class="sh-t">💥 <span>Düşenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
       <div id="hLose"></div>
     </div>
 
     <!-- PORTFÖY ÖZET -->
-    <div class="card" style="margin-bottom:9px;border-color:rgba(5,216,144,.18);background:linear-gradient(135deg,var(--card) 70%,rgba(5,216,144,.03))" id="hPortfoyCard">
+    <div class="card" style="margin-bottom:10px;border-color:rgba(5,216,144,.18);background:linear-gradient(145deg,var(--card) 65%,rgba(5,216,144,.04))" id="hPortfoyCard">
       <div class="sh">
         <div class="sh-t">💼 <span>Portföy</span></div>
         <span class="sh-btn" onclick="go('kar')">Detay →</span>
@@ -4856,21 +4901,27 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
     </div>
 
     <!-- AKTİF ALARMLAR -->
-    <div class="card cp" style="margin-bottom:9px">
+    <div class="card cp" style="margin-bottom:10px">
       <div class="sh"><div class="sh-t">🔔 <span>Aktif Alarmlar</span></div><span class="sh-btn" onclick="go('alarmlar')">Tümü →</span></div>
-      <div id="hAlarm"><div style="font-size:11px;color:var(--muted);padding:4px 0">Yükleniyor...</div></div>
+      <div id="hAlarm"><div class="ld" style="padding:10px"><div class="spin"></div></div></div>
     </div>
 
     <!-- HABERLER -->
     <div class="card">
       <div class="sh"><div class="sh-t">📰 <span>Son Haberler</span></div></div>
-      <div id="hNews"><div style="font-size:11px;color:var(--muted)">Yükleniyor...</div></div>
+      <div id="hNews"><div class="ld" style="padding:10px"><div class="spin"></div></div></div>
     </div>
   </div>
 </div>
 
 <!-- PİYASA -->
 <div id="p-mkt" class="page">
+  <!-- Market özet mini bar -->
+  <div class="mkt-bar" id="mktStatBar" style="display:none">
+    <div class="mkt-bar-item"><div class="mkt-bar-v" id="mktStatTotal">--</div><div class="mkt-bar-l">Toplam</div></div>
+    <div class="mkt-bar-item"><div class="mkt-bar-v up" id="mktStatUp">--</div><div class="mkt-bar-l">↑ Yükselen</div></div>
+    <div class="mkt-bar-item"><div class="mkt-bar-v dn" id="mktStatDn">--</div><div class="mkt-bar-l">↓ Düşen</div></div>
+  </div>
   <div class="row">
     <input class="inp" id="mQ" placeholder="🔍 BTC, ETH, SOL..." oninput="fltMkt()">
     <select class="sel" id="mSrt" onchange="srtMkt()">
@@ -4880,7 +4931,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
       <option value="dn">↓ Düşen</option>
     </select>
   </div>
-  <div style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;-webkit-overflow-scrolling:touch">
+  <div style="display:flex;gap:6px;margin-bottom:11px;overflow-x:auto;scrollbar-width:none;padding-bottom:3px;-webkit-overflow-scrolling:touch">
     <button class="fc on" id="fAll" onclick="setF('all')">🌐 Tümü</button>
     <button class="fc" id="fUp" onclick="setF('up')">🟢 Yükselen</button>
     <button class="fc" id="fDn" onclick="setF('dn')">🔴 Düşen</button>
@@ -4992,23 +5043,37 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <div id="p-coin" class="page">
   <div class="coin-detail-hdr">
     <button class="back-btn" onclick="goBack()">←</button>
-    <div id="cdIco" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;border:1px solid;flex-shrink:0;font-family:'Space Mono',monospace"></div>
-    <div style="flex:1">
+    <div id="cdIco" style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;border:1px solid;flex-shrink:0;font-family:'Space Mono',monospace;overflow:hidden"></div>
+    <div style="flex:1;min-width:0">
       <div class="coin-detail-sym" id="cdSym">--</div>
       <div class="coin-detail-name" id="cdName">--</div>
     </div>
     <div style="text-align:right">
-      <div style="font-size:17px;font-weight:800;font-family:'Space Mono',monospace" id="cdPrice">--</div>
-      <div id="cdChange" style="font-size:11px;margin-top:2px">--</div>
+      <div style="font-size:19px;font-weight:900;font-family:'Space Mono',monospace;letter-spacing:-.5px" id="cdPrice">--</div>
+      <div id="cdChange" style="font-size:12px;margin-top:3px">--</div>
+    </div>
+  </div>
+
+  <!-- 24s HIGH / LOW mini bar -->
+  <div id="cdHiLo" style="display:none;padding:8px 13px;background:rgba(6,10,18,.8);border-bottom:1px solid rgba(255,255,255,.05)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+      <span style="font-size:8.5px;color:var(--r);font-family:'Space Mono',monospace;font-weight:700" id="cdLo">--</span>
+      <span style="font-size:7.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">24s Aralık</span>
+      <span style="font-size:8.5px;color:var(--g);font-family:'Space Mono',monospace;font-weight:700" id="cdHi">--</span>
+    </div>
+    <div style="height:4px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden">
+      <div id="cdRangeBar" style="height:100%;background:linear-gradient(90deg,var(--r),var(--g));border-radius:4px;width:50%"></div>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:3px">
+      <span style="font-size:7.5px;color:var(--muted)" id="cdRangePct">--</span>
     </div>
   </div>
 
   <!-- Mum grafik -->
-  <div style="padding:0 11px 9px">
+  <div style="padding:0 12px 10px">
     <div class="chart-wrap">
       <div class="chart-toolbar">
-        <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;margin-right:4px" id="cdOHLC"></span>
-        <div style="flex:1"></div>
+        <span style="font-size:8.5px;color:var(--muted);font-family:'Space Mono',monospace;margin-right:4px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="cdOHLC"></span>
         <button class="tf-btn" onclick="loadCandleChart('15m')">15d</button>
         <button class="tf-btn on" onclick="loadCandleChart('1h')">1s</button>
         <button class="tf-btn" onclick="loadCandleChart('4h')">4s</button>
@@ -5018,15 +5083,15 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
     </div>
   </div>
 
-  <div style="padding:0 11px">
+  <div style="padding:0 12px">
     <!-- İstatistikler -->
-    <div class="g2" style="margin-bottom:9px" id="cdStats"></div>
+    <div class="g2" style="margin-bottom:10px" id="cdStats"></div>
 
     <!-- Teknik analiz özeti -->
-    <div class="card" style="margin-bottom:9px" id="cdAnaliz"></div>
+    <div class="card" style="margin-bottom:10px" id="cdAnaliz"></div>
 
     <!-- Fibonacci seviyeleri -->
-    <div class="card" style="margin-bottom:9px" id="cdFib"></div>
+    <div class="card" style="margin-bottom:10px" id="cdFib"></div>
 
     <!-- Coin haberleri -->
     <div class="card" id="cdNews">
@@ -5193,10 +5258,21 @@ async function loadCoinDetail(sym){
       const ch=parseFloat(tick.change);
       document.getElementById('cdChange').innerHTML=pb(ch);
     }
+    // 24s Hi/Lo bar
+    if(tick.high&&tick.low){
+      const hi=tick.high,lo=tick.low,cur=tick.price||0;
+      const pct=hi>lo?Math.round(((cur-lo)/(hi-lo))*100):50;
+      const rangeW=hi>lo?((hi-lo)/lo*100).toFixed(2):0;
+      document.getElementById('cdLo').textContent='$'+fp(lo);
+      document.getElementById('cdHi').textContent='$'+fp(hi);
+      document.getElementById('cdRangePct').textContent=`Aralık: %${rangeW} · Konumunuz: %${pct}`;
+      document.getElementById('cdRangeBar').style.width=pct+'%';
+      document.getElementById('cdHiLo').style.display='block';
+    }
     // Stats
     document.getElementById('cdStats').innerHTML=`
-      <div class="card" style="margin:0;padding:10px;text-align:center"><div style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace">$${fp(tick.price)}</div><div style="font-size:8px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">Fiyat</div></div>
-      <div class="card" style="margin:0;padding:10px;text-align:center"><div style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace ${tick.change>=0?';color:var(--g)':';color:var(--r)'}">${tick.change>=0?'+':''}${parseFloat(tick.change||0).toFixed(2)}%</div><div style="font-size:8px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.3px">24s Değişim</div></div>`;
+      <div class="card" style="margin:0;padding:11px;text-align:center"><div style="font-size:15px;font-weight:900;font-family:'Space Mono',monospace;letter-spacing:-.3px">$${fp(tick.price)}</div><div style="font-size:8px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.3px">Fiyat</div></div>
+      <div class="card" style="margin:0;padding:11px;text-align:center"><div style="font-size:15px;font-weight:900;font-family:'Space Mono',monospace;letter-spacing:-.3px;${parseFloat(tick.change||0)>=0?'color:var(--g)':'color:var(--r)'}">${parseFloat(tick.change||0)>=0?'+':''}${parseFloat(tick.change||0).toFixed(2)}%</div><div style="font-size:8px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.3px">24s Değişim</div></div>`;
   }
   // Teknik analiz
   if(analiz){
@@ -5439,6 +5515,15 @@ async function loadHome(){
   document.getElementById('hAvg').innerHTML=pb(avg);
   document.getElementById('hUp').textContent=d.rising||'--';
   document.getElementById('hDn').textContent=d.falling||'--';
+  // Market stat bar (piyasa sayfası için)
+  const mktBar=document.getElementById('mktStatBar');
+  if(mktBar){
+    const tot=(d.rising||0)+(d.falling||0);
+    document.getElementById('mktStatTotal').textContent=tot||'--';
+    document.getElementById('mktStatUp').textContent=d.rising||'--';
+    document.getElementById('mktStatDn').textContent=d.falling||'--';
+    mktBar.style.display='grid';
+  }
   // Liderler
   const mkRow=(c,i)=>`<div class="cr" onclick="openCoin('${c.s.replace('USDT','')}')"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''),c.img||'')}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div></div>${pb(c.ch)}</div>`;
   document.getElementById('hGain').innerHTML=(d.top5||[]).slice(0,4).map(mkRow).join('');
@@ -5755,13 +5840,21 @@ async function loadAlarms(){
   const alarms=d?.alarms||[];
   if(!alarms.length){document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">+ Ekle sekmesinden ekleyin</div></div>';return;}
   document.getElementById('alListe').innerHTML=alarms.map(a=>{
-    const st=a.active?'<span class="bdg bg">Aktif</span>':a.paused?'<span class="bdg by">Duraklı</span>':'<span class="bdg br">Pasif</span>';
-    return`<div style="background:var(--card2);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);padding:12px;margin-bottom:8px;cursor:pointer" onclick="openCoin('${a.symbol.replace('USDT','')}')">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace">${a.symbol.replace('USDT','')}</span>
-        <div style="display:flex;align-items:center;gap:8px">${st}<span style="font-size:19px;cursor:pointer;opacity:.5" onclick="event.stopPropagation();alarmSil('${a.symbol}')">🗑</span></div>
+    const st=a.active?'<span class="bdg bg" style="font-size:9px;padding:2px 7px">Aktif</span>':a.paused?'<span class="bdg by" style="font-size:9px;padding:2px 7px">Duraklı</span>':'<span class="bdg br" style="font-size:9px;padding:2px 7px">Pasif</span>';
+    const typeIcon=a.type==='percent'?'📊':'💰';
+    const val=a.type==='percent'?`%${a.threshold}`:`$${a.threshold}`;
+    return`<div class="alarm-card" onclick="openCoin('${a.symbol.replace('USDT','')}')">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+        ${cIco(a.symbol.replace('USDT',''),coin_image_cache_js[a.symbol.replace('USDT','').toLowerCase()]||'')}
+        <div style="min-width:0">
+          <div style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace;letter-spacing:-.2px">${a.symbol.replace('USDT','')}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace">${typeIcon} ${val} tetiklemede</div>
+        </div>
       </div>
-      <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace">${a.type==='percent'?'📊 %'+a.threshold:a.type==='price'?'💰 $'+a.threshold:'📌 '+a.threshold}</div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        ${st}
+        <span style="font-size:19px;cursor:pointer;opacity:.45;transition:opacity .15s" onclick="event.stopPropagation();alarmSil('${a.symbol}')">🗑</span>
+      </div>
     </div>`;
   }).join('');
 }
