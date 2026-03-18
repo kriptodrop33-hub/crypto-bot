@@ -5086,20 +5086,23 @@ function _svgIco(sym){
 const _icoOk={};
 const _icoFail=new Set();
 
-function cIco(sym){
+// imgUrl: CoinGecko direct URL passed from API data (no proxy needed)
+// Falls back to SVG if no imgUrl or image fails to load
+function cIco(sym, imgUrl){
   const col=_colFor(sym);
-  // Başarısız biliniyorsa direkt SVG
-  if(_icoFail.has(sym)) return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden">${_svgIco(sym)}</div>`;
-  // Sunucu proxy - Railway kendi domain'inden serve eder, CORS yok
-  const proxyUrl=`/api/icon?sym=${sym.toLowerCase()}`;
+  if(!imgUrl||_icoFail.has(sym)) return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden">${_svgIco(sym)}</div>`;
   const id=`ico_${sym}_${Math.random().toString(36).slice(2,6)}`;
   return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden" id="${id}">
-    <img src="${proxyUrl}" width="34" height="34"
+    <img src="${imgUrl}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
       onload="_icoOk['${sym}']=1"
-      onerror="_icoFail.add('${sym}');document.getElementById('${id}').innerHTML='${_svgIco(sym).replace(/'/g,"\'")}'"
-      loading="eager">
+      onerror="_icoErr(this,'${sym}','${id}')">
   </div>`;
+}
+function _icoErr(img,sym,id){
+  _icoFail.add(sym);
+  const el=document.getElementById(id);
+  if(el)el.innerHTML=_svgIco(sym);
 }
 
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
@@ -5147,13 +5150,17 @@ function openCoin(symBase){
   const ico=document.getElementById('cdIco');
   if(ico){
     ico.style.background=col+'20';ico.style.borderColor=col+'40';
-    ico.textContent='';
-    const _im=document.createElement('img');
-    _im.src='/api/icon?sym='+curCoinSym.toLowerCase();
-    _im.width=36;_im.height=36;
-    _im.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
-    _im.onerror=function(){ico.removeChild(_im);ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';};
-    ico.appendChild(_im);
+    ico.innerHTML='';
+    const _imgUrl=coin_image_cache_js[curCoinSym.toLowerCase()]||'';
+    if(_imgUrl){
+      const _im=document.createElement('img');
+      _im.src=_imgUrl;_im.width=36;_im.height=36;
+      _im.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
+      _im.onerror=function(){ico.innerHTML='';ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';};
+      ico.appendChild(_im);
+    } else {
+      ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';
+    }
   }
   document.getElementById('cdSym').textContent=curCoinSym;
   document.getElementById('cdName').textContent=sym;
@@ -5253,11 +5260,9 @@ const FCOL_FIB={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','
 function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const canvas=document.getElementById(canvasId);
   if(!canvas||!klines||klines.length<2)return;
-  // Use parent width so canvas is never 0 on first render
   const wrap=canvas.parentElement;
   const W=(wrap?wrap.clientWidth:0)||canvas.offsetWidth||320;
   const H=220;
-  // Set CSS size so layout doesn't jump
   canvas.style.width=W+'px';
   canvas.style.height=H+'px';
   canvas.width=Math.round(W*devicePixelRatio);
@@ -5283,7 +5288,7 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const cW=Math.max(1.5, CW/n);
   const bW=Math.max(1, cW*0.6);
 
-  // Fiyat min/max — sadece mum verisi (fib dışarı taşmasın)
+  // Fiyat min/max — fib dahil
   let allP=klines.flatMap(k=>[k[HI],k[LO]]);
   const rawMin=Math.min(...allP), rawMax=Math.max(...allP);
   const padP=(rawMax-rawMin)*0.05;
@@ -5308,10 +5313,9 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
     ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(PL+CW,gy);ctx.stroke();
   }
 
-  // ── FİBONACCİ ÇİZGİLERİ (mumların altında, görünür aralıkta) ──
+  // ── FİBONACCİ ÇİZGİLERİ (mumların altında) ──
   if(hasFib){
     fibData.levels.forEach(l=>{
-      // Fib fiyatı görünür fiyat aralığının dışındaysa çizme
       if(l.price<pMin||l.price>pMax) return;
       const ly=yP(l.price);
       if(ly<PT-2||ly>PT+CH+2) return;
@@ -5435,7 +5439,7 @@ async function loadHome(){
   document.getElementById('hUp').textContent=d.rising||'--';
   document.getElementById('hDn').textContent=d.falling||'--';
   // Liderler
-  const mkRow=(c,i)=>`<div class="cr" onclick="openCoin('${c.s.replace('USDT','')}')"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div></div>${pb(c.ch)}</div>`;
+  const mkRow=(c,i)=>`<div class="cr" onclick="openCoin('${c.s.replace('USDT','')}')"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''),c.img||'')}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div></div>${pb(c.ch)}</div>`;
   document.getElementById('hGain').innerHTML=(d.top5||[]).slice(0,4).map(mkRow).join('');
   document.getElementById('hLose').innerHTML=((d.top_data&&d.top_data.l)||[]).slice(0,4).map(mkRow).join('');
   // Alarmlar
@@ -5446,7 +5450,8 @@ async function loadHome(){
   // Haberler
   document.getElementById('hNews').innerHTML=(d.news||[]).slice(0,3).map((n,i)=>newsCard(n,`hn${i}`)).join('');
   // Cache
-  if(d.coins)allCoins=d.coins;if(d.top_data)topData=d.top_data;
+  if(d.coins){allCoins=d.coins;d.coins.forEach(c=>{if(c.img)coin_image_cache_js[c.s.replace('USDT','').toLowerCase()]=c.img;});}
+  if(d.top_data){topData=d.top_data;['g','l','v'].forEach(k=>{(d.top_data[k]||[]).forEach(c=>{if(c.img)coin_image_cache_js[c.s.replace('USDT','').toLowerCase()]=c.img;});});}
   if(d.flash5up)flash5Up=d.flash5up;if(d.flash5dn)flash5Dn=d.flash5dn;
   // Portföy özeti
   loadHomePortfoy();
@@ -5574,7 +5579,7 @@ function renderCoinList(coins, listId, isFlash5){
     const chCls=isFlash5?(x.ch5>0?'up':'dn'):pc(chVal);
     return`<div class="cr" onclick="openCoin('${base}')">
       ${!isFlash5&&x.rank&&x.rank<9000?`<span style="font-size:8px;color:var(--muted2);font-family:'Space Mono',monospace;width:20px;text-align:center;flex-shrink:0">${start+i+1}</span>`:''}
-      ${cIco(base)}
+      ${cIco(base,x.img||"")}
       <div class="cinfo">
         <div class="csym">${base}</div>
         <div class="cname">${isFlash5?`<span style="color:${chVal>0?'var(--g)':'var(--r)'}">5dk</span>`:fv(x.v)}</div>
@@ -5612,7 +5617,7 @@ function showTop(m){
   const mp={g:'tG',l:'tL',v:'tV'};const e=document.getElementById(mp[m]);if(e)e.classList.add('on');
   const data=topData[m]||[];
   document.getElementById('topL').innerHTML=data.length
-    ?data.map((c,i)=>`<div class="cr" onclick="openCoin('${c.s.replace('USDT','')}')"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('')
+    ?data.map((c,i)=>`<div class="cr" onclick="openCoin('${c.s.replace('USDT','')}')"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''),c.img||'')}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('')
     :'<div class="ld">Veri yok</div>';
 }
 
@@ -6200,7 +6205,8 @@ async def _start_miniapp_server(bot):
             coins_raw = [{"s":x["symbol"],"p":float(x.get("lastPrice",0)),
                           "ch":float(x.get("priceChangePercent",0)),
                           "v":float(x.get("quoteVolume",0)),
-                          "rank": marketcap_rank_cache.get(x["symbol"], 9999)}
+                          "rank": marketcap_rank_cache.get(x["symbol"], 9999),
+                          "img": coin_image_cache.get(x["symbol"].replace("USDT","").lower(),"")}
                          for x in usdt if float(x.get("quoteVolume",0))>100000]
             # Marketcap'e göre sırala, rank yoksa hacme göre
             coins_raw.sort(key=lambda x: (x["rank"] if x["rank"]<9000 else 9999, -x["v"]))
@@ -6211,8 +6217,10 @@ async def _start_miniapp_server(bot):
             top_l = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)))[:20]
             top_v = sorted(filtered, key=lambda x: float(x.get("quoteVolume",0)), reverse=True)[:20]
             def mkcoin(x):
+                base = x["symbol"].replace("USDT","").lower()
                 return {"s":x["symbol"],"p":float(x.get("lastPrice",0)),
-                        "ch":float(x.get("priceChangePercent",0)),"v":float(x.get("quoteVolume",0))}
+                        "ch":float(x.get("priceChangePercent",0)),"v":float(x.get("quoteVolume",0)),
+                        "img":coin_image_cache.get(base,"")}
 
             # Alarmlar
             alarms = []
@@ -6528,14 +6536,11 @@ async def _start_miniapp_server(bot):
                     headers={"Cache-Control":"public,max-age=604800","Access-Control-Allow-Origin":"*"})
 
             # Kaynak listesi - sirayla dene
-            sources = []
-            cg_img = coin_image_cache.get(sym)
-            if cg_img:
-                sources.append((cg_img, "image/png"))
-            sources += [
+            sources = [
                 (f"https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/{sym}.svg", "image/svg+xml"),
-                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/svg/color/{sym}.svg", "image/svg+xml"),
                 (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png", "image/png"),
+                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/svg/color/{sym}.svg", "image/svg+xml"),
+                (f"https://assets.coingecko.com/coins/images/1/thumb/{sym}.png", "image/png"),
             ]
             for url, ct in sources:
                 try:
