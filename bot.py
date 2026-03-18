@@ -4528,273 +4528,536 @@ MINIAPP_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Kripto Drop Pro</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#07090f;--card:#0e141f;--card2:#131c2a;--card3:#192436;
-  --border:#1d2d42;--text:#ddeeff;--muted:#5577aa;--dim:#050810;
-  --g:#00e5a0;--gd:rgba(0,229,160,.12);
-  --r:#ff3d6b;--rd:rgba(255,61,107,.12);
-  --y:#f0c040;--yd:rgba(240,192,64,.12);
-  --b:#3a9fff;--b2:#6bbfff;--bd:rgba(58,159,255,.12);
-  --p:#9b6fff;--pd:rgba(155,111,255,.12);
-  --o:#ff8c42;--t:#00d4e8;
-  --nav-w:62px;
+  --bg:#060a12;
+  --surface:#0b1220;
+  --card:#0f1a2e;
+  --card2:#131f33;
+  --card3:#17263d;
+  --border:#1a2d47;
+  --border2:#243d5e;
+  --text:#e8f4ff;
+  --muted:#4a6a8a;
+  --muted2:#3a5570;
+  --dim:#050810;
+  --g:#05d890;--g2:#00ffb3;--gd:rgba(5,216,144,.1);--gs:0 0 20px rgba(5,216,144,.2);
+  --r:#ff2d55;--r2:#ff6080;--rd:rgba(255,45,85,.1);--rs:0 0 20px rgba(255,45,85,.2);
+  --y:#ffd60a;--yd:rgba(255,214,10,.1);
+  --b:#0a84ff;--b2:#64b5f6;--bd:rgba(10,132,255,.12);--bs:0 0 20px rgba(10,132,255,.25);
+  --p:#bf5af2;--pd:rgba(191,90,242,.1);
+  --o:#ff9f0a;--t:#5ac8fa;
+  --nav-w:60px;
+  --hdr-h:48px;
+  --tick-h:26px;
+  --radius:14px;
+  --radius-sm:9px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);font-size:13px}
-#app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px}
+#app{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #main{flex:1;display:flex;overflow:hidden}
 
-/* SOL NAV */
-#sidenav{width:var(--nav-w);flex-shrink:0;background:#060c18;border-right:1px solid var(--border);
-  display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;overflow-y:auto;scrollbar-width:none}
+/* ═══ AMBIENT BG ═══ */
+#app::before{
+  content:'';position:fixed;top:-40%;left:-20%;width:60%;height:70%;
+  background:radial-gradient(ellipse,rgba(10,132,255,.06) 0%,transparent 70%);
+  pointer-events:none;z-index:0;
+}
+#app::after{
+  content:'';position:fixed;bottom:-30%;right:-10%;width:50%;height:60%;
+  background:radial-gradient(ellipse,rgba(5,216,144,.04) 0%,transparent 70%);
+  pointer-events:none;z-index:0;
+}
+
+/* ═══ HEADER ═══ */
+.hdr{
+  height:var(--hdr-h);flex-shrink:0;position:relative;z-index:100;
+  background:rgba(11,18,32,.9);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+}
+.logo{display:flex;align-items:center;gap:9px}
+.logo-box{
+  width:30px;height:30px;border-radius:9px;
+  background:linear-gradient(135deg,#0a84ff,#0055cc);
+  box-shadow:var(--bs);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  position:relative;overflow:hidden;
+}
+.logo-box::after{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;
+  background:linear-gradient(45deg,transparent,rgba(255,255,255,.1),transparent);
+  animation:sheen 4s ease infinite;}
+@keyframes sheen{0%,100%{transform:rotate(0deg)}50%{transform:rotate(360deg)}}
+.logo-text{display:flex;flex-direction:column}
+.logo-txt{
+  font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:-.3px;
+  background:linear-gradient(135deg,#64b5f6,#5ac8fa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.logo-sub{font-size:7px;color:var(--muted);font-weight:700;letter-spacing:1.2px;text-transform:uppercase;margin-top:-1px}
+.hdr-r{display:flex;align-items:center;gap:8px}
+.live-pill{
+  display:flex;align-items:center;gap:4px;
+  background:rgba(5,216,144,.1);border:1px solid rgba(5,216,144,.25);
+  border-radius:20px;padding:4px 9px;
+}
+.ldot{width:5px;height:5px;border-radius:50%;background:var(--g);animation:blink 1.4s ease infinite}
+@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px var(--g)}50%{opacity:.3;box-shadow:none}}
+.ltxt{font-size:9px;font-weight:700;color:var(--g);letter-spacing:.8px;font-family:'Space Mono',monospace}
+#clk{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;letter-spacing:.5px}
+
+/* ═══ TICKER ═══ */
+.ticker{
+  height:var(--tick-h);flex-shrink:0;
+  background:rgba(6,10,18,.95);
+  border-bottom:1px solid rgba(255,255,255,.04);
+  display:flex;align-items:center;overflow:hidden;position:relative;z-index:10;
+}
+.ticker::before,.ticker::after{
+  content:'';position:absolute;top:0;bottom:0;width:30px;z-index:2;pointer-events:none;
+}
+.ticker::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
+.ticker::after{right:0;background:linear-gradient(-90deg,var(--bg),transparent)}
+.t-inner{display:flex;animation:ticker-scroll 40s linear infinite}
+.t-inner:hover{animation-play-state:paused}
+@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.t-item{
+  display:flex;align-items:center;gap:5px;padding:0 14px;
+  border-right:1px solid rgba(255,255,255,.04);
+  white-space:nowrap;height:var(--tick-h);flex-shrink:0;
+}
+.t-sym{font-size:9px;font-weight:700;color:var(--muted);font-family:'Space Mono',monospace;letter-spacing:.5px}
+.t-px{font-size:10px;font-weight:600;font-family:'Space Mono',monospace}
+.t-ch{font-size:8px;font-weight:700;margin-left:1px}
+
+/* ═══ SIDEBAR NAV ═══ */
+#sidenav{
+  width:var(--nav-w);flex-shrink:0;
+  background:rgba(9,14,26,.95);
+  border-right:1px solid rgba(255,255,255,.05);
+  display:flex;flex-direction:column;align-items:center;
+  padding:8px 0;gap:2px;overflow-y:auto;scrollbar-width:none;
+  position:relative;z-index:10;
+  backdrop-filter:blur(10px);
+}
 #sidenav::-webkit-scrollbar{display:none}
-.nb{width:54px;height:54px;border-radius:13px;background:transparent;border:none;color:var(--muted);
-  cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:2px;font-size:9px;font-weight:700;transition:all .15s;padding:0;letter-spacing:.2px}
-.nb:active{opacity:.7;transform:scale(.93)}
-.nb.on{background:rgba(58,159,255,.15);color:var(--b2)}
-.nb .ic{font-size:20px;line-height:1}
-.nb-div{width:34px;height:1px;background:var(--border);margin:3px 0;flex-shrink:0}
+#sidenav::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--b),transparent);
+}
+.nb{
+  width:50px;height:50px;border-radius:12px;
+  background:transparent;border:none;color:var(--muted2);
+  cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  font-size:8.5px;font-weight:700;transition:all .18s cubic-bezier(.4,0,.2,1);
+  padding:0;letter-spacing:.3px;text-transform:uppercase;position:relative;
+}
+.nb:active{transform:scale(.88)}
+.nb.on{
+  background:rgba(10,132,255,.15);
+  color:var(--b2);
+  box-shadow:inset 0 0 0 1px rgba(10,132,255,.3);
+}
+.nb.on::before{
+  content:'';position:absolute;left:-1px;top:50%;transform:translateY(-50%);
+  width:2px;height:60%;background:var(--b);border-radius:0 2px 2px 0;
+  box-shadow:var(--bs);
+}
+.nb .ic{font-size:18px;line-height:1}
+.nb-div{width:28px;height:1px;background:rgba(255,255,255,.05);margin:4px 0;flex-shrink:0}
 
-/* SCROLL */
-#scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:10px}
-#scroll::-webkit-scrollbar{display:none}
+/* ═══ SCROLL AREA ═══ */
+#scroll{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:10px;position:relative;z-index:1;
+}
+#scroll::-webkit-scrollbar{width:3px}
+#scroll::-webkit-scrollbar-track{background:transparent}
+#scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-/* HEADER */
-.hdr{height:44px;flex-shrink:0;background:linear-gradient(180deg,#0a1628,#060d1a);
-  border-bottom:1px solid var(--border);display:flex;align-items:center;
-  justify-content:space-between;padding:0 12px;z-index:200}
-.logo{display:flex;align-items:center;gap:7px}
-.logo-box{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#1040a0,#0a2880);
-  display:flex;align-items:center;justify-content:center;font-size:14px}
-.logo-txt{font-size:13px;font-weight:800;
-  background:linear-gradient(135deg,var(--b2),var(--t));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo-sub{font-size:8px;color:var(--muted);font-weight:600;letter-spacing:.4px;margin-top:-2px}
-.hdr-r{display:flex;align-items:center;gap:6px}
-.live{display:flex;align-items:center;gap:3px;background:rgba(0,229,160,.08);
-  border:1px solid rgba(0,229,160,.2);border-radius:18px;padding:3px 7px}
-.ldot{width:5px;height:5px;border-radius:50%;background:var(--g);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}60%{opacity:.2}}
-.ltxt{font-size:9px;font-weight:700;color:var(--g);letter-spacing:.4px}
-#clk{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
-
-/* TICKER */
-.ticker{height:24px;background:#050d1a;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;overflow:hidden;flex-shrink:0}
-.t-inner{display:flex;animation:tick 30s linear infinite}
-@keyframes tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-.t-item{display:flex;align-items:center;gap:3px;padding:0 12px;
-  border-right:1px solid var(--border);white-space:nowrap;height:24px;flex-shrink:0;font-size:10px}
-.t-sym{font-weight:700;color:var(--muted);font-size:9px}
-
-/* PAGE */
-.page{display:none;padding:11px}
+/* ═══ PAGES ═══ */
+.page{display:none;padding:12px;animation:fadeIn .2s ease}
 .page.on{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
-/* CARD */
-.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:9px;position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(58,159,255,.12),transparent)}
-.cg{border-color:rgba(0,229,160,.18)}.cb{border-color:rgba(58,159,255,.18)}.cy{border-color:rgba(240,192,64,.18)}.cp{border-color:rgba(155,111,255,.18)}.co{border-color:rgba(255,140,66,.18)}
+/* ═══ CARDS ═══ */
+.card{
+  background:var(--card);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:var(--radius);
+  padding:13px;margin-bottom:10px;
+  position:relative;overflow:hidden;
+  backdrop-filter:blur(10px);
+  transition:border-color .2s;
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);
+}
+.cg{border-color:rgba(5,216,144,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(5,216,144,.04))}
+.cb{border-color:rgba(10,132,255,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(10,132,255,.04))}
+.cy{border-color:rgba(255,214,10,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,214,10,.04))}
+.cp{border-color:rgba(191,90,242,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(191,90,242,.04))}
+.co{border-color:rgba(255,159,10,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,159,10,.04))}
 
-/* GRID */
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
-.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px}
+/* ═══ GRID ═══ */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 
-/* STAT */
-.sb{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:9px 6px;text-align:center}
-.sv{font-size:16px;font-weight:800;line-height:1.1}
-.sl{font-size:9px;color:var(--muted);margin-top:3px;font-weight:600}
+/* ═══ STAT BOX ═══ */
+.sb{
+  background:var(--card2);
+  border:1px solid rgba(255,255,255,.05);
+  border-radius:var(--radius-sm);
+  padding:10px 7px;text-align:center;
+  position:relative;overflow:hidden;
+  transition:transform .15s;
+}
+.sb::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:currentColor;opacity:.15;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+.sv{font-size:15px;font-weight:800;line-height:1.1;font-family:'Space Mono',monospace}
+.sl{font-size:8.5px;color:var(--muted);margin-top:4px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
 
-/* COLORS */
-.up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}
+/* ═══ COLORS ═══ */
+.up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}.tl{color:var(--t)}
 
-/* BADGE */
-.bdg{display:inline-flex;align-items:center;padding:2px 7px;border-radius:7px;font-size:11px;font-weight:700}
-.bg{background:var(--gd);color:var(--g);border:1px solid rgba(0,229,160,.2)}
-.br{background:var(--rd);color:var(--r);border:1px solid rgba(255,61,107,.2)}
-.by{background:var(--yd);color:var(--y);border:1px solid rgba(240,192,64,.2)}
-.bb{background:var(--bd);color:var(--b);border:1px solid rgba(58,159,255,.2)}
+/* ═══ BADGE ═══ */
+.bdg{display:inline-flex;align-items:center;padding:3px 8px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:'Space Mono',monospace}
+.bg{background:var(--gd);color:var(--g);border:1px solid rgba(5,216,144,.25)}
+.br{background:var(--rd);color:var(--r);border:1px solid rgba(255,45,85,.25)}
+.by{background:var(--yd);color:var(--y);border:1px solid rgba(255,214,10,.2)}
+.bb{background:var(--bd);color:var(--b);border:1px solid rgba(10,132,255,.25)}
 
-/* COIN ROW */
-.cr{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+/* ═══ COIN ROW ═══ */
+.cr{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04);
+  cursor:pointer;transition:background .12s;border-radius:var(--radius-sm);
+  padding-left:4px;padding-right:4px;margin:0 -4px;
+}
 .cr:last-child{border-bottom:none}
-.cico{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:1px solid;flex-shrink:0}
+.cr:active{background:rgba(255,255,255,.04)}
+.cico{
+  width:34px;height:34px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:900;border:1px solid;flex-shrink:0;
+  font-family:'Space Mono',monospace;
+}
 .cinfo{flex:1;min-width:0}
-.csym{font-size:13px;font-weight:800}
-.cname{font-size:9px;color:var(--muted);margin-top:1px}
+.csym{font-size:13px;font-weight:800;letter-spacing:-.2px}
+.cname{font-size:9px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
 .cr-r{text-align:right;flex-shrink:0}
-.cpct{font-size:12px;font-weight:800}
-.cprice{font-size:9px;color:var(--muted);margin-top:1px}
-.crank{font-size:9px;color:var(--muted);width:16px;text-align:center;flex-shrink:0;font-weight:600}
+.cpct{font-size:12px;font-weight:800;font-family:'Space Mono',monospace}
+.cprice{font-size:9px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
+.crank{font-size:9px;color:var(--muted);width:18px;text-align:center;flex-shrink:0;font-weight:700;font-family:'Space Mono',monospace}
 
-/* FORM */
-.row{display:flex;gap:7px;align-items:center;margin-bottom:10px}
-.inp{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:10px;
-  padding:12px 13px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none;min-width:0}
-.inp:focus{border-color:var(--b)}
+/* ═══ FORM ═══ */
+.row{display:flex;gap:8px;align-items:center;margin-bottom:11px}
+.inp{
+  flex:1;
+  background:rgba(19,31,51,.8);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:var(--radius-sm);
+  padding:12px 14px;color:var(--text);
+  font-size:14px;font-family:'DM Sans',sans-serif;
+  outline:none;-webkit-appearance:none;min-width:0;
+  transition:border-color .15s,box-shadow .15s;
+}
+.inp:focus{border-color:rgba(10,132,255,.5);box-shadow:0 0 0 3px rgba(10,132,255,.1)}
 .inp::placeholder{color:var(--muted)}
-.sel{background:var(--card2);border:1px solid var(--border);border-radius:10px;
-  padding:12px 8px;color:var(--text);font-size:12px;outline:none}
-.btn{background:linear-gradient(135deg,#1052d0,#0838a8);border:none;border-radius:10px;
-  padding:12px 16px;color:#fff;font-size:13px;cursor:pointer;font-weight:700;flex-shrink:0}
-.btn:active{opacity:.8}
-.btn-g{background:linear-gradient(135deg,#007a50,#005535)}
+.sel{
+  background:rgba(19,31,51,.8);border:1px solid rgba(255,255,255,.08);
+  border-radius:var(--radius-sm);
+  padding:12px 8px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;
+  outline:none;-webkit-appearance:none;flex-shrink:0;
+}
+.btn{
+  background:linear-gradient(135deg,#0a84ff,#0055cc);
+  border:none;border-radius:var(--radius-sm);
+  padding:12px 18px;color:#fff;font-size:13px;font-weight:700;
+  cursor:pointer;flex-shrink:0;font-family:'DM Sans',sans-serif;
+  box-shadow:0 4px 15px rgba(10,132,255,.3);
+  transition:transform .12s,box-shadow .12s;
+}
+.btn:active{transform:scale(.95);box-shadow:0 2px 8px rgba(10,132,255,.2)}
+.btn-g{background:linear-gradient(135deg,#05d890,#00a86b);box-shadow:0 4px 15px rgba(5,216,144,.25)}
 
 .frow{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-.fc{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:7px 12px;
-  font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap}
-.fc.on{background:var(--bd);border-color:rgba(58,159,255,.35);color:var(--b2)}
+.fc{
+  background:rgba(19,31,51,.7);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:20px;padding:6px 13px;
+  font-size:11px;font-weight:700;color:var(--muted);
+  cursor:pointer;white-space:nowrap;transition:all .15s;
+  font-family:'DM Sans',sans-serif;
+}
+.fc:active{transform:scale(.94)}
+.fc.on{
+  background:rgba(10,132,255,.15);
+  border-color:rgba(10,132,255,.4);
+  color:var(--b2);
+  box-shadow:0 2px 12px rgba(10,132,255,.15);
+}
 
-/* SH */
-.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
-.sh-t{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);display:flex;align-items:center;gap:5px}
+/* ═══ SECTION HEADER ═══ */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sh-t{
+  font-size:9.5px;font-weight:700;
+  text-transform:uppercase;letter-spacing:1px;
+  color:var(--muted);display:flex;align-items:center;gap:6px;
+  font-family:'Space Mono',monospace;
+}
 .sh-t span{color:var(--text)}
-.sh-btn{font-size:10px;color:var(--b);font-weight:600;cursor:pointer;padding:3px 7px;border-radius:5px;border:1px solid rgba(58,159,255,.2)}
+.sh-btn{
+  font-size:10px;color:var(--b);font-weight:600;cursor:pointer;
+  padding:4px 9px;border-radius:6px;
+  border:1px solid rgba(10,132,255,.25);
+  background:rgba(10,132,255,.07);
+  transition:all .12s;
+}
+.sh-btn:active{background:rgba(10,132,255,.15)}
 
-/* MISC */
-.pb{background:rgba(255,255,255,.06);border-radius:3px;height:5px;overflow:hidden}
-.pbf{height:5px;border-radius:3px;transition:width .5s}
-.mt{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px;gap:8px;opacity:.6}
-.mt-i{font-size:36px}.mt-t{font-size:14px;font-weight:700}.mt-s{font-size:11px;color:var(--muted);text-align:center}
-.spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--b);border-radius:50%;animation:sp .7s linear infinite}
+/* ═══ BTC/ETH CARDS ═══ */
+.coin-card{
+  background:var(--card);border-radius:var(--radius);padding:14px;
+  position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.06);
+}
+.coin-card::after{
+  content:'';position:absolute;
+  top:-30px;right:-20px;width:80px;height:80px;border-radius:50%;
+  opacity:.07;filter:blur(20px);
+}
+.coin-card.btc-card::after{background:#f7931a}
+.coin-card.eth-card::after{background:#627eea}
+.coin-label{font-size:8.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-family:'Space Mono',monospace}
+.coin-price{font-size:20px;font-weight:800;line-height:1;font-family:'Space Mono',monospace;letter-spacing:-1px}
+.coin-change{margin-top:5px;font-size:11px}
+.coin-vol{font-size:8.5px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace}
+
+/* ═══ MARKET SENTIMENT ═══ */
+.sentiment-bar{
+  height:6px;border-radius:3px;overflow:hidden;
+  background:rgba(255,255,255,.05);margin:8px 0 5px;
+  position:relative;
+}
+.sb-fill{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+
+/* ═══ PROGRESS ═══ */
+.pb{background:rgba(255,255,255,.05);border-radius:4px;height:5px;overflow:hidden}
+.pbf{height:5px;border-radius:4px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+
+/* ═══ MISC ═══ */
+.mt{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:35px 20px;gap:10px;opacity:.55}
+.mt-i{font-size:40px}.mt-t{font-size:14px;font-weight:700}.mt-s{font-size:11px;color:var(--muted);text-align:center;line-height:1.4}
+.spin{
+  width:20px;height:20px;
+  border:2px solid rgba(255,255,255,.06);
+  border-top-color:var(--b);
+  border-radius:50%;animation:sp .65s linear infinite;
+}
 @keyframes sp{to{transform:rotate(360deg)}}
-.ld{display:flex;align-items:center;justify-content:center;gap:7px;padding:20px;color:var(--muted);font-size:11px}
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
-  background:#1a2a40;border:1px solid var(--border);border-radius:20px;
-  padding:8px 16px;font-size:12px;opacity:0;transition:all .25s;pointer-events:none;z-index:9999;white-space:nowrap}
+.ld{display:flex;align-items:center;justify-content:center;gap:8px;padding:24px;color:var(--muted);font-size:11px}
+
+/* ═══ TOAST ═══ */
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);
+  background:rgba(19,31,51,.95);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:24px;padding:9px 18px;font-size:12px;font-weight:600;
+  opacity:0;transition:all .22s cubic-bezier(.4,0,.2,1);
+  pointer-events:none;z-index:9999;white-space:nowrap;
+  backdrop-filter:blur(20px);
+  box-shadow:0 8px 30px rgba(0,0,0,.4);
+}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* KAR/ZARAR */
-.kz-tab{display:flex;gap:6px;margin-bottom:12px}
-.kz-t{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--card2);
-  text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer}
-.kz-t.on{background:var(--bd);border-color:rgba(58,159,255,.35);color:var(--b2)}
-.kz-result{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:10px}
-.kz-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)}
+/* ═══ KAR/ZARAR ═══ */
+.kz-tab{display:flex;gap:6px;margin-bottom:13px}
+.kz-t{
+  flex:1;padding:10px;border-radius:var(--radius-sm);
+  border:1px solid rgba(255,255,255,.07);
+  background:rgba(19,31,51,.6);
+  text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;
+  transition:all .15s;
+}
+.kz-t.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.35);color:var(--b2);box-shadow:0 0 15px rgba(10,132,255,.1)}
+.kz-result{
+  background:rgba(15,26,46,.8);border:1px solid rgba(255,255,255,.07);
+  border-radius:var(--radius);padding:15px;margin-top:11px;
+  backdrop-filter:blur(10px);
+}
+.kz-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .kz-row:last-child{border-bottom:none}
 .kz-label{font-size:12px;color:var(--muted);font-weight:600}
-.kz-val{font-size:13px;font-weight:800}
-.kz-big{font-size:22px;font-weight:900;text-align:center;padding:12px 0}
-.pos-card{background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:12px;margin-bottom:8px}
-.pos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.pos-sym{font-size:14px;font-weight:900}
-.pos-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.pos-item{background:var(--card3);border-radius:8px;padding:8px}
-.pos-item-l{font-size:9px;color:var(--muted);margin-bottom:3px;font-weight:600}
-.pos-item-v{font-size:13px;font-weight:800}
+.kz-val{font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
+.kz-big{font-size:26px;font-weight:900;text-align:center;padding:14px 0;font-family:'Space Mono',monospace;letter-spacing:-1px}
+.pos-card{
+  background:rgba(15,26,46,.7);border:1px solid rgba(255,255,255,.06);
+  border-radius:var(--radius);padding:13px;margin-bottom:9px;
+  backdrop-filter:blur(8px);transition:border-color .15s;
+}
+.pos-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.pos-sym{font-size:15px;font-weight:800;font-family:'Space Mono',monospace;letter-spacing:-.3px}
+.pos-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.pos-item{background:rgba(23,38,61,.8);border-radius:var(--radius-sm);padding:9px;border:1px solid rgba(255,255,255,.04)}
+.pos-item-l{font-size:8.5px;color:var(--muted);margin-bottom:3px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.pos-item-v{font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
+
+/* ═══ ALARM ═══ */
+.alarm-card{
+  background:rgba(15,26,46,.7);border:1px solid rgba(255,255,255,.06);
+  border-radius:var(--radius);padding:13px;margin-bottom:9px;
+  backdrop-filter:blur(8px);
+}
 </style>
 </head>
 <body>
 <div id="app">
 
+<!-- HEADER -->
 <div class="hdr">
   <div class="logo">
     <div class="logo-box">📊</div>
-    <div><div class="logo-txt">KriptoDrop</div><div class="logo-sub">PRO DASHBOARD</div></div>
+    <div class="logo-text">
+      <div class="logo-txt">KriptoDrop</div>
+      <div class="logo-sub">Pro Dashboard</div>
+    </div>
   </div>
   <div class="hdr-r">
-    <div class="live"><div class="ldot"></div><span class="ltxt">CANLI</span></div>
+    <div class="live-pill"><div class="ldot"></div><span class="ltxt">CANLI</span></div>
     <span id="clk"></span>
   </div>
 </div>
 
+<!-- TICKER -->
 <div class="ticker">
   <div class="t-inner" id="tInner">
-    <div class="t-item"><span class="t-sym">BTC</span><span id="tBTC">$--</span></div>
-    <div class="t-item"><span class="t-sym">ETH</span><span id="tETH">$--</span></div>
-    <div class="t-item"><span class="t-sym">BNB</span><span id="tBNB">$--</span></div>
-    <div class="t-item"><span class="t-sym">SOL</span><span id="tSOL">$--</span></div>
-    <div class="t-item"><span class="t-sym">XRP</span><span id="tXRP">$--</span></div>
-    <div class="t-item"><span class="t-sym">DOGE</span><span id="tDOGE">$--</span></div>
-    <div class="t-item"><span class="t-sym">BTC</span><span id="tBTC2">$--</span></div>
-    <div class="t-item"><span class="t-sym">ETH</span><span id="tETH2">$--</span></div>
-    <div class="t-item"><span class="t-sym">BNB</span><span id="tBNB2">$--</span></div>
-    <div class="t-item"><span class="t-sym">SOL</span><span id="tSOL2">$--</span></div>
-    <div class="t-item"><span class="t-sym">XRP</span><span id="tXRP2">$--</span></div>
-    <div class="t-item"><span class="t-sym">DOGE</span><span id="tDOGE2">$--</span></div>
+    <div class="t-item"><span class="t-sym">BTC</span><span class="t-px" id="tBTC">$--</span><span class="t-ch" id="tBTCch"></span></div>
+    <div class="t-item"><span class="t-sym">ETH</span><span class="t-px" id="tETH">$--</span><span class="t-ch" id="tETHch"></span></div>
+    <div class="t-item"><span class="t-sym">BNB</span><span class="t-px" id="tBNB">$--</span><span class="t-ch" id="tBNBch"></span></div>
+    <div class="t-item"><span class="t-sym">SOL</span><span class="t-px" id="tSOL">$--</span><span class="t-ch" id="tSOLch"></span></div>
+    <div class="t-item"><span class="t-sym">XRP</span><span class="t-px" id="tXRP">$--</span><span class="t-ch" id="tXRPch"></span></div>
+    <div class="t-item"><span class="t-sym">DOGE</span><span class="t-px" id="tDOGE">$--</span><span class="t-ch" id="tDOGEch"></span></div>
+    <div class="t-item"><span class="t-sym">AVAX</span><span class="t-px" id="tAVAX">$--</span><span class="t-ch" id="tAVAXch"></span></div>
+    <div class="t-item"><span class="t-sym">BTC</span><span class="t-px" id="tBTC2">$--</span></div>
+    <div class="t-item"><span class="t-sym">ETH</span><span class="t-px" id="tETH2">$--</span></div>
+    <div class="t-item"><span class="t-sym">BNB</span><span class="t-px" id="tBNB2">$--</span></div>
+    <div class="t-item"><span class="t-sym">SOL</span><span class="t-px" id="tSOL2">$--</span></div>
+    <div class="t-item"><span class="t-sym">XRP</span><span class="t-px" id="tXRP2">$--</span></div>
+    <div class="t-item"><span class="t-sym">DOGE</span><span class="t-px" id="tDOGE2">$--</span></div>
+    <div class="t-item"><span class="t-sym">AVAX</span><span class="t-px" id="tAVAX2">$--</span></div>
   </div>
 </div>
 
 <div id="main">
+
+<!-- SOL NAV -->
 <div id="sidenav">
   <button class="nb on"  onclick="go('home')">   <span class="ic">🏠</span>Ana</button>
   <button class="nb"     onclick="go('mkt')">    <span class="ic">📈</span>Piyasa</button>
-  <button class="nb"     onclick="go('top')">    <span class="ic">🏆</span>Liderler</button>
+  <button class="nb"     onclick="go('top')">    <span class="ic">🏆</span>Lider</button>
   <div class="nb-div"></div>
   <button class="nb"     onclick="go('analiz')"> <span class="ic">🔬</span>Analiz</button>
-  <button class="nb"     onclick="go('fib')">    <span class="ic">📐</span>Fibonacci</button>
+  <button class="nb"     onclick="go('fib')">    <span class="ic">📐</span>Fib</button>
   <div class="nb-div"></div>
   <button class="nb"     onclick="go('kar')">    <span class="ic">💰</span>K/Z</button>
-  <button class="nb"     onclick="go('alarmlar')"><span class="ic">🔔</span>Alarmlar</button>
+  <button class="nb"     onclick="go('alarmlar')"><span class="ic">🔔</span>Alarm</button>
 </div>
 
 <div id="scroll">
 
-<!-- ANA SAYFA -->
+<!-- ── ANA SAYFA ── -->
 <div id="p-home" class="page on">
-  <div id="homeLoad" class="ld"><div class="spin"></div>Veriler yükleniyor...</div>
+  <div id="homeLoad" class="ld"><div class="spin"></div>Yükleniyor...</div>
   <div id="homeContent" style="display:none">
-    <div class="g2" style="margin-bottom:8px">
-      <div class="card cg" style="padding:12px">
-        <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">₿ BITCOIN</div>
-        <div class="sv up" id="hBP" style="font-size:19px">--</div>
-        <div id="hBB" style="margin-top:4px;font-size:11px">--</div>
-        <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hBV">Vol: --</div>
+
+    <!-- BTC / ETH -->
+    <div class="g2" style="margin-bottom:10px">
+      <div class="coin-card btc-card" style="border-color:rgba(247,147,26,.2)">
+        <div class="coin-label">₿ Bitcoin</div>
+        <div class="coin-price up" id="hBP">--</div>
+        <div class="coin-change" id="hBB">--</div>
+        <div class="coin-vol" id="hBV">Vol: --</div>
       </div>
-      <div class="card cb" style="padding:12px">
-        <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-bottom:4px">Ξ ETHEREUM</div>
-        <div class="sv bl" id="hEP" style="font-size:19px">--</div>
-        <div id="hEB" style="margin-top:4px;font-size:11px">--</div>
-        <div style="font-size:9px;color:var(--muted);margin-top:3px" id="hEV">Vol: --</div>
+      <div class="coin-card eth-card" style="border-color:rgba(98,126,234,.2)">
+        <div class="coin-label">Ξ Ethereum</div>
+        <div class="coin-price bl" id="hEP">--</div>
+        <div class="coin-change" id="hEB">--</div>
+        <div class="coin-vol" id="hEV">Vol: --</div>
       </div>
     </div>
-    <div class="g4" style="margin-bottom:8px">
-      <div class="sb"><div class="sv or" id="hDom">--</div><div class="sl">BTC Dom.</div></div>
-      <div class="sb"><div class="sv" id="hAvg">--</div><div class="sl">Ort. Değ.</div></div>
-      <div class="sb"><div class="sv up" id="hUp">--</div><div class="sl">↑ Yükselen</div></div>
-      <div class="sb"><div class="sv dn" id="hDn">--</div><div class="sl">↓ Düşen</div></div>
+
+    <!-- STAT GRID -->
+    <div class="g4" style="margin-bottom:10px">
+      <div class="sb" style="color:var(--o)"><div class="sv or" id="hDom">--</div><div class="sl">BTC Dom</div></div>
+      <div class="sb" style="color:var(--b)"><div class="sv" id="hAvg">--</div><div class="sl">Ort Değ</div></div>
+      <div class="sb" style="color:var(--g)"><div class="sv up" id="hUp">--</div><div class="sl">↑ Yükselen</div></div>
+      <div class="sb" style="color:var(--r)"><div class="sv dn" id="hDn">--</div><div class="sl">↓ Düşen</div></div>
     </div>
-    <div class="card" style="margin-bottom:8px">
-      <div class="sh"><div class="sh-t">🚀 <span>LİDERLER</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+
+    <!-- SENTIMENT BAR -->
+    <div class="card" style="margin-bottom:10px;padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:'Space Mono',monospace">Piyasa Duyarlılığı</span>
+        <span id="hMood" style="font-size:11px;font-weight:700">--</span>
+      </div>
+      <div class="sentiment-bar">
+        <div class="sb-fill" id="hSentBar" style="width:50%;background:linear-gradient(90deg,var(--r),var(--y),var(--g))"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:3px">
+        <span>Ayı 🐻</span><span>Nötr</span><span>Boğa 🐂</span>
+      </div>
+    </div>
+
+    <!-- LİDERLER -->
+    <div class="card" style="margin-bottom:10px">
+      <div class="sh"><div class="sh-t">🚀 <span>Liderler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
       <div id="hGain"></div>
     </div>
-    <div class="card cp" style="margin-bottom:8px">
-      <div class="sh"><div class="sh-t">🔔 <span>AKTİF ALARMLARIM</span></div><span class="sh-btn" onclick="go('alarmlar')">Tümü →</span></div>
-      <div id="hAlarm"><div style="font-size:11px;color:var(--muted);padding:5px 0">Yükleniyor...</div></div>
+
+    <!-- AKTİF ALARMLAR -->
+    <div class="card cp" style="margin-bottom:10px">
+      <div class="sh"><div class="sh-t">🔔 <span>Aktif Alarmlar</span></div><span class="sh-btn" onclick="go('alarmlar')">Tümü →</span></div>
+      <div id="hAlarm"><div style="font-size:11px;color:var(--muted);padding:4px 0">Yükleniyor...</div></div>
     </div>
+
+    <!-- HABERLER -->
     <div class="card">
-      <div class="sh"><div class="sh-t">📰 <span>SON HABERLER</span></div></div>
+      <div class="sh"><div class="sh-t">📰 <span>Son Haberler</span></div></div>
       <div id="hNews"><div style="font-size:11px;color:var(--muted)">Yükleniyor...</div></div>
     </div>
   </div>
 </div>
 
-<!-- PİYASA -->
+<!-- ── PİYASA ── -->
 <div id="p-mkt" class="page">
   <div class="row">
-    <input class="inp" id="mQ" placeholder="🔍 BTC, ETH..." oninput="fltMkt()">
+    <input class="inp" id="mQ" placeholder="🔍 BTC, ETH, SOL..." oninput="fltMkt()">
     <select class="sel" id="mSrt" onchange="srtMkt()">
-      <option value="vol">📊 Hacim</option>
-      <option value="up">🟢 Yükselen</option>
-      <option value="dn">🔴 Düşen</option>
+      <option value="vol">Hacim</option>
+      <option value="up">↑ Yükselen</option>
+      <option value="dn">↓ Düşen</option>
     </select>
   </div>
   <div class="frow">
     <div class="fc on" id="fAll" onclick="setF('all')">🌐 Tümü</div>
     <div class="fc" id="fUp" onclick="setF('up')">🟢 Yükselen</div>
     <div class="fc" id="fDn" onclick="setF('dn')">🔴 Düşen</div>
-    <div class="fc" id="fPump" onclick="setF('pump')">⚡ +5% Pump</div>
-    <div class="fc" id="fDump" onclick="setF('dump')">💥 -5% Dump</div>
+    <div class="fc" id="fPump" onclick="setF('flash5up')">⚡ 5dk ↑</div>
+    <div class="fc" id="fDump" onclick="setF('flash5dn')">💥 5dk ↓</div>
   </div>
   <div id="mktList"><div class="ld"><div class="spin"></div>Yükleniyor...</div></div>
 </div>
 
-<!-- LİDERLER -->
+<!-- ── LİDERLER ── -->
 <div id="p-top" class="page">
-  <div class="frow" style="margin-bottom:8px">
+  <div class="frow" style="margin-bottom:10px">
     <div class="fc on" id="tG" onclick="showTop('g')">🚀 Yükselen</div>
     <div class="fc" id="tL" onclick="showTop('l')">💥 Düşen</div>
     <div class="fc" id="tV" onclick="showTop('v')">💧 Hacim</div>
@@ -4802,7 +5065,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div id="topL"><div class="ld"><div class="spin"></div></div></div>
 </div>
 
-<!-- ANALİZ -->
+<!-- ── ANALİZ ── -->
 <div id="p-analiz" class="page">
   <div class="row">
     <input class="inp" id="aIn" placeholder="BTC veya BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doAnaliz()">
@@ -4811,7 +5074,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div id="aOut"><div class="mt"><div class="mt-i">🔬</div><div class="mt-t">Teknik Analiz</div><div class="mt-s">RSI · EMA · Sinyal skoru</div></div></div>
 </div>
 
-<!-- FİBONACCİ -->
+<!-- ── FİBONACCİ ── -->
 <div id="p-fib" class="page">
   <div class="row">
     <input class="inp" id="fIn" placeholder="BTC veya BTCUSDT" maxlength="15" onkeydown="if(event.key==='Enter')doFib()">
@@ -4824,7 +5087,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div id="fOut"><div class="mt"><div class="mt-i">📐</div><div class="mt-t">Fibonacci</div><div class="mt-s">Destek ve direnç seviyeleri</div></div></div>
 </div>
 
-<!-- KAR/ZARAR -->
+<!-- ── KAR/ZARAR ── -->
 <div id="p-kar" class="page">
   <div class="kz-tab">
     <div class="kz-t on" id="kzT1" onclick="kzSwitch('hesap')">🧮 Hızlı Hesap</div>
@@ -4832,23 +5095,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   </div>
   <div id="kzHesap">
     <div class="card co">
-      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:12px">💰 KAR / ZARAR HESAPLA</div>
-      <div class="row"><input class="inp" id="kzSym" placeholder="BTC veya BTCUSDT" maxlength="15"></div>
-      <div class="g2" style="margin-bottom:10px">
+      <div style="font-size:9.5px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:13px;font-family:'Space Mono',monospace">💰 Kar / Zarar Hesapla</div>
+      <div class="row"><input class="inp" id="kzSym" placeholder="BTC veya BTCUSDT" maxlength="15" style="text-transform:uppercase"></div>
+      <div class="g2" style="margin-bottom:11px">
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Alış Fiyatı (USDT)</div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Alış Fiyatı (USDT)</div>
           <input class="inp" id="kzBuy" placeholder="60000" type="number" style="width:100%">
         </div>
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Miktar</div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Miktar</div>
           <input class="inp" id="kzAmt" placeholder="0.5" type="number" style="width:100%">
         </div>
       </div>
-      <div style="margin-bottom:10px">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Satış Fiyatı — boş = canlı fiyat</div>
+      <div style="margin-bottom:11px">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Satış Fiyatı (boş = canlı)</div>
         <input class="inp" id="kzSell" placeholder="Canlı fiyat kullanılır" type="number" style="width:100%">
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:9px">
         <button class="btn" style="flex:1;padding:14px" onclick="kzHesapla()">🧮 Hesapla</button>
         <button class="btn btn-g" style="flex:1;padding:14px" onclick="kzKaydet()">💾 Kaydet</button>
       </div>
@@ -4856,15 +5119,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
     <div id="kzResult"></div>
   </div>
   <div id="kzPoz" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px">📦 POZİSYONLARIM</div>
-      <button class="btn" style="padding:7px 11px;font-size:11px" onclick="loadKarPoz()">🔄</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+      <div style="font-size:9.5px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-family:'Space Mono',monospace">📦 Pozisyonlarım</div>
+      <button class="btn" style="padding:7px 12px;font-size:11px" onclick="loadKarPoz()">🔄</button>
     </div>
     <div id="kzPozList"><div class="ld"><div class="spin"></div></div></div>
   </div>
 </div>
 
-<!-- ALARMLAR -->
+<!-- ── ALARMLAR ── -->
 <div id="p-alarmlar" class="page">
   <div class="kz-tab">
     <div class="kz-t on" id="alTL" onclick="alarmSwitch('liste')">🔔 Alarmlarım</div>
@@ -4873,24 +5136,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:va
   <div id="alListe"><div class="ld"><div class="spin"></div></div></div>
   <div id="alEkle" style="display:none">
     <div class="card co">
-      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:12px">🔔 YENİ ALARM EKLE</div>
+      <div style="font-size:9.5px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:13px;font-family:'Space Mono',monospace">🔔 Yeni Alarm</div>
       <div class="row"><input class="inp" id="alSym" placeholder="BTC veya BTCUSDT" maxlength="15" style="text-transform:uppercase"></div>
-      <div class="g2" style="margin-bottom:10px">
+      <div class="g2" style="margin-bottom:11px">
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Alarm Türü</div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Alarm Türü</div>
           <select class="sel" id="alType" style="width:100%">
-            <option value="percent">📊 Yüzde Değişim (%)</option>
-            <option value="price">💰 Hedef Fiyat ($)</option>
+            <option value="percent">📊 Yüzde %</option>
+            <option value="price">💰 Fiyat $</option>
           </select>
         </div>
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px;font-weight:600">Değer</div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Değer</div>
           <input class="inp" id="alThr" placeholder="3.5" type="number" step="0.1" style="width:100%">
         </div>
       </div>
       <button class="btn" style="width:100%;padding:14px" onclick="alarmEkle()">🔔 Alarm Ekle</button>
-      <div style="font-size:10px;color:var(--muted);margin-top:10px;text-align:center">
-        Yüzde: fiyat %3.5 değişince · Fiyat: belirli fiyata ulaşınca
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">
+        Yüzde: fiyat %X değişince tetiklenir<br>Fiyat: hedef fiyata ulaşınca tetiklenir
       </div>
     </div>
   </div>
@@ -4921,16 +5184,28 @@ function fv(v){
   return v.toFixed(0)+'$';
 }
 function pc(p){return p>0?'up':p<0?'dn':'nu';}
-function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
-const PAL=['#3a9fff','#9b6fff','#00e5a0','#f0c040','#ff8c42','#00d4e8','#ff3d6b'];
-function cIco(sym){const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];return`<div class="cico" style="background:${col}18;color:${col};border-color:${col}30">${sym[0]}</div>`;}
-function toast(m,d=2200){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
+function pb(p){
+  const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';
+  return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;
+}
+const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
+function cIco(sym){
+  const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];
+  return`<div class="cico" style="background:${col}15;color:${col};border-color:${col}35">${sym.slice(0,2)}</div>`;
+}
+function toast(m,d=2400){
+  const e=document.getElementById('toast');e.textContent=m;
+  e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);
+}
 
 // ── CLOCK ──
-setInterval(()=>{const e=document.getElementById('clk');if(e)e.textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
+setInterval(()=>{
+  const e=document.getElementById('clk');
+  if(e)e.textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+},1000);
 
-// ── API FETCH — sadece kendi sunucumuz ──
-async function api(path, ms=15000){
+// ── API ──
+async function api(path,ms=15000){
   try{
     const ctrl=new AbortController();
     const t=setTimeout(()=>ctrl.abort(),ms);
@@ -4938,15 +5213,13 @@ async function api(path, ms=15000){
     clearTimeout(t);
     if(!r.ok)return null;
     return await r.json();
-  }catch(e){
-    console.warn('api error:',path,e.message);
-    return null;
-  }
+  }catch(e){return null;}
 }
 
 // ── STATE ──
-let allCoins=[], filtCoins=[], coinFilter='all';
-let topData={g:[],l:[],v:[]}, topMode='g';
+let allCoins=[],coinFilter='all';
+let flash5Up=[],flash5Dn=[];
+let topData={g:[],l:[],v:[]},topMode='g';
 const PAGES=['home','mkt','top','analiz','fib','kar','alarmlar'];
 let CUR='home';
 
@@ -4956,117 +5229,122 @@ function go(t){
   document.querySelectorAll('#sidenav .nb').forEach(x=>x.classList.remove('on'));
   const pg=document.getElementById('p-'+t);if(!pg)return;
   pg.classList.add('on');
-  const ni=PAGES.indexOf(t);
   const nbs=document.querySelectorAll('#sidenav .nb');
+  const ni=PAGES.indexOf(t);
   if(ni>=0&&nbs[ni])nbs[ni].classList.add('on');
   CUR=t;
   document.getElementById('scroll').scrollTop=0;
-  if(t==='mkt') loadMkt();
-  if(t==='top') loadTop();
-  if(t==='alarmlar') loadAlarms();
-  if(t==='kar'&&kzMode==='pozisyon') loadKarPoz();
+  if(t==='mkt')loadMkt();
+  if(t==='top')loadTop();
+  if(t==='alarmlar')loadAlarms();
+  if(t==='kar'&&kzMode==='pozisyon')loadKarPoz();
 }
 
-// ── DASHBOARD (ana sayfa) — sunucudan tek istek ──
+// ── HOME ──
 async function loadHome(){
   document.getElementById('homeLoad').style.display='flex';
   document.getElementById('homeContent').style.display='none';
-
-  const d = await api('/api/dashboard');
-  
+  const d=await api('/api/dashboard');
   document.getElementById('homeLoad').style.display='none';
   document.getElementById('homeContent').style.display='block';
-
   if(!d){
-    document.getElementById('hGain').innerHTML='<div style="color:var(--r);font-size:11px;padding:5px">⚠️ Veri yüklenemedi. Lütfen yenileyin.</div>';
+    document.getElementById('hGain').innerHTML='<div style="color:var(--r);font-size:11px;padding:6px">⚠️ Veri yüklenemedi.</div>';
     return;
   }
-
-  // Ticker
-  const SYMS=['BTC','ETH','BNB','SOL','XRP','DOGE'];
-  SYMS.forEach(s=>{
+  // Ticker güncelle
+  const TSYMS=['BTC','ETH','BNB','SOL','XRP','DOGE','AVAX'];
+  TSYMS.forEach(s=>{
     const px=d.prices&&d.prices[s+'USDT'];
     if(!px)return;
     const txt='$'+fp(px);
     [s,s+'2'].forEach(k=>{const e=document.getElementById('t'+k);if(e)e.textContent=txt;});
+    // Değişim rengi ticker'da
+    const btcD=d.btc?.change||0;
+    const chEl=document.getElementById('t'+s+'ch');
+    if(chEl){
+      const coinD=s==='BTC'?d.btc?.change:s==='ETH'?d.eth?.change:0;
+      if(coinD){chEl.textContent=(coinD>0?'+':'')+coinD.toFixed(2)+'%';chEl.style.color=coinD>0?'var(--g)':'var(--r)';}
+    }
   });
-
-  // BTC/ETH kartları
-  const btc=d.btc||{};const eth=d.eth||{};
+  // Fiyat kartları
+  const btc=d.btc||{},eth=d.eth||{};
   document.getElementById('hBP').textContent='$'+fp(btc.price||0);
   document.getElementById('hBB').innerHTML=pb(parseFloat(btc.change||0));
   document.getElementById('hBV').textContent='Vol: '+fv(btc.volume||0);
   document.getElementById('hEP').textContent='$'+fp(eth.price||0);
   document.getElementById('hEB').innerHTML=pb(parseFloat(eth.change||0));
   document.getElementById('hEV').textContent='Vol: '+fv(eth.volume||0);
-
-  // İstatistikler
+  // Stats
   document.getElementById('hDom').textContent=(d.btc_dom||0).toFixed(1)+'%';
   document.getElementById('hAvg').innerHTML=pb(parseFloat(d.avg_change||0));
   document.getElementById('hUp').textContent=d.rising||'--';
   document.getElementById('hDn').textContent=d.falling||'--';
-
+  // Sentiment bar
+  const avg=parseFloat(d.avg_change||0);
+  const sentiment=Math.max(0,Math.min(100,(avg+3)/6*100));
+  document.getElementById('hSentBar').style.width=sentiment+'%';
+  const mood=avg>1.5?'🐂 Boğa':avg<-1.5?'🐻 Ayı':'😐 Nötr';
+  const moodColor=avg>1.5?'var(--g)':avg<-1.5?'var(--r)':'var(--y)';
+  document.getElementById('hMood').innerHTML=`<span style="color:${moodColor}">${mood}</span>`;
   // Liderler
   const tops=d.top5||[];
   document.getElementById('hGain').innerHTML=tops.length
-    ? tops.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">$${fp(c.p)}</div></div><div class="cr-r">${pb(c.ch)}</div></div>`).join('')
-    : '<div style="font-size:11px;color:var(--muted)">Veri yok</div>';
-
+    ?tops.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">$${fp(c.p)}</div></div><div class="cr-r">${pb(c.ch)}</div></div>`).join('')
+    :'<div style="font-size:11px;color:var(--muted)">Veri yok</div>';
   // Alarmlar
   const alarms=d.alarms||[];
   document.getElementById('hAlarm').innerHTML=alarms.length
-    ? alarms.slice(0,4).map(a=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="font-weight:700">${a.symbol.replace('USDT','')}</span><span style="color:var(--muted)">${a.type==='percent'?'%'+a.threshold:'$'+a.threshold}</span></div>`).join('')
-    : '<div style="font-size:11px;color:var(--muted);padding:5px 0">Aktif alarm yok</div>';
-
+    ?alarms.slice(0,4).map(a=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px"><span style="font-weight:700;font-family:'Space Mono',monospace">${a.symbol.replace('USDT','')}</span><span style="color:var(--muted)">${a.type==='percent'?'%'+a.threshold:'$'+a.threshold}</span></div>`).join('')
+    :'<div style="font-size:11px;color:var(--muted);padding:4px 0">Aktif alarm yok</div>';
   // Haberler
   const news=d.news||[];
   document.getElementById('hNews').innerHTML=news.length
-    ? news.slice(0,4).map(n=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;font-weight:600;line-height:1.3;margin-bottom:2px">${n.title}</div><div style="font-size:9px;color:var(--muted)">${n.source}</div></div>`).join('')
-    : '<div style="font-size:11px;color:var(--muted)">Haber yüklenemedi</div>';
-
-  // allCoins'i doldur (piyasa için)
-  if(d.coins&&d.coins.length&&!allCoins.length){
-    allCoins=d.coins;
-    filtCoins=[...allCoins];
-  }
-  if(d.top_data){
-    topData=d.top_data;
-  }
+    ?news.slice(0,4).map(n=>`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="font-size:11px;font-weight:600;line-height:1.4;margin-bottom:3px">${n.title}</div><div style="font-size:8.5px;color:var(--muted);font-family:'Space Mono',monospace">${n.source}</div></div>`).join('')
+    :'<div style="font-size:11px;color:var(--muted)">Haber yüklenemedi</div>';
+  // Cache doldur
+  if(d.coins&&d.coins.length)allCoins=d.coins;
+  if(d.top_data)topData=d.top_data;
+  if(d.flash5up)flash5Up=d.flash5up;
+  if(d.flash5dn)flash5Dn=d.flash5dn;
 }
 
 // ── PİYASA ──
 async function loadMkt(){
-  // Cache varsa hemen göster, sonra arkaplanda güncelle
-  if(allCoins.length){applyAndRender();}
-  else{document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';}
+  if(allCoins.length)applyAndRender();
+  else document.getElementById('mktList').innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';
   const d=await api('/api/dashboard');
   if(d&&d.coins){
     allCoins=d.coins;
     if(d.top_data)topData=d.top_data;
+    if(d.flash5up)flash5Up=d.flash5up;
+    if(d.flash5dn)flash5Dn=d.flash5dn;
     applyAndRender();
   }
 }
 function applyAndRender(){
-  // Filtrele
+  if(coinFilter==='flash5up'||coinFilter==='flash5dn'){
+    const src=coinFilter==='flash5up'?flash5Up:flash5Dn;
+    const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
+    let c=q?src.filter(x=>x.s.includes(q)):src;
+    if(!c.length){
+      document.getElementById('mktList').innerHTML='<div class="mt"><div class="mt-i">⏳</div><div class="mt-t">Veri Yok</div><div class="mt-s">WebSocket verisi doluyor</div></div>';
+      return;
+    }
+    document.getElementById('mktList').innerHTML=c.slice(0,50).map(x=>
+      `<div class="cr">${cIco(x.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${x.s.replace('USDT','')}</div><div class="cname" style="color:${coinFilter==='flash5up'?'var(--g)':'var(--r)'}">5dk değişim</div></div><div class="cr-r"><div class="cpct ${coinFilter==='flash5up'?'up':'dn'}">${pb(x.ch5)}</div><div class="cprice">$${fp(x.p)}</div></div></div>`
+    ).join('');return;
+  }
   let c=[...allCoins];
-  if(coinFilter==='up')   c=c.filter(x=>x.ch>0);
-  else if(coinFilter==='dn')  c=c.filter(x=>x.ch<0);
-  else if(coinFilter==='pump')c=c.filter(x=>x.ch>5);
-  else if(coinFilter==='dump')c=c.filter(x=>x.ch<-5);
+  if(coinFilter==='up')c=c.filter(x=>x.ch>0);
+  else if(coinFilter==='dn')c=c.filter(x=>x.ch<0);
   const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
-  if(q) c=c.filter(x=>x.s.includes(q));
-  // Sırala — filtre seçimine göre otomatik sırala
+  if(q)c=c.filter(x=>x.s.includes(q));
   const sv=document.getElementById('mSrt')?.value||'vol';
-  if(sv==='up' || coinFilter==='up' || coinFilter==='pump')
-    c.sort((a,b)=>b.ch-a.ch);
-  else if(sv==='dn' || coinFilter==='dn' || coinFilter==='dump')
-    c.sort((a,b)=>a.ch-b.ch);
-  else
-    c.sort((a,b)=>b.v-a.v);
-  // Render
-  const cnt=c.length;
+  if(sv==='up'||coinFilter==='up')c.sort((a,b)=>b.ch-a.ch);
+  else if(sv==='dn'||coinFilter==='dn')c.sort((a,b)=>a.ch-b.ch);
+  else c.sort((a,b)=>b.v-a.v);
   document.getElementById('mktList').innerHTML=
-    (cnt===0?'<div class="mt"><div class="mt-i">🔍</div><div class="mt-t">Sonuç yok</div></div>':'')+
+    (!c.length?'<div class="mt"><div class="mt-i">🔍</div><div class="mt-t">Sonuç yok</div></div>':'')+
     c.slice(0,120).map(x=>
       `<div class="cr">${cIco(x.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${x.s.replace('USDT','')}</div><div class="cname">${fv(x.v)}</div></div><div class="cr-r"><div class="cpct ${pc(x.ch)}">${pb(x.ch)}</div><div class="cprice">$${fp(x.p)}</div></div></div>`
     ).join('');
@@ -5076,21 +5354,17 @@ function srtMkt(){applyAndRender();}
 function setF(f){
   coinFilter=f;
   ['All','Up','Dn','Pump','Dump'].forEach(x=>{const e=document.getElementById('f'+x);if(e)e.classList.remove('on');});
-  const m={all:'fAll',up:'fUp',dn:'fDn',pump:'fPump',dump:'fDump'};
+  const m={all:'fAll',up:'fUp',dn:'fDn',flash5up:'fPump',flash5dn:'fDump'};
   const e=document.getElementById(m[f]);if(e)e.classList.add('on');
   applyAndRender();
 }
 
 // ── LİDERLER ──
 async function loadTop(){
-  if(topData.g.length){showTop(topMode);}
-  else{document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';}
+  if(topData.g.length)showTop(topMode);
+  else document.getElementById('topL').innerHTML='<div class="ld"><div class="spin"></div></div>';
   const d=await api('/api/dashboard');
-  if(d&&d.top_data){
-    topData=d.top_data;
-    if(d.coins&&d.coins.length){allCoins=d.coins;}
-    showTop(topMode);
-  }
+  if(d&&d.top_data){topData=d.top_data;if(d.coins)allCoins=d.coins;showTop(topMode);}
 }
 function showTop(m){
   topMode=m;
@@ -5098,8 +5372,8 @@ function showTop(m){
   const mp={g:'tG',l:'tL',v:'tV'};const e=document.getElementById(mp[m]);if(e)e.classList.add('on');
   const data=topData[m]||[];
   document.getElementById('topL').innerHTML=data.length
-    ? data.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('')
-    : '<div class="ld">Veri yok</div>';
+    ?data.map((c,i)=>`<div class="cr"><span class="crank">${i+1}</span>${cIco(c.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${c.s.replace('USDT','')}</div><div class="cname">${fv(c.v)}</div></div><div class="cr-r"><div class="cpct ${pc(c.ch)}">${pb(c.ch)}</div><div class="cprice">$${fp(c.p)}</div></div></div>`).join('')
+    :'<div class="ld">Veri yok</div>';
 }
 
 // ── ANALİZ ──
@@ -5110,23 +5384,23 @@ async function doAnaliz(){
   out.innerHTML='<div class="ld"><div class="spin"></div>Analiz yapılıyor...</div>';
   const d=await api(`/api/analiz?symbol=${sym}`);
   if(!d){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
-  const {rsi1,rsi4,rsiD,ema20,ema50,ema200,cur,score,signals}=d;
+  const {rsi1,rsi4,rsiD,score,signals}=d;
   const col=score>=70?'var(--g)':score>=55?'var(--b)':score>=45?'var(--y)':score>=30?'var(--o)':'var(--r)';
   const lbl=score>=70?'🟢 AL':score>=55?'🔵 ZAYIF AL':score>=45?'⚪ NÖTR':score>=30?'🟠 ZAYIF SAT':'🔴 SAT';
-  out.innerHTML=`<div class="card" style="margin-bottom:8px">
-    <div style="text-align:center;padding:8px 0">
-      <div style="font-size:24px;font-weight:900;color:${col}">${lbl}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Sinyal: ${score}/100</div>
-    </div>
+  out.innerHTML=`
+  <div class="card" style="margin-bottom:9px;text-align:center">
+    <div style="font-size:28px;font-weight:900;color:${col};font-family:'Space Mono',monospace;letter-spacing:-1px;padding:8px 0">${lbl}</div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:10px">Sinyal Skoru: ${score}/100</div>
     <div class="pb"><div class="pbf" style="width:${score}%;background:${col}"></div></div>
   </div>
-  <div class="g3" style="margin-bottom:8px">
+  <div class="g3" style="margin-bottom:9px">
     <div class="sb"><div class="sv ${rsi1<30?'up':rsi1>70?'dn':'nu'}">${Math.round(rsi1)}</div><div class="sl">RSI 1s</div></div>
     <div class="sb"><div class="sv ${rsi4<30?'up':rsi4>70?'dn':'nu'}">${Math.round(rsi4)}</div><div class="sl">RSI 4s</div></div>
     <div class="sb"><div class="sv ${rsiD<30?'up':rsiD>70?'dn':'nu'}">${Math.round(rsiD)}</div><div class="sl">RSI 1g</div></div>
   </div>
   <div class="card">
-    ${(signals||[]).map(s=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span style="color:${s.bull?'var(--g)':'var(--r)'}">${s.label}</span><span style="color:var(--muted)">${s.val}</span></div>`).join('')}
+    <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Mono',monospace">Sinyal Detayları</div>
+    ${(signals||[]).map(s=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px"><span style="color:${s.bull?'var(--g)':'var(--r)'}">${s.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${s.val}</span></div>`).join('')}
   </div>`;
 }
 
@@ -5139,71 +5413,52 @@ async function doFib(){
   out.innerHTML='<div class="ld"><div class="spin"></div>Hesaplanıyor...</div>';
   const d=await api(`/api/fib?symbol=${sym}&interval=${tf}`);
   if(!d||!d.levels){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
-
-  // SVG Grafik — sol taraf: fiyat çubuğu, sağ: etiketler
-  const VW=340, VH=220, LEFT=8, RIGHT=60, TOP=10, BOT=10;
+  const VW=340,VH=220,LEFT=8,RIGHT=70,TOP=12,BOT=12;
   const chartW=VW-LEFT-RIGHT;
-  // Fiyat aralığı: high'dan low'a, biraz padding
-  const priceHigh=d.high, priceLow=d.low;
-  const priceRng=priceHigh-priceLow||1;
-  const pad=priceRng*0.05;
-  const pMin=priceLow-pad, pMax=priceHigh+pad, pRng=pMax-pMin;
+  const pad=(d.high-d.low)*0.06;
+  const pMin=d.low-pad,pMax=d.high+pad,pRng=pMax-pMin||1;
   const yPos=(p)=>TOP+(VH-TOP-BOT)*(1-(p-pMin)/pRng);
-
-  // Renk haritası — key olarak string kullan
-  const FCOL={'0':'#ff3d6b','23.6':'#ff8c42','38.2':'#f0c040','50':'#888888','61.8':'#00e5a0','78.6':'#3a9fff','100':'#9b6fff'};
-
-  const svgLines=d.levels.map(l=>{
-    const ly=yPos(l.price);
-    const pctKey=String(l.pct);
-    const col=FCOL[pctKey]||'#5577aa';
-    const isCur=Math.abs(l.price-d.cur)/d.cur<0.008;
-    const lw=isCur?0:1;
-    const dash=isCur?'':'5,3';
-    const opa=isCur?0:0.7;
-    return `<line x1="${LEFT}" y1="${ly}" x2="${LEFT+chartW}" y2="${ly}" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${dash}" opacity="${opa}"/>
-<text x="${LEFT+chartW+4}" y="${ly+4}" font-size="9" fill="${col}" font-family="monospace" font-weight="600">%${l.pct}</text>
-<text x="${LEFT+chartW+4}" y="${ly+14}" font-size="7" fill="${col}88" font-family="monospace">$${fp(l.price)}</text>`;
-  }).join('');
-
-  // Mevcut fiyat çizgisi — en üstte
+  const FCOL={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','61.8':'#05d890','78.6':'#0a84ff','100':'#bf5af2'};
   const curY=yPos(d.cur);
-  const curLine=`
-<line x1="${LEFT}" y1="${curY}" x2="${LEFT+chartW}" y2="${curY}" stroke="#3a9fff" stroke-width="2.5"/>
-<polygon points="${LEFT},${curY-5} ${LEFT+8},${curY} ${LEFT},${curY+5}" fill="#3a9fff"/>
-<rect x="${LEFT+10}" y="${curY-9}" width="90" height="17" fill="#3a9fff22" rx="3" stroke="#3a9fff" stroke-width="0.5"/>
-<text x="${LEFT+14}" y="${curY+4}" font-size="9" fill="#3a9fff" font-family="monospace" font-weight="700">$${fp(d.cur)} ◄ ŞU AN</text>`;
-
-  // Yüksek/düşük işaretleri
-  const highY=yPos(d.high), lowY=yPos(d.low);
-  const hilo=`
-<line x1="${LEFT}" y1="${highY}" x2="${LEFT+chartW}" y2="${highY}" stroke="#ff3d6b" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>
-<line x1="${LEFT}" y1="${lowY}" x2="${LEFT+chartW}" y2="${lowY}" stroke="#00e5a0" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>`;
-
+  const lines=d.levels.map(l=>{
+    const ly=yPos(l.price);
+    const col=FCOL[String(l.pct)]||'#5577aa';
+    return`<line x1="${LEFT}" y1="${ly}" x2="${LEFT+chartW}" y2="${ly}" stroke="${col}" stroke-width="1" stroke-dasharray="5,3" opacity=".65"/>
+<text x="${LEFT+chartW+5}" y="${ly+3}" font-size="8" fill="${col}" font-family="monospace" font-weight="700">%${l.pct}</text>
+<text x="${LEFT+chartW+5}" y="${ly+12}" font-size="6.5" fill="${col}99" font-family="monospace">$${fp(l.price)}</text>`;
+  }).join('');
+  const cur=`<line x1="${LEFT}" y1="${curY}" x2="${LEFT+chartW}" y2="${curY}" stroke="#0a84ff" stroke-width="2.5"/>
+<polygon points="${LEFT},${curY-5} ${LEFT+9},${curY} ${LEFT},${curY+5}" fill="#0a84ff"/>
+<rect x="${LEFT+11}" y="${curY-9}" width="95" height="17" fill="rgba(10,132,255,.15)" rx="3" stroke="rgba(10,132,255,.5)" stroke-width="1"/>
+<text x="${LEFT+15}" y="${curY+4}" font-size="9" fill="#64b5f6" font-family="monospace" font-weight="700">$${fp(d.cur)} ← ŞU AN</text>`;
   out.innerHTML=`
-  <div class="card" style="margin-bottom:8px;padding:10px">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📐 ${sym} — ${tf.toUpperCase()} FİBONACCİ GRAFİK</div>
-    <svg width="100%" viewBox="0 0 ${VW} ${VH}" style="display:block;background:#0a111d;border-radius:8px;border:1px solid var(--border)">
-      <rect width="${VW}" height="${VH}" fill="#0a111d" rx="8"/>
-      ${svgLines}
-      ${hilo}
-      ${curLine}
+  <div class="card" style="margin-bottom:9px;padding:11px">
+    <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Mono',monospace">📐 ${sym} — ${tf.toUpperCase()}</div>
+    <svg width="100%" viewBox="0 0 ${VW} ${VH}" style="display:block;background:#070e1a;border-radius:10px;border:1px solid rgba(255,255,255,.06)">
+      <defs>
+        <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0a84ff" stop-opacity=".03"/>
+          <stop offset="100%" stop-color="#060a12" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <rect width="${VW}" height="${VH}" fill="url(#bgGrad)" rx="10"/>
+      ${lines}${cur}
     </svg>
-    <div style="display:flex;justify-content:space-around;margin-top:8px;font-size:10px">
-      <span>🔴 Yüksek: <span class="up" style="font-weight:700">$${fp(d.high)}</span></span>
-      <span>🔵 Şu An: <span class="bl" style="font-weight:700">$${fp(d.cur)}</span></span>
-      <span>🟢 Düşük: <span class="dn" style="font-weight:700">$${fp(d.low)}</span></span>
+    <div style="display:flex;justify-content:space-around;margin-top:8px;font-size:9.5px;font-family:'Space Mono',monospace">
+      <span style="color:var(--r)">↑ $${fp(d.high)}</span>
+      <span style="color:var(--b)">◆ $${fp(d.cur)}</span>
+      <span style="color:var(--g)">↓ $${fp(d.low)}</span>
     </div>
   </div>
   <div class="card">
-    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">📊 SEVİYELER</div>
+    <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;font-family:'Space Mono',monospace">Seviyeler</div>
     ${d.levels.map(l=>{
-      const isCur=Math.abs(l.price-d.cur)/d.cur<0.005;
-      const col=fibColors[l.pct]||'#5577aa';
-      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${isCur?'background:rgba(58,159,255,.08);border-radius:6px;padding:7px 8px':''}">
-        <span style="font-size:10px;color:${col};font-weight:700">%${l.pct}</span>
-        <span style="font-size:13px;font-weight:800">$${fp(l.price)}</span>
-        <span style="font-size:10px;${l.dist>=0?'color:var(--g)':'color:var(--r)'}">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
+      const isCur=Math.abs(l.price-d.cur)/d.cur<0.008;
+      const col=FCOL[String(l.pct)]||'#5577aa';
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04);${isCur?'background:rgba(10,132,255,.07);border-radius:8px;padding:8px 9px;margin:0 -9px':''}">
+        <span style="font-size:10px;color:${col};font-weight:700;font-family:'Space Mono',monospace">%${l.pct}</span>
+        <span style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace">$${fp(l.price)}</span>
+        <span style="font-size:10px;${l.dist>=0?'color:var(--g)':'color:var(--r)'};font-family:'Space Mono',monospace">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
       </div>`;
     }).join('')}
   </div>`;
@@ -5239,7 +5494,7 @@ async function kzHesapla(){
     <div class="kz-row"><span class="kz-label">Şu An</span><span class="kz-val ${isUp?'up':'dn'}">$${fp(cur)}</span></div>
     <div class="kz-row"><span class="kz-label">Yatırılan</span><span class="kz-val">$${inv.toFixed(2)}</span></div>
     <div class="kz-row"><span class="kz-label">Güncel Değer</span><span class="kz-val">$${curV.toFixed(2)}</span></div>
-    <div class="kz-row"><span class="kz-label">${isUp?'🟢 KAR':'🔴 ZARAR'}</span><span class="kz-val ${isUp?'up':'dn'}" style="font-size:16px">${pnl>=0?'+':''}$${pnl.toFixed(2)}</span></div>
+    <div class="kz-row"><span class="kz-label">${isUp?'🟢 KAR':'🔴 ZARAR'}</span><span class="kz-val ${isUp?'up':'dn'}" style="font-size:17px">${pnl>=0?'+':''}$${pnl.toFixed(2)}</span></div>
   </div>`;
 }
 async function kzKaydet(){
@@ -5258,7 +5513,6 @@ async function loadKarPoz(){
   const d=await api(`/api/kar_pozisyon?uid=${UID}`);
   const poz=d?.positions||[];
   if(!poz.length){document.getElementById('kzPozList').innerHTML='<div class="mt"><div class="mt-i">📭</div><div class="mt-t">Pozisyon Yok</div></div>';return;}
-  // Fiyatları al
   const syms=poz.map(p=>p.symbol).join(',');
   const pr=await api(`/api/prices?symbols=${syms}`);
   const prices=pr?.prices||{};
@@ -5268,9 +5522,9 @@ async function loadKarPoz(){
     return`<div class="pos-card">
       <div class="pos-head">
         <div class="pos-sym">${p.symbol.replace('USDT','')}</div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:9px">
           <span class="bdg ${isUp?'bg':'br'}">${pct>=0?'+':''}${pct.toFixed(2)}%</span>
-          <span style="font-size:18px;cursor:pointer;opacity:.6" onclick="kzDel('${p.symbol}')">🗑</span>
+          <span style="font-size:19px;cursor:pointer;opacity:.5" onclick="kzDel('${p.symbol}')">🗑</span>
         </div>
       </div>
       <div class="pos-grid">
@@ -5306,14 +5560,8 @@ async function alarmEkle(){
   const thr=parseFloat(document.getElementById('alThr').value);
   if(!sym||isNaN(thr)||thr<=0){toast('⚠️ Sembol ve değer zorunlu');return;}
   const d=await api(`/api/alarm_ekle?uid=${UID}&symbol=${symF}&type=${type}&threshold=${thr}`);
-  if(d?.ok){
-    toast('✅ Alarm eklendi!');
-    document.getElementById('alSym').value='';
-    document.getElementById('alThr').value='';
-    alarmSwitch('liste');
-  } else {
-    toast('⚠️ '+(d?.error||'Hata'));
-  }
+  if(d?.ok){toast('✅ Alarm eklendi!');document.getElementById('alSym').value='';document.getElementById('alThr').value='';alarmSwitch('liste');}
+  else toast('⚠️ '+(d?.error||'Hata'));
 }
 async function alarmSil(sym){
   if(!UID||!confirm('Alarm silinsin mi?'))return;
@@ -5321,28 +5569,22 @@ async function alarmSil(sym){
   if(d?.ok){toast('🗑 Silindi');loadAlarms();}else toast('⚠️ Silinemedi');
 }
 async function loadAlarms(){
-  if(!UID){
-    document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';
-    return;
-  }
+  if(!UID){document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔒</div><div class="mt-t">Giriş Gerekli</div><div class="mt-s">Telegram üzerinden açın</div></div>';return;}
   document.getElementById('alListe').innerHTML='<div class="ld"><div class="spin"></div></div>';
   const d=await api(`/api/alarms?uid=${UID}`);
   const alarms=d?.alarms||[];
-  if(!alarms.length){
-    document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">+ Ekle butonuna basın</div></div>';
-    return;
-  }
+  if(!alarms.length){document.getElementById('alListe').innerHTML='<div class="mt"><div class="mt-i">🔔</div><div class="mt-t">Alarm Yok</div><div class="mt-s">+ Ekle sekmesinden ekleyin</div></div>';return;}
   document.getElementById('alListe').innerHTML=alarms.map(a=>{
     const st=a.active?'<span class="bdg bg">Aktif</span>':a.paused?'<span class="bdg by">Duraklı</span>':'<span class="bdg br">Pasif</span>';
-    return`<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:14px;font-weight:900">${a.symbol.replace('USDT','')}</span>
-        <div style="display:flex;align-items:center;gap:7px">${st}
-          <span style="font-size:18px;cursor:pointer;opacity:.6" onclick="alarmSil('${a.symbol}')">🗑</span>
+    return`<div class="alarm-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:14px;font-weight:800;font-family:'Space Mono',monospace">${a.symbol.replace('USDT','')}</span>
+        <div style="display:flex;align-items:center;gap:8px">${st}
+          <span style="font-size:19px;cursor:pointer;opacity:.5" onclick="alarmSil('${a.symbol}')">🗑</span>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--muted)">${a.type==='percent'?'📊 Yüzde %'+a.threshold:a.type==='price'?'💰 Fiyat $'+a.threshold:'📌 '+a.type+' '+a.threshold}</div>
-      ${a.last_triggered?`<div style="font-size:10px;color:var(--muted);margin-top:3px">Son tetik: ${a.last_triggered}</div>`:''}
+      <div style="font-size:10.5px;color:var(--muted);font-family:'Space Mono',monospace">${a.type==='percent'?'📊 % '+a.threshold:a.type==='price'?'💰 $'+a.threshold:'📌 '+a.threshold}</div>
+      ${a.last_triggered?`<div style="font-size:9px;color:var(--muted);margin-top:5px;font-family:'Space Mono',monospace">Son: ${a.last_triggered}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -5675,6 +5917,21 @@ async def _start_miniapp_server(bot):
             except Exception:
                 pass
 
+            # 5dk flash verileri — price_memory WebSocket verisinden
+            flash5up_list = []
+            flash5dn_list = []
+            if price_memory:
+                changes5 = []
+                for sym5, pts in price_memory.items():
+                    if len(pts) >= 2:
+                        ch5 = ((pts[-1][1] - pts[0][1]) / pts[0][1]) * 100
+                        cur5 = pts[-1][1]
+                        changes5.append({"s": sym5, "p": cur5, "ch5": round(ch5, 2)})
+                flash5up_list = sorted([x for x in changes5 if x["ch5"] > 0],
+                                       key=lambda x: x["ch5"], reverse=True)[:30]
+                flash5dn_list = sorted([x for x in changes5 if x["ch5"] < 0],
+                                       key=lambda x: x["ch5"])[:30]
+
             result = {
                 "btc": {"price":float(btc.get("lastPrice",0)),"change":float(btc.get("priceChangePercent",0)),"volume":bv},
                 "eth": {"price":float(eth.get("lastPrice",0)),"change":float(eth.get("priceChangePercent",0)),"volume":float(eth.get("quoteVolume",0))},
@@ -5688,6 +5945,8 @@ async def _start_miniapp_server(bot):
                 "prices": prices,
                 "alarms": alarms,
                 "news": news,
+                "flash5up": flash5up_list,
+                "flash5dn": flash5dn_list,
             }
             log.info(f"dashboard OK: {len(usdt)} coin, {len(alarms)} alarm")
             return aiohttp_web.Response(
