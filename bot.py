@@ -4625,7 +4625,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .up{color:var(--g)}.dn{color:var(--r)}.nu{color:var(--y)}.bl{color:var(--b)}.or{color:var(--o)}
 
 /* BADGE */
-.bdg{display:inline-flex;align-items:center;padding:3px 8px;border-radius:7px;font-size:10px;font-weight:700;font-family:'Space Mono',monospace}
+.bdg{display:inline-flex;align-items:center;padding:4px 9px;border-radius:7px;font-size:12px;font-weight:700;font-family:'Space Mono',monospace}
 .bg{background:var(--gd);color:var(--g);border:1px solid rgba(5,216,144,.25)}
 .br{background:var(--rd);color:var(--r);border:1px solid rgba(255,45,85,.25)}
 .by{background:var(--yd);color:var(--y);border:1px solid rgba(255,214,10,.2)}
@@ -4640,8 +4640,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .csym{font-size:13px;font-weight:800}
 .cname{font-size:9px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
 .cr-r{text-align:right;flex-shrink:0}
-.cpct{font-size:12px;font-weight:800;font-family:'Space Mono',monospace}
-.cprice{font-size:9px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
+.cpct{font-size:14px;font-weight:800;font-family:'Space Mono',monospace}
+.cprice{font-size:11px;color:var(--muted);margin-top:2px;font-family:'Space Mono',monospace}
 .crank{font-size:9px;color:var(--muted);width:16px;text-align:center;flex-shrink:0;font-weight:700;font-family:'Space Mono',monospace}
 
 /* FORMS */
@@ -5117,6 +5117,7 @@ async function api(path,ms=15000){try{const ctrl=new AbortController();const t=s
 let allCoins=[],coinFilter='all',flash5Up=[],flash5Dn=[];
 let topData={g:[],l:[],v:[]},topMode='g';
 let prevPage='home',curCoinSym='';
+const coin_image_cache_js={};
 let candleTF='1h',candleData=[];
 const PAGES=['home','mkt','top','analiz','kar','alarmlar','takvim','coin'];
 let CUR='home';
@@ -5156,10 +5157,10 @@ function openCoin(symBase){
       const _im=document.createElement('img');
       _im.src=_imgUrl;_im.width=36;_im.height=36;
       _im.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
-      _im.onerror=function(){ico.innerHTML='';ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';};
+      _im.onerror=function(){ico.innerHTML=_svgIco(curCoinSym);};
       ico.appendChild(_im);
     } else {
-      ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';
+      ico.innerHTML=_svgIco(curCoinSym);
     }
   }
   document.getElementById('cdSym').textContent=curCoinSym;
@@ -6258,7 +6259,8 @@ async def _start_miniapp_server(bot):
                     if len(pts) >= 2:
                         ch5 = ((pts[-1][1] - pts[0][1]) / pts[0][1]) * 100
                         cur5 = pts[-1][1]
-                        changes5.append({"s": sym5, "p": cur5, "ch5": round(ch5, 2)})
+                        base5 = sym5.replace("USDT","").lower()
+                changes5.append({"s": sym5, "p": cur5, "ch5": round(ch5, 2), "img": coin_image_cache.get(base5,"")})
                 flash5up_list = sorted([x for x in changes5 if x["ch5"] > 0],
                                        key=lambda x: x["ch5"], reverse=True)[:30]
                 flash5dn_list = sorted([x for x in changes5 if x["ch5"] < 0],
