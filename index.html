@@ -1,50 +1,166 @@
-import os
-from aiohttp import web
-import aiohttp
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KriptoDrop MiniApp</title>
 
-PORT = int(os.getenv("PORT", 8080))
+<style>
+body { background:#0f172a; color:white; font-family:Arial; margin:0; }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+.nav, .tabs {
+  display:flex;
+  justify-content:space-around;
+  background:#111827;
+  padding:10px;
+}
 
-# HTML serve
-async def serve_index(request):
-    with open(os.path.join(BASE_DIR, "index.html"), "r", encoding="utf-8") as f:
-        return web.Response(text=f.read(), content_type="text/html")
+.tab, .nav-btn {
+  cursor:pointer;
+  opacity:0.5;
+}
 
-# PROXY (CORS fix)
-async def handle_proxy(request):
-    url = request.query.get("url")
-    if not url:
-        return web.Response(text="Missing url", status=400)
+.active {
+  opacity:1;
+  color:#22c55e;
+}
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.read()
-                return web.Response(
-                    body=data,
-                    status=resp.status,
-                    headers={
-                        "Access-Control-Allow-Origin": "*",
-                        "Content-Type": resp.headers.get("Content-Type", "application/json")
-                    }
-                )
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
+.coin-row {
+  display:flex;
+  justify-content:space-between;
+  padding:10px;
+  border-bottom:1px solid #1f2937;
+}
 
-async def start():
-    app = web.Application()
-    app.router.add_get("/", serve_index)
-    app.router.add_get("/miniapp", serve_index)
-    app.router.add_get("/api/proxy", handle_proxy)
+.coin-info {
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+</style>
+</head>
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
+<body>
 
-    print(f"Server running on {PORT}")
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('market')">Market</div>
+  <div class="tab" onclick="switchTab('top')">Top</div>
+  <div class="tab" onclick="switchTab('calendar')">Takvim</div>
+</div>
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(start())
+<div id="content"></div>
+
+<div class="nav">
+  <div class="nav-btn active" onclick="switchTab('market')">🏠</div>
+  <div class="nav-btn" onclick="switchTab('top')">🔥</div>
+  <div class="nav-btn" onclick="switchTab('calendar')">📅</div>
+</div>
+
+<script>
+const BINANCE = "https://api.binance.com/api/v3/ticker/24hr";
+const COINGECKO = "https://api.coingecko.com/api/v3";
+
+let currentTab = "market";
+
+function proxy(url){
+  return `/api/proxy?url=${encodeURIComponent(url)}`;
+}
+
+function setActive(tab){
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.remove('active');
+    if(t.innerText.toLowerCase().includes(tab)) t.classList.add('active');
+  });
+
+  document.querySelectorAll('.nav-btn').forEach(b=>{
+    b.classList.remove('active');
+    if(b.getAttribute('onclick').includes(tab)) b.classList.add('active');
+  });
+}
+
+function switchTab(tab){
+  if(currentTab === tab) return;
+  currentTab = tab;
+  setActive(tab);
+
+  if(tab === "market") loadMarket();
+  if(tab === "top") loadTop();
+  if(tab === "calendar") loadCalendar();
+}
+
+async function loadMarket(){
+  document.getElementById("content").innerHTML = "Loading...";
+
+  const data = await fetch(proxy(BINANCE)).then(r=>r.json());
+
+  const list = data
+    .filter(c => c.symbol.endsWith("USDT"))
+    .slice(0,50);
+
+  renderCoins(list);
+}
+
+async function loadTop(){
+  document.getElementById("content").innerHTML = "Loading...";
+
+  const binance = await fetch(proxy(BINANCE)).then(r=>r.json());
+
+  const cg = await fetch(proxy(
+    COINGECKO + "/coins/markets?vs_currency=usd&per_page=100"
+  )).then(r=>r.json());
+
+  const cgMap = {};
+  cg.forEach(c=>{
+    cgMap[c.symbol.toUpperCase()] = {
+      name: c.name,
+      img: c.image
+    };
+  });
+
+  const list = binance
+    .filter(c => c.symbol.endsWith("USDT"))
+    .sort((a,b)=>b.priceChangePercent - a.priceChangePercent)
+    .slice(0,50);
+
+  renderCoins(list, cgMap);
+}
+
+function renderCoins(list, cgMap = {}){
+  const html = list.map((c,i)=>{
+    const base = c.symbol.replace("USDT","");
+    const coin = cgMap[base] || {};
+
+    return `
+    <div class="coin-row">
+      <div class="coin-info">
+        <span>${i+1}</span>
+        <img src="${coin.img || ''}" width="20">
+        <div>
+          <div>${coin.name || base}</div>
+          <div>${c.symbol}</div>
+        </div>
+      </div>
+      <div style="color:${c.priceChangePercent>0?'#22c55e':'#ef4444'}">
+        ${parseFloat(c.priceChangePercent).toFixed(2)}%
+      </div>
+    </div>
+    `;
+  }).join("");
+
+  document.getElementById("content").innerHTML = html;
+}
+
+function loadCalendar(){
+  document.getElementById("content").innerHTML = `
+    <div style="padding:20px">
+      📅 Yakında eklenecek (Coin event API bağlanabilir)
+    </div>
+  `;
+}
+
+// init
+loadMarket();
+</script>
+
+</body>
+</html>
