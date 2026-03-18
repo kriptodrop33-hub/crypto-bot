@@ -4712,7 +4712,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .chart-toolbar{display:flex;gap:5px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.04)}
 .tf-btn{background:transparent;border:none;color:var(--muted);font-size:10px;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .12s;font-family:'Space Mono',monospace}
 .tf-btn.on{background:rgba(10,132,255,.2);color:var(--b2)}
-#candleCanvas{display:block;width:100%;height:220px}
+#candleCanvas{display:block;width:100%}
 
 /* NEWS */
 .news-card{background:var(--card2);border:1px solid rgba(255,255,255,.05);border-radius:var(--radius-sm);margin-bottom:7px;overflow:hidden;cursor:pointer;transition:border-color .15s}
@@ -5098,7 +5098,7 @@ function cIco(sym){
       style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
       onload="_icoOk['${sym}']=1"
       onerror="_icoFail.add('${sym}');document.getElementById('${id}').innerHTML='${_svgIco(sym).replace(/'/g,"\'")}'"
-      loading="lazy">
+      loading="eager">
   </div>`;
 }
 
@@ -5148,13 +5148,12 @@ function openCoin(symBase){
   if(ico){
     ico.style.background=col+'20';ico.style.borderColor=col+'40';
     ico.textContent='';
-    const proxyUrl='/api/icon?sym='+curCoinSym.toLowerCase();
-    const imgEl=document.createElement('img');
-    imgEl.src=proxyUrl;
-    imgEl.width=36;imgEl.height=36;
-    imgEl.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
-    imgEl.onerror=function(){ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';ico.removeChild(imgEl);};
-    ico.appendChild(imgEl);
+    const _im=document.createElement('img');
+    _im.src='/api/icon?sym='+curCoinSym.toLowerCase();
+    _im.width=36;_im.height=36;
+    _im.style.cssText='border-radius:50%;display:block;object-fit:cover;width:36px;height:36px';
+    _im.onerror=function(){ico.removeChild(_im);ico.textContent=curCoinSym.slice(0,2);ico.style.color=col;ico.style.fontSize='13px';};
+    ico.appendChild(_im);
   }
   document.getElementById('cdSym').textContent=curCoinSym;
   document.getElementById('cdName').textContent=sym;
@@ -5246,7 +5245,7 @@ async function loadCandleChart(tf){
   if(!klRes||!klRes.klines||klRes.klines.length<2)return;
   candleData=klRes.klines;
   if(fibRes&&fibRes.levels)curFibData=fibRes;
-  setTimeout(()=>drawCandleFib('candleCanvas', candleData, curFibData, 'cdOHLC'), 30);
+  requestAnimationFrame(()=>drawCandleFib('candleCanvas', candleData, curFibData, 'cdOHLC'));
 }
 // ── EVRENSEL MUM + FİBONACCİ GRAFİK FONKSİYONU ──
 const FCOL_FIB={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','61.8':'#05d890','78.6':'#0a84ff','100':'#bf5af2'};
@@ -5254,8 +5253,13 @@ const FCOL_FIB={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','
 function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const canvas=document.getElementById(canvasId);
   if(!canvas||!klines||klines.length<2)return;
-  const W=(canvas.parentElement?canvas.parentElement.clientWidth:canvas.offsetWidth)||320;
-  const H=parseInt(canvas.getAttribute('height'))||220;
+  // Use parent width so canvas is never 0 on first render
+  const wrap=canvas.parentElement;
+  const W=(wrap?wrap.clientWidth:0)||canvas.offsetWidth||320;
+  const H=220;
+  // Set CSS size so layout doesn't jump
+  canvas.style.width=W+'px';
+  canvas.style.height=H+'px';
   canvas.width=Math.round(W*devicePixelRatio);
   canvas.height=Math.round(H*devicePixelRatio);
   const ctx=canvas.getContext('2d');
@@ -5279,9 +5283,8 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const cW=Math.max(1.5, CW/n);
   const bW=Math.max(1, cW*0.6);
 
-  // Fiyat min/max — fib dahil
+  // Fiyat min/max — sadece mum verisi (fib dışarı taşmasın)
   let allP=klines.flatMap(k=>[k[HI],k[LO]]);
-  if(hasFib) allP.push(fibData.high||0, fibData.low||0);
   const rawMin=Math.min(...allP), rawMax=Math.max(...allP);
   const padP=(rawMax-rawMin)*0.05;
   const pMin=rawMin-padP, pMax=rawMax+padP, pRng=pMax-pMin||1;
@@ -5305,9 +5308,11 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
     ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(PL+CW,gy);ctx.stroke();
   }
 
-  // ── FİBONACCİ ÇİZGİLERİ (mumların altında) ──
+  // ── FİBONACCİ ÇİZGİLERİ (mumların altında, görünür aralıkta) ──
   if(hasFib){
     fibData.levels.forEach(l=>{
+      // Fib fiyatı görünür fiyat aralığının dışındaysa çizme
+      if(l.price<pMin||l.price>pMax) return;
       const ly=yP(l.price);
       if(ly<PT-2||ly>PT+CH+2) return;
       const col=FCOL_FIB[String(l.pct)]||'#5577aa';
@@ -5783,7 +5788,7 @@ async function doFibPage(){
         <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;font-weight:700">${sym} — ${tf.toUpperCase()} FİBONACCİ</span>
         <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace" id="fibOHLC"></span>
       </div>
-      <canvas id="fibCanvas" height="220" style="display:block;width:100%;height:220px"></canvas>
+      <canvas id="fibCanvas" height="220" style="display:block;width:100%"></canvas>
     </div>
     ${fib&&fib.levels?`<div class="card">
       <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:9px;font-family:'Space Mono',monospace">📊 Seviyeler</div>
@@ -5798,7 +5803,7 @@ async function doFibPage(){
     </div>`:''}`;
 
   // Kısa gecikme ile canvas render (DOM'a eklendikten sonra)
-  setTimeout(()=>drawCandleFib('fibCanvas', klines, fib, 'fibOHLC'), 60);
+  requestAnimationFrame(()=>drawCandleFib('fibCanvas', klines, fib, 'fibOHLC'));
 }
 
 // ── INIT ──
