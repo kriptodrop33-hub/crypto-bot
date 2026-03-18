@@ -4646,8 +4646,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 .btn-g{background:linear-gradient(135deg,#05d890,#00a86b);box-shadow:0 4px 15px rgba(5,216,144,.25)}
 
 .frow{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-.fc{background:rgba(19,31,51,.7);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:6px 13px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s}
+.fc{background:rgba(19,31,51,.7);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:6px 13px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;outline:none;-webkit-appearance:none;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center}
 .fc:active{transform:scale(.94)}
+.fc:focus{outline:none}
 .fc.on{background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.4);color:var(--b2)}
 
 /* SH */
@@ -4866,17 +4867,18 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
   <div class="row">
     <input class="inp" id="mQ" placeholder="🔍 BTC, ETH, SOL..." oninput="fltMkt()">
     <select class="sel" id="mSrt" onchange="srtMkt()">
-      <option value="vol">Hacim</option>
+      <option value="mc">🏆 MarketCap</option>
+      <option value="vol">📊 Hacim</option>
       <option value="up">↑ Yükselen</option>
       <option value="dn">↓ Düşen</option>
     </select>
   </div>
-  <div class="frow">
-    <div class="fc on" id="fAll" onclick="setF('all')">🌐 Tümü</div>
-    <div class="fc" id="fUp" onclick="setF('up')">🟢 Yükselen</div>
-    <div class="fc" id="fDn" onclick="setF('dn')">🔴 Düşen</div>
-    <div class="fc" id="fPump" onclick="setF('flash5up')">⚡ 5dk ↑</div>
-    <div class="fc" id="fDump" onclick="setF('flash5dn')">💥 5dk ↓</div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;-webkit-overflow-scrolling:touch">
+    <button class="fc on" id="fAll" onclick="setF('all')">🌐 Tümü</button>
+    <button class="fc" id="fUp" onclick="setF('up')">🟢 Yükselen</button>
+    <button class="fc" id="fDn" onclick="setF('dn')">🔴 Düşen</button>
+    <button class="fc" id="fPump" onclick="setF('flash5up')">⚡ 5dk ↑</button>
+    <button class="fc" id="fDump" onclick="setF('flash5dn')">💥 5dk ↓</button>
   </div>
   <div id="mktList"><div class="ld"><div class="spin"></div>Yükleniyor...</div></div>
 </div>
@@ -5043,7 +5045,48 @@ function fv(v){v=parseFloat(v)||0;if(v>=1e9)return(v/1e9).toFixed(1)+'B$';if(v>=
 function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
-function cIco(sym){const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];return`<div class="cico" style="background:${col}15;color:${col};border-color:${col}35">${sym.slice(0,2)}</div>`;}
+// CoinGecko coin ID mapping (yaygın coinler)
+const COIN_IDS={BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',XRP:'ripple',
+  DOGE:'dogecoin',ADA:'cardano',AVAX:'avalanche-2',DOT:'polkadot',MATIC:'matic-network',
+  LINK:'chainlink',UNI:'uniswap',ATOM:'cosmos',LTC:'litecoin',BCH:'bitcoin-cash',
+  NEAR:'near',APT:'aptos',ARB:'arbitrum',OP:'optimism',FIL:'filecoin',
+  ICP:'internet-computer',VET:'vechain',ALGO:'algorand',ETC:'ethereum-classic',
+  MANA:'decentraland',SAND:'the-sandbox',AXS:'axie-infinity',CHZ:'chiliz',
+  HBAR:'hedera-hashgraph',EGLD:'elrond-erd-2',THETA:'theta-token',
+  FTM:'fantom',ONE:'harmony',IOTA:'iota',XLM:'stellar',TRX:'tron',
+  SHIB:'shiba-inu',PEPE:'pepe',FLOKI:'floki',
+  SUI:'sui',SEI:'sei-network',TIA:'celestia',INJ:'injective-protocol',
+  PYTH:'pyth-network',JTO:'jito-governance-token',RNDR:'render-token',
+  FET:'fetch-ai',AGIX:'singularitynet',WLD:'worldcoin-wld',
+};
+// CoinGecko ikon ID -> sayısal ID mapping (CDN için)
+const COIN_IMG_IDS={
+  BTC:'1',ETH:'279',BNB:'825',SOL:'4128',XRP:'44',DOGE:'5',ADA:'2010',
+  AVAX:'12559',DOT:'6636',MATIC:'4713',LINK:'877',UNI:'12504',ATOM:'3794',
+  LTC:'2',BCH:'1831',NEAR:'10365',ARB:'11841',OP:'25244',FIL:'2638',
+  ICP:'8916',VET:'3077',ALGO:'4030',TRX:'1094',SHIB:'11939',
+  SUI:'26375',INJ:'7226',RNDR:'11636',FET:'3773',WLD:'13502',
+  PEPE:'29850',HBAR:'4642',
+};
+function coinLogoUrl(sym){
+  const numId=COIN_IMG_IDS[sym];
+  if(numId) return `https://assets.coingecko.com/coins/images/${numId}/thumb/thumb.png`;
+  const id=COIN_IDS[sym];
+  if(id) return `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/${sym.toLowerCase()}.png`;
+  return null;
+}
+function cIco(sym){
+  const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];
+  const logoUrl=coinLogoUrl(sym);
+  if(logoUrl){
+    return`<div class="cico" style="background:${col}10;border-color:${col}25;overflow:hidden;padding:0">
+      <img src="${logoUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"
+           onerror="this.parentElement.innerHTML='<span style=\'font-size:11px;font-weight:900;color:${col};font-family:Space Mono,monospace\'>${sym.slice(0,2)}</span>'"
+           loading="lazy">
+    </div>`;
+  }
+  return`<div class="cico" style="background:${col}15;color:${col};border-color:${col}35;font-family:Space Mono,monospace">${sym.slice(0,2)}</div>`;
+}
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
 
 // ── CLOCK ──
@@ -5462,16 +5505,16 @@ async function loadMkt(){
   const d=await api(`/api/dashboard${UID?'?uid='+UID:''}`);
   if(d&&d.coins){allCoins=d.coins;if(d.top_data)topData=d.top_data;if(d.flash5up)flash5Up=d.flash5up;if(d.flash5dn)flash5Dn=d.flash5dn;applyAndRender();}
 }
-function applyAndRender(){
+let mktPage=0; const MKT_PAGE_SIZE=50;
+function applyAndRender(resetPage){
+  if(resetPage!==false)mktPage=0;
   if(coinFilter==='flash5up'||coinFilter==='flash5dn'){
     const src=coinFilter==='flash5up'?flash5Up:flash5Dn;
     const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
     let c=q?src.filter(x=>x.s.includes(q)):src;
     if(!c.length){document.getElementById('mktList').innerHTML='<div class="mt"><div class="mt-i">⏳</div><div class="mt-t">Veri Yok</div><div class="mt-s">WebSocket verisi doluyor</div></div>';return;}
-    document.getElementById('mktList').innerHTML=c.slice(0,50).map(x=>
-      `<div class="cr" onclick="openCoin('${x.s.replace('USDT','')}')">` +
-      `${cIco(x.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${x.s.replace('USDT','')}</div><div class="cname" style="color:${coinFilter==='flash5up'?'var(--g)':'var(--r)'}">5dk değişim</div></div><div class="cr-r"><div class="cpct ${coinFilter==='flash5up'?'up':'dn'}">${pb(x.ch5)}</div><div class="cprice">$${fp(x.p)}</div></div></div>`
-    ).join('');return;
+    renderCoinList(c, 'mktList', true);
+    return;
   }
   let c=[...allCoins];
   if(coinFilter==='up')c=c.filter(x=>x.ch>0);
@@ -5479,14 +5522,48 @@ function applyAndRender(){
   const q=(document.getElementById('mQ').value||'').toUpperCase().trim();
   if(q)c=c.filter(x=>x.s.includes(q));
   const sv=document.getElementById('mSrt')?.value||'vol';
-  if(sv==='up'||coinFilter==='up')c.sort((a,b)=>b.ch-a.ch);
-  else if(sv==='dn'||coinFilter==='dn')c.sort((a,b)=>a.ch-b.ch);
-  else c.sort((a,b)=>b.v-a.v);
-  document.getElementById('mktList').innerHTML=
-    (!c.length?'<div class="mt"><div class="mt-i">🔍</div><div class="mt-t">Sonuç yok</div></div>':'')+
-    c.slice(0,120).map(x=>`<div class="cr" onclick="openCoin('${x.s.replace('USDT','')}')">` +
-      `${cIco(x.s.replace('USDT',''))}<div class="cinfo"><div class="csym">${x.s.replace('USDT','')}</div><div class="cname">${fv(x.v)}</div></div><div class="cr-r"><div class="cpct ${pc(x.ch)}">${pb(x.ch)}</div><div class="cprice">$${fp(x.p)}</div></div></div>`
-    ).join('');
+  // Sıralama: varsayılan marketcap (rank), yoksa hacim
+  if(sv==='up'||coinFilter==='up') c.sort((a,b)=>b.ch-a.ch);
+  else if(sv==='dn'||coinFilter==='dn') c.sort((a,b)=>a.ch-b.ch);
+  else if(sv==='mc') c.sort((a,b)=>(a.rank||9999)-(b.rank||9999));
+  else c.sort((a,b)=>b.v-a.v); // hacim (default)
+  renderCoinList(c, 'mktList', false);
+}
+
+function renderCoinList(coins, listId, isFlash5){
+  const el=document.getElementById(listId);
+  if(!coins.length){el.innerHTML='<div class="mt"><div class="mt-i">🔍</div><div class="mt-t">Sonuç yok</div></div>';return;}
+  const start=mktPage*MKT_PAGE_SIZE;
+  const slice=coins.slice(start, start+MKT_PAGE_SIZE);
+  const hasMore=coins.length>start+MKT_PAGE_SIZE;
+  const hasPrev=mktPage>0;
+  let html=slice.map((x,i)=>{
+    const base=x.s.replace('USDT','');
+    const rank=x.rank&&x.rank<9000?`<span style="font-size:8px;color:var(--muted);font-family:'Space Mono',monospace;width:22px;text-align:right;flex-shrink:0">#${x.rank}</span>`:'';
+    const chVal=isFlash5?x.ch5:x.ch;
+    const chCls=isFlash5?(x.ch5>0?'up':'dn'):pc(chVal);
+    return`<div class="cr" onclick="openCoin('${base}')">
+      ${!isFlash5&&x.rank&&x.rank<9000?`<span style="font-size:8px;color:var(--muted2);font-family:'Space Mono',monospace;width:20px;text-align:center;flex-shrink:0">${start+i+1}</span>`:''}
+      ${cIco(base)}
+      <div class="cinfo">
+        <div class="csym">${base}</div>
+        <div class="cname">${isFlash5?`<span style="color:${chVal>0?'var(--g)':'var(--r)'}">5dk</span>`:fv(x.v)}</div>
+      </div>
+      <div class="cr-r">
+        <div class="cpct ${chCls}">${pb(chVal)}</div>
+        <div class="cprice">$${fp(x.p)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  // Sayfalama
+  if(hasPrev||hasMore){
+    html+=`<div style="display:flex;gap:8px;padding:10px 0;justify-content:center">
+      ${hasPrev?`<button class="btn" style="padding:8px 16px;font-size:12px" onclick="mktPage--;applyAndRender(false)">← Önceki</button>`:''}
+      <span style="font-size:11px;color:var(--muted);align-self:center">${start+1}–${Math.min(start+MKT_PAGE_SIZE,coins.length)} / ${coins.length}</span>
+      ${hasMore?`<button class="btn" style="padding:8px 16px;font-size:12px" onclick="mktPage++;applyAndRender(false)">Sonraki →</button>`:''}
+    </div>`;
+  }
+  el.innerHTML=html;
 }
 function fltMkt(){applyAndRender();}
 function srtMkt(){applyAndRender();}
@@ -5976,12 +6053,15 @@ async def _start_miniapp_server(bot):
             filtered = [x for x in usdt if float(x.get("quoteVolume",0))>1e6]
             top5g = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:5]
 
-            # Tüm coin listesi (piyasa sayfası)
-            coins = [{"s":x["symbol"],"p":float(x.get("lastPrice",0)),
-                      "ch":float(x.get("priceChangePercent",0)),
-                      "v":float(x.get("quoteVolume",0))}
-                     for x in usdt if float(x.get("quoteVolume",0))>100000]
-            coins.sort(key=lambda x: x["v"], reverse=True)
+            # Tüm coin listesi — marketcap sıralamasına göre, rank dahil
+            coins_raw = [{"s":x["symbol"],"p":float(x.get("lastPrice",0)),
+                          "ch":float(x.get("priceChangePercent",0)),
+                          "v":float(x.get("quoteVolume",0)),
+                          "rank": marketcap_rank_cache.get(x["symbol"], 9999)}
+                         for x in usdt if float(x.get("quoteVolume",0))>100000]
+            # Marketcap'e göre sırala, rank yoksa hacme göre
+            coins_raw.sort(key=lambda x: (x["rank"] if x["rank"]<9000 else 9999, -x["v"]))
+            coins = coins_raw[:120]  # İlk 120, JS tarafında 50 gösterilecek
 
             # Top data
             top_g = sorted(filtered, key=lambda x: float(x.get("priceChangePercent",0)), reverse=True)[:20]
@@ -6009,23 +6089,14 @@ async def _start_miniapp_server(bot):
                 except Exception as e:
                     log.warning(f"dashboard alarm hata: {e}")
 
-            # Haberler
-            news = []
+            # Haberler — _fetch_rss + Groq ceviri
             try:
-                import xml.etree.ElementTree as ET
-                async with aiohttp.ClientSession() as s:
-                    async with s.get("https://cointelegraph.com/rss",
-                                     headers={"User-Agent":"Mozilla/5.0"},
-                                     timeout=aiohttp.ClientTimeout(total=6)) as r:
-                        if r.status == 200:
-                            xml = await r.text()
-                            root = ET.fromstring(xml)
-                            ch = root.find("channel") or root
-                            for item in list(ch.findall("item"))[:5]:
-                                t = item.findtext("title","")
-                                news.append({"title":t,"source":"CoinTelegraph"})
+                raw_news = await _fetch_rss(
+                    [("https://cointelegraph.com/rss","CoinTelegraph")], max_per=5
+                )
+                news = await _translate_news_items(raw_news)
             except Exception:
-                pass
+                news = []
 
             # 5dk flash verileri — price_memory WebSocket verisinden
             flash5up_list = []
@@ -6051,7 +6122,7 @@ async def _start_miniapp_server(bot):
                 "falling": sum(1 for c in chs if c<0),
                 "top5": [mkcoin(x) for x in top5g],
                 "top_data": {"g":[mkcoin(x) for x in top_g],"l":[mkcoin(x) for x in top_l],"v":[mkcoin(x) for x in top_v]},
-                "coins": coins[:300],
+                "coins": coins,
                 "prices": prices,
                 "alarms": alarms,
                 "news": news,
@@ -6240,108 +6311,115 @@ async def _start_miniapp_server(bot):
                 return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
                     content_type="application/json", headers=CORS_HEADERS)
 
-        async def handle_coin_news(request):
-            sym = request.rel_url.query.get("symbol","BTC").upper().replace("USDT","")
-            result = {"news":[]}
-            try:
-                import xml.etree.ElementTree as ET
-                feeds = [
-                    f"https://cointelegraph.com/rss/tag/{sym.lower()}",
-                    "https://cointelegraph.com/rss",
-                ]
-                for feed_url in feeds:
-                    if result["news"]:
-                        break
-                    try:
-                        async with aiohttp.ClientSession() as s:
-                            async with s.get(feed_url,
-                                             headers={"User-Agent":"Mozilla/5.0"},
-                                             timeout=aiohttp.ClientTimeout(total=6)) as r:
-                                if r.status != 200:
-                                    continue
-                                xml = await r.text()
-                        root = ET.fromstring(xml)
-                        ch = root.find("channel") or root
-                        for item in list(ch.findall("item"))[:8]:
-                            title = item.findtext("title","").strip()
-                            desc = item.findtext("description","").strip()
-                            link = item.findtext("link","").strip()
-                            pubdate = item.findtext("pubDate","").strip()
-                            if not title:
-                                continue
-                            # Başlık ve özet Türkçe çeviri basit mapping
-                            import html as htmllib
-                            clean_desc = htmllib.unescape(desc).replace('<![CDATA[','').replace(']]>','')
-                            import re
-                            clean_desc = re.sub(r'<[^>]+>','',clean_desc)[:200]
-                            result["news"].append({
-                                "title": title,
-                                "title_tr": title,  # Çeviri endpoint yoksa orijinal
-                                "summary": clean_desc,
-                                "source": "CoinTelegraph",
-                                "url": link,
-                                "published_at": pubdate[:16] if pubdate else "",
-                            })
-                    except Exception:
-                        pass
-            except Exception as e:
-                result["error"] = str(e)
-            return aiohttp_web.Response(text=_json.dumps(result),
-                content_type="application/json", headers=CORS_HEADERS)
+        import xml.etree.ElementTree as _ET_news
+        import re as _re_news
+        import html as _html_news
 
-        async def handle_takvim_news(request):
-            import xml.etree.ElementTree as ET
-            import re, html as htmllib
-            result = {"events":[], "news":[]}
-            # Ekonomik takvim — sabit önemli olaylar + gerçek zamanlı haberler
-            result["events"] = [
-                {"name":"FED Faiz Kararı","date":"2025-05-07","country":"ABD","importance":"high","forecast":"Sabit bekleniyor"},
-                {"name":"ABD TÜFE (Enflasyon)","date":"2025-04-10","country":"ABD","importance":"high","forecast":""},
-                {"name":"ABD Tarım Dışı İstihdam","date":"2025-05-02","country":"ABD","importance":"high","forecast":""},
-                {"name":"ECB Faiz Kararı","date":"2025-04-17","country":"Avrupa","importance":"high","forecast":""},
-                {"name":"ABD GSYH (Büyüme)","date":"2025-04-30","country":"ABD","importance":"medium","forecast":""},
-                {"name":"Bitcoin Halving Sonrası Etki","date":"2025-04-20","country":"Kripto","importance":"high","forecast":""},
-                {"name":"ABD Hazine Borç Tavanı","date":"2025-06-01","country":"ABD","importance":"high","forecast":""},
-                {"name":"Kripto Düzenleme Haberleri","date":"Sürekli","country":"Global","importance":"medium","forecast":""},
-            ]
-            # Haberler — birden fazla kaynak dene
-            feeds = [
-                ("https://cointelegraph.com/rss","CoinTelegraph"),
-                ("https://coindesk.com/arc/outboundfeeds/rss/","CoinDesk"),
-            ]
-            for feed_url, src_name in feeds:
-                if len(result["news"]) >= 8:
+        def _clean_html_text(text):
+            t = _html_news.unescape(text or "").replace("<![CDATA[","").replace("]]>","")
+            return _re_news.sub(r"<[^>]+>", "", t).strip()
+
+        async def _translate_news_items(items):
+            if not GROQ_API_KEY or not items:
+                return items
+            try:
+                titles = "\n".join(f"{i+1}. {n['title']}" for i,n in enumerate(items))
+                prompt = (
+                    "Asagidaki Ingilizce kripto haber basliklarini Turkceye cevir. "
+                    "Her satir icin SADECE ceviriyi yaz, numara veya aciklama ekleme. "
+                    "Ayni sirayi koru, her baslik ayri satirda olsun:\n\n" + titles
+                )
+                async with aiohttp.ClientSession() as s:
+                    async with s.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                        json={
+                            "model": "llama3-8b-8192",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_tokens": 600, "temperature": 0.2
+                        },
+                        timeout=aiohttp.ClientTimeout(total=12)
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            translated = data["choices"][0]["message"]["content"].strip().split("\n")
+                            for i, item in enumerate(items):
+                                if i < len(translated) and translated[i].strip():
+                                    item["title_tr"] = translated[i].strip()
+            except Exception as e:
+                log.warning(f"Haber cevirisi basarisiz: {e}")
+            return items
+
+        async def _fetch_rss(feeds_list, max_per=6):
+            items = []
+            for feed_url, src_name in feeds_list:
+                if len(items) >= 10:
                     break
                 try:
                     async with aiohttp.ClientSession() as s:
-                        async with s.get(feed_url,
-                                         headers={"User-Agent":"Mozilla/5.0"},
-                                         timeout=aiohttp.ClientTimeout(total=7)) as r:
+                        async with s.get(
+                            feed_url,
+                            headers={"User-Agent": "Mozilla/5.0"},
+                            timeout=aiohttp.ClientTimeout(total=7)
+                        ) as r:
                             if r.status != 200:
                                 continue
-                            xml = await r.text()
-                    root = ET.fromstring(xml)
+                            xml_text = await r.text()
+                    root = _ET_news.fromstring(xml_text)
                     ch = root.find("channel") or root
-                    for item in list(ch.findall("item"))[:6]:
+                    for item in list(ch.findall("item"))[:max_per]:
                         title = item.findtext("title","").strip()
-                        desc = item.findtext("description","").strip()
-                        link = item.findtext("link","").strip()
-                        pubdate = item.findtext("pubDate","").strip()
                         if not title:
                             continue
-                        clean_desc = htmllib.unescape(desc).replace('<![CDATA[','').replace(']]>','')
-                        clean_desc = re.sub(r'<[^>]+>','',clean_desc)[:250]
-                        result["news"].append({
+                        desc = _clean_html_text(item.findtext("description",""))[:280]
+                        link = item.findtext("link","").strip()
+                        pubdate = item.findtext("pubDate","").strip()
+                        items.append({
                             "title": title,
                             "title_tr": title,
-                            "summary": clean_desc,
+                            "summary": desc,
                             "source": src_name,
                             "url": link,
                             "published_at": pubdate[:16] if pubdate else "",
                         })
                 except Exception:
                     pass
-            return aiohttp_web.Response(text=_json.dumps(result),
+            return items
+
+        async def handle_coin_news(request):
+            sym = request.rel_url.query.get("symbol","BTC").upper().replace("USDT","")
+            feeds = [
+                (f"https://cointelegraph.com/rss/tag/{sym.lower()}", "CoinTelegraph"),
+                ("https://cointelegraph.com/rss", "CoinTelegraph"),
+            ]
+            items = await _fetch_rss(feeds, max_per=8)
+            items = await _translate_news_items(items[:6])
+            return aiohttp_web.Response(
+                text=_json.dumps({"news": items}),
+                content_type="application/json", headers=CORS_HEADERS)
+
+        async def handle_takvim_news(request):
+            result = {
+                "events": [
+                    {"name":"FED Faiz Karari","date":"2025-05-07","country":"ABD","importance":"high","forecast":"Sabit bekleniyor"},
+                    {"name":"ABD TUFE (Enflasyon)","date":"2025-04-10","country":"ABD","importance":"high","forecast":""},
+                    {"name":"ABD Tarim Disi Istihdam","date":"2025-05-02","country":"ABD","importance":"high","forecast":""},
+                    {"name":"ECB Faiz Karari","date":"2025-04-17","country":"Avrupa","importance":"high","forecast":""},
+                    {"name":"ABD GSYH (Buyume)","date":"2025-04-30","country":"ABD","importance":"medium","forecast":""},
+                    {"name":"ABD Hazine Borc Tavani","date":"2025-06-01","country":"ABD","importance":"high","forecast":""},
+                    {"name":"Kripto Duzenleme Haberleri","date":"Surekli","country":"Global","importance":"medium","forecast":""},
+                ],
+                "news": []
+            }
+            feeds = [
+                ("https://cointelegraph.com/rss", "CoinTelegraph"),
+                ("https://coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"),
+            ]
+            items = await _fetch_rss(feeds, max_per=5)
+            items = await _translate_news_items(items[:8])
+            result["news"] = items
+            return aiohttp_web.Response(
+                text=_json.dumps(result),
                 content_type="application/json", headers=CORS_HEADERS)
 
         # handle_price'a change eklendi
