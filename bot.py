@@ -1197,8 +1197,45 @@ async def fetch_crypto_calendar() -> list:
     return unique[:20]
 
 async def takvim_command(update: Update, context):
-    await register_user(update)
     chat = update.effective_chat
+    is_group = chat and chat.type in ("group", "supergroup")
+
+    # Grupta üyeler için DM yönlendirme
+    if is_group:
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id and not await is_group_admin(context.bot, chat.id, user_id):
+            if update.message:
+                try: await context.bot.delete_message(chat.id, update.message.message_id)
+                except Exception: pass
+            _murl = get_miniapp_url()
+            dm_keyboard_rows = []
+            if _murl:
+                dm_keyboard_rows.append([InlineKeyboardButton("🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl))])
+            dm_keyboard_rows.append([InlineKeyboardButton("📅 Ekonomik Takvim (DM)", callback_data="takvim_refresh")])
+            dm_keyboard_rows.append([InlineKeyboardButton("🤖 Bota DM'den Başla", url=f"https://t.me/{BOT_USERNAME}?start=takvim")])
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "📅 *Ekonomik Takvim*\n━━━━━━━━━━━━━━━━━━\n"
+                        "Bu özelliği DM üzerinden kullanabilirsiniz.\n\n"
+                        "Aşağıdaki butona tıklayarak takvimi görebilir "
+                        "veya Dashboard Mini App'i açabilirsiniz 👇"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(dm_keyboard_rows)
+                )
+            except Exception: pass
+            try:
+                tip = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"📅 Ekonomik Takvim için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+                )
+                asyncio.create_task(auto_delete(context.bot, chat.id, tip.message_id, 10))
+            except Exception: pass
+            return
+
+    await register_user(update)
     loading = await send_temp(context.bot, chat.id, "📅 Ekonomik takvim yükleniyor...", parse_mode="Markdown")
     events  = await fetch_crypto_calendar()
     try: await context.bot.delete_message(chat.id, loading.message_id)
@@ -1834,15 +1871,23 @@ async def check_group_access(update: Update, context, feature_name: str = None) 
         except Exception:
             pass
 
-    # Fiyat Hedefi ile aynı pattern: DM'e mesaj + gruba kısa uyarı
+    # DM mesajı — Mini App + /start butonu ile
+    _murl_cga = get_miniapp_url()
+    dm_rows = []
+    if _murl_cga:
+        dm_rows.append([InlineKeyboardButton("🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl_cga))])
+    dm_rows.append([InlineKeyboardButton(f"💬 {fname} → DM'de Kullan", url=f"https://t.me/{BOT_USERNAME}?start=menu")])
     try:
         await context.bot.send_message(
             chat_id=user_id,
             text=(
-                f"🔒 *{fname}* özelliğini kullanmak için buraya tıklayın 👇\n"
-                f"Botu DM üzerinden kullanabilirsiniz."
+                f"🔒 *{fname}*\n━━━━━━━━━━━━━━━━━━\n"
+                f"Bu özellik DM üzerinden kullanılabilir.\n\n"
+                f"Aşağıdaki butonla botu DM'den açabilir veya "
+                f"Dashboard Mini App'i kullanabilirsiniz 👇"
             ),
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(dm_rows)
         )
     except Exception:
         pass
@@ -3467,8 +3512,9 @@ async def start(update: Update, context):
     # Mini App butonu — URL runtime'da alınır (server başladıktan sonra da çalışır)
     _murl = get_miniapp_url()
     if _murl:
-        dm_buttons.insert(-1, [InlineKeyboardButton(
-            "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl)
+        # Mini App butonunu en üste ekle (DM)
+        dm_buttons.insert(0, [InlineKeyboardButton(
+            "🖥 Dashboard Mini App  ✨", web_app=WebAppInfo(url=_murl)
         )])
 
     # Admin / Bot sahibi DM butonları
@@ -3508,8 +3554,8 @@ async def start(update: Update, context):
         # Mini App butonu: grupta web_app desteklenmez, callback ile DM'e yönlendir
         _murl_group = get_miniapp_url()
         if _murl_group:
-            group_full_buttons.insert(len(group_full_buttons) - 1, [InlineKeyboardButton(
-                "🖥 Dashboard Mini App", callback_data="miniapp_dm"
+            group_full_buttons.insert(0, [InlineKeyboardButton(
+                "🖥 Dashboard Mini App → DM'den aç", callback_data="miniapp_dm"
             )])
 
         keyboard    = InlineKeyboardMarkup(group_full_buttons)
@@ -3546,6 +3592,7 @@ async def start(update: Update, context):
         welcome_text = (
             "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
             "7/24 piyasayı izliyorum.\n\n"
+            "🖥 *Dashboard Mini App* — canlı fiyatlar, grafik, alarm ve portföy\n\n"
             "💡 *Analiz:* `BTCUSDT` yaz\n"
             "🔔 *Alarm:* `/alarm_ekle BTCUSDT 3.5`\n"
             "🎯 *Hedef:* `/hedef BTCUSDT 70000`\n"
@@ -4174,24 +4221,32 @@ async def button_handler(update: Update, context):
             try:
                 await context.bot.send_message(
                     chat_id=q.from_user.id,
-                    text="🖥 *Kripto Dashboard* — Mini App'i açmak için aşağıdaki butona tıklayın:",
+                    text=(
+                        "🖥 *KriptoDrop Dashboard*\n━━━━━━━━━━━━━━━━━━\n"
+                        "Canlı fiyatlar, mum grafik, alarm, portföy ve daha fazlası.\n\n"
+                        "Aşağıdan Mini App'i açabilir veya tüm özellikleri kullanabilirsiniz 👇"
+                    ),
                     parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🚀 Dashboard'u Aç", web_app=WebAppInfo(url=murl))
-                    ]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🚀 Dashboard'u Aç  ✨", web_app=WebAppInfo(url=murl))],
+                        [InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+                         InlineKeyboardButton("⭐ Favorilerim", callback_data="fav_liste")],
+                        [InlineKeyboardButton("📅 Ekonomik Takvim", callback_data="takvim_refresh"),
+                         InlineKeyboardButton("📈 24s Liderler", callback_data="top24")],
+                    ])
                 )
                 # Gruba kısa bilgi
                 tip = await context.bot.send_message(
                     chat_id=q.message.chat.id,
-                    text=f"📩 @{q.from_user.username or q.from_user.first_name} DM'inize Mini App bağlantısı gönderildi!",
+                    text=f"📩 @{q.from_user.username or q.from_user.first_name} — DM'inize Mini App bağlantısı gönderildi!",
                 )
                 asyncio.create_task(auto_delete(context.bot, q.message.chat.id, tip.message_id, 8))
             except Exception:
-                # Bot'u DM'de başlatmamışsa URL butonu gönder
+                # Bot'u DM'de başlatmamışsa /start linki ver
                 try:
                     tip = await context.bot.send_message(
                         chat_id=q.message.chat.id,
-                        text=f"🖥 Dashboard: {murl}",
+                        text=f"🖥 Dashboard için önce botu DM'den başlatın: @{BOT_USERNAME}",
                     )
                     asyncio.create_task(auto_delete(context.bot, q.message.chat.id, tip.message_id, 15))
                 except Exception:
