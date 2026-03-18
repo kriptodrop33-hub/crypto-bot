@@ -4919,8 +4919,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <!-- KAR/ZARAR -->
 <div id="p-kar" class="page">
   <div class="kz-tab">
-    <button class="kz-t on" id="kzT1" onclick="kzSwitch('hesap')">🧮 Hesap</button>
-    <button class="kz-t"    id="kzT2" onclick="kzSwitch('pozisyon')">📦 Pozisyonlarım</button>
+    <button class="kz-t on" id="kzT1">🧮 Hesap</button>
+    <button class="kz-t"    id="kzT2">📦 Pozisyonlarım</button>
   </div>
   <div id="kzHesap">
     <div class="card co">
@@ -4950,8 +4950,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 <!-- ALARMLAR -->
 <div id="p-alarmlar" class="page">
   <div class="kz-tab">
-    <button class="kz-t on" id="alTL" onclick="alarmSwitch('liste')">🔔 Alarmlarım</button>
-    <button class="kz-t"    id="alTE" onclick="alarmSwitch('ekle')">➕ Alarm Ekle</button>
+    <button class="kz-t on" id="alTL">🔔 Alarmlarım</button>
+    <button class="kz-t"    id="alTE">➕ Alarm Ekle</button>
   </div>
   <div id="alListe"><div class="ld"><div class="spin"></div></div></div>
   <div id="alEkle" style="display:none">
@@ -5045,44 +5045,51 @@ function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
 
-// Coin renkleri (fallback SVG icin)
 const COIN_COL={
   BTC:'#f7931a',ETH:'#627eea',BNB:'#f3ba2f',SOL:'#9945ff',XRP:'#0085c0',
   DOGE:'#c2a633',ADA:'#0033ad',AVAX:'#e84142',DOT:'#e6007a',LINK:'#2a5ada',
-  UNI:'#ff007a',ATOM:'#4a4d6b',LTC:'#bfbbbb',BCH:'#8dc351',TRX:'#ef0027',
+  UNI:'#ff007a',ATOM:'#4a4d6b',LTC:'#a8a8a8',BCH:'#8dc351',TRX:'#ef0027',
   NEAR:'#00c08b',MATIC:'#8247e5',ARB:'#2d374b',OP:'#ff0420',SUI:'#4ca3ff',
   INJ:'#00b4d8',SHIB:'#ffa409',HBAR:'#00b388',FIL:'#0090ff',ICP:'#f15a24',
-  VET:'#15bdff',ALGO:'#333',PEPE:'#00a86b',WLD:'#191c1e',FET:'#1d2c4a',
+  VET:'#15bdff',ALGO:'#000',PEPE:'#00a86b',WLD:'#191c1e',FET:'#1d2c4a',
   RNDR:'#e6394a',AAVE:'#b6509e',MKR:'#1aab9b',XLM:'#14b6e7',
   ETC:'#328332',ZEC:'#ecb244',XMR:'#ff6600',DASH:'#008ce7',
   USDC:'#2775ca',USDT:'#26a17b',CHZ:'#cd0124',GRT:'#6747ed',
+  ANKR:'#0066ff',CHESS:'#ff6b35',ROBO:'#00d4aa',DEGO:'#f4c542',
+  VANRY:'#8b5cf6',POLYX:'#eb3f3f',STO:'#2cd4d4',
 };
 
-function _colFor(sym){
-  return COIN_COL[sym]||PAL[sym.charCodeAt(0)%PAL.length];
+function _colFor(sym){return COIN_COL[sym]||PAL[sym.charCodeAt(0)%PAL.length];}
+
+// Inline SVG - hic bağımlılık yok, her zaman çalışır
+function _svgIco(sym){
+  const col=_colFor(sym);
+  const r=parseInt(col.slice(1,3)||'40',16),g=parseInt(col.slice(3,5)||'90',16),b=parseInt(col.slice(5,7)||'ff',16);
+  const lum=(r*299+g*587+b*114)/1000;
+  const txt=lum>140?'#000':'#fff';
+  const lbl=sym.slice(0,3);
+  const fs=lbl.length<=2?'13':'9.5';
+  const y=lbl.length<=2?'22':'21.5';
+  const darker=`#${Math.max(0,r-30).toString(16).padStart(2,'0')}${Math.max(0,g-30).toString(16).padStart(2,'0')}${Math.max(0,b-30).toString(16).padStart(2,'0')}`;
+  return `<svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style="display:block;border-radius:50%;flex-shrink:0"><defs><radialGradient id="rg_${sym}" cx="38%" cy="30%" r="70%"><stop offset="0%" stop-color="${col}"/><stop offset="100%" stop-color="${darker}"/></radialGradient></defs><circle cx="17" cy="17" r="17" fill="url(#rg_${sym})"/><circle cx="13" cy="10" r="8" fill="#fff" opacity=".1"/><text x="17" y="${y}" text-anchor="middle" fill="${txt}" font-size="${fs}" font-weight="800" font-family="'Space Mono',monospace" letter-spacing="-0.5">${lbl}</text></svg>`;
 }
 
-function _svgFallback(sym){
-  const col=_colFor(sym);
-  const r=parseInt(col.slice(1,3)||'3a',16);
-  const g=parseInt(col.slice(3,5)||'9f',16);
-  const b=parseInt(col.slice(5,7)||'ff',16);
-  const lum=(r*299+g*587+b*114)/1000;
-  const txt=lum>140?'#111':'#fff';
-  const lbl=sym.slice(0,sym.length<=3?sym.length:3);
-  const fs=lbl.length<=2?'12':'9.5';
-  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'%3E%3Cdefs%3E%3CradialGradient id='g' cx='38%25' cy='32%25' r='68%25'%3E%3Cstop offset='0%25' stop-color='${encodeURIComponent(col)}' stop-opacity='1'/%3E%3Cstop offset='100%25' stop-color='${encodeURIComponent(col)}' stop-opacity='.7'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='17' cy='17' r='17' fill='url(%23g)'/%3E%3Ccircle cx='12' cy='11' r='9' fill='white' opacity='.07'/%3E%3Ctext x='17' y='${lbl.length<=2?22:21}' text-anchor='middle' fill='${txt}' font-size='${fs}' font-weight='700' font-family='monospace'%3E${lbl}%3C/text%3E%3C/svg%3E`;
-}
+// Ikon cache - başarılı yüklenenler
+const _icoOk={};
+const _icoFail=new Set();
 
 function cIco(sym){
   const col=_colFor(sym);
-  // Binance SVG ikon CDN - tum Binance coinlerini kapsar
-  const binanceUrl=`https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym.toLowerCase()}.svg`;
-  const fallbackUrl=_svgFallback(sym);
-  return `<div class="cico" style="padding:2px;border-color:${col}25;background:${col}0d;overflow:hidden">
-    <img src="${binanceUrl}" width="30" height="30"
-      style="border-radius:50%;display:block;object-fit:contain"
-      onerror="this.src='${fallbackUrl}';this.onerror=null"
+  // Başarısız biliniyorsa direkt SVG
+  if(_icoFail.has(sym)) return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden">${_svgIco(sym)}</div>`;
+  // Sunucu proxy - Railway kendi domain'inden serve eder, CORS yok
+  const proxyUrl=`/api/icon?sym=${sym.toLowerCase()}`;
+  const id=`ico_${sym}_${Math.random().toString(36).slice(2,6)}`;
+  return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden" id="${id}">
+    <img src="${proxyUrl}" width="34" height="34"
+      style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
+      onload="_icoOk['${sym}']=1"
+      onerror="_icoFail.add('${sym}');document.getElementById('${id}').innerHTML='${_svgIco(sym).replace(/'/g,"\'")}'"
       loading="lazy">
   </div>`;
 }
@@ -5777,14 +5784,45 @@ async function doFibPage(){
 }
 
 // ── INIT ──
-// Sidebar butonları - onclick yerine addEventListener (Telegram WebView tap fix)
+// Sidebar - touchend kullan (Telegram WebView click offset sorununu cözer)
 document.querySelectorAll('#sidenav .nb').forEach(btn=>{
-  btn.addEventListener('click', function(e){
+  let _tStart=0;
+  btn.addEventListener('touchstart', function(e){
+    _tStart=Date.now();
+  }, {passive:true});
+  btn.addEventListener('touchend', function(e){
     e.preventDefault();
     e.stopPropagation();
-    const page=this.dataset.page;
-    if(page) go(page);
+    if(Date.now()-_tStart>500) return; // Uzun basma degil
+    const page=this.closest('[data-page]')||this;
+    const p=page.dataset.page||this.dataset.page;
+    if(p) go(p);
   }, {passive:false});
+  // Desktop fallback
+  btn.addEventListener('click', function(e){
+    const p=this.dataset.page;
+    if(p) go(p);
+  });
+});
+
+// kz-tab ve alarm-tab butonlari da ayni sekilde
+function bindTabBtns(selector, handler){
+  document.querySelectorAll(selector).forEach(btn=>{
+    let _ts=0;
+    btn.addEventListener('touchstart',()=>_ts=Date.now(),{passive:true});
+    btn.addEventListener('touchend',function(e){
+      e.preventDefault();e.stopPropagation();
+      if(Date.now()-_ts>500)return;
+      handler(this);
+    },{passive:false});
+    btn.addEventListener('click',function(){handler(this);});
+  });
+}
+bindTabBtns('#kzT1,#kzT2', btn=>{
+  kzSwitch(btn.id==='kzT1'?'hesap':'pozisyon');
+});
+bindTabBtns('#alTL,#alTE', btn=>{
+  alarmSwitch(btn.id==='alTL'?'liste':'ekle');
 });
 
 loadHome();
@@ -6452,27 +6490,39 @@ async def _start_miniapp_server(bot):
                 return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
                     content_type="application/json", headers=CORS_HEADERS)
 
+        _icon_cache = {}
+
         async def handle_icon(request):
             sym = request.rel_url.query.get("sym","btc").lower()
             import re as _re2
-            if not _re2.match(r'^[a-z0-9]{1,10}$', sym):
+            if not _re2.match(r'^[a-z0-9]{1,12}$', sym):
                 return aiohttp_web.Response(status=404)
-            cdn_urls = [
-                f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png",
+
+            # Cache'den don
+            if sym in _icon_cache:
+                data, ct = _icon_cache[sym]
+                return aiohttp_web.Response(body=data, content_type=ct,
+                    headers={"Cache-Control":"public,max-age=604800","Access-Control-Allow-Origin":"*"})
+
+            # Kaynak listesi - sirayla dene
+            sources = [
+                (f"https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/{sym}.svg", "image/svg+xml"),
+                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/{sym}.png", "image/png"),
+                (f"https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/svg/color/{sym}.svg", "image/svg+xml"),
+                (f"https://assets.coingecko.com/coins/images/1/thumb/{sym}.png", "image/png"),
             ]
-            for cdn_url in cdn_urls:
+            for url, ct in sources:
                 try:
                     async with aiohttp.ClientSession() as s:
-                        async with s.get(cdn_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                        async with s.get(url,
+                            headers={"User-Agent":"Mozilla/5.0"},
+                            timeout=aiohttp.ClientTimeout(total=4)) as r:
                             if r.status == 200:
                                 data = await r.read()
-                                return aiohttp_web.Response(
-                                    body=data, content_type="image/png",
-                                    headers={
-                                        "Cache-Control": "public, max-age=86400",
-                                        "Access-Control-Allow-Origin": "*"
-                                    }
-                                )
+                                if len(data) > 100:  # Bos dosya degil
+                                    _icon_cache[sym] = (data, ct)
+                                    return aiohttp_web.Response(body=data, content_type=ct,
+                                        headers={"Cache-Control":"public,max-age=604800","Access-Control-Allow-Origin":"*"})
                 except Exception:
                     pass
             return aiohttp_web.Response(status=404)
