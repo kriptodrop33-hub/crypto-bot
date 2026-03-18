@@ -5086,14 +5086,14 @@ function _svgIco(sym){
 const _icoOk={};
 const _icoFail=new Set();
 
-// imgUrl: CoinGecko direct URL passed from API data (no proxy needed)
-// Falls back to SVG if no imgUrl or image fails to load
+// imgUrl: CoinGecko direct URL — yoksa /api/icon proxy dene, o da başarısız olursa SVG
 function cIco(sym, imgUrl){
   const col=_colFor(sym);
-  if(!imgUrl||_icoFail.has(sym)) return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden">${_svgIco(sym)}</div>`;
+  if(_icoFail.has(sym)) return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden">${_svgIco(sym)}</div>`;
+  const src=imgUrl||`/api/icon?sym=${sym.toLowerCase()}`;
   const id=`ico_${sym}_${Math.random().toString(36).slice(2,6)}`;
   return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden" id="${id}">
-    <img src="${imgUrl}" width="34" height="34"
+    <img src="${src}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
       onload="_icoOk['${sym}']=1"
       onerror="_icoErr(this,'${sym}','${id}')">
@@ -6260,11 +6260,37 @@ async def _start_miniapp_server(bot):
                         ch5 = ((pts[-1][1] - pts[0][1]) / pts[0][1]) * 100
                         cur5 = pts[-1][1]
                         base5 = sym5.replace("USDT","").lower()
-                changes5.append({"s": sym5, "p": cur5, "ch5": round(ch5, 2), "img": coin_image_cache.get(base5,"")})
+                        changes5.append({"s": sym5, "p": cur5, "ch5": round(ch5, 2), "img": coin_image_cache.get(base5,"")})
                 flash5up_list = sorted([x for x in changes5 if x["ch5"] > 0],
                                        key=lambda x: x["ch5"], reverse=True)[:30]
                 flash5dn_list = sorted([x for x in changes5 if x["ch5"] < 0],
                                        key=lambda x: x["ch5"])[:30]
+
+            # Fallback: WebSocket verisi yetersizse Binance REST 5m rolling ticker kullan
+            if not flash5up_list and not flash5dn_list:
+                try:
+                    top_syms = [x["symbol"] for x in sorted(usdt, key=lambda x: float(x.get("quoteVolume",0)), reverse=True)[:100]]
+                    import json as _json5
+                    syms_param = _json5.dumps(top_syms)
+                    async with aiohttp.ClientSession() as s5:
+                        async with s5.get(
+                            f"https://api.binance.com/api/v3/ticker?symbols={syms_param}&windowSize=5m",
+                            timeout=aiohttp.ClientTimeout(total=8)) as r5:
+                            if r5.status == 200:
+                                ticker5 = await r5.json()
+                                changes5f = []
+                                for t5 in ticker5:
+                                    sym5f = t5.get("symbol","")
+                                    if not sym5f.endswith("USDT"): continue
+                                    ch5f = float(t5.get("priceChangePercent", 0) or 0)
+                                    cur5f = float(t5.get("lastPrice", 0) or 0)
+                                    base5f = sym5f.replace("USDT","").lower()
+                                    if ch5f != 0 and cur5f > 0:
+                                        changes5f.append({"s": sym5f, "p": cur5f, "ch5": round(ch5f,2), "img": coin_image_cache.get(base5f,"")})
+                                flash5up_list = sorted([x for x in changes5f if x["ch5"] > 0], key=lambda x: x["ch5"], reverse=True)[:30]
+                                flash5dn_list = sorted([x for x in changes5f if x["ch5"] < 0], key=lambda x: x["ch5"])[:30]
+                except Exception as e5:
+                    log.warning(f"flash5 REST fallback hata: {e5}")
 
             result = {
                 "btc": {"price":float(btc.get("lastPrice",0)),"change":float(btc.get("priceChangePercent",0)),"volume":bv},
