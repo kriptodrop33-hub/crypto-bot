@@ -5045,48 +5045,48 @@ function fv(v){v=parseFloat(v)||0;if(v>=1e9)return(v/1e9).toFixed(1)+'B$';if(v>=
 function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
-// CoinGecko coin ID mapping (yaygın coinler)
-const COIN_IDS={BTC:'bitcoin',ETH:'ethereum',BNB:'binancecoin',SOL:'solana',XRP:'ripple',
-  DOGE:'dogecoin',ADA:'cardano',AVAX:'avalanche-2',DOT:'polkadot',MATIC:'matic-network',
-  LINK:'chainlink',UNI:'uniswap',ATOM:'cosmos',LTC:'litecoin',BCH:'bitcoin-cash',
-  NEAR:'near',APT:'aptos',ARB:'arbitrum',OP:'optimism',FIL:'filecoin',
-  ICP:'internet-computer',VET:'vechain',ALGO:'algorand',ETC:'ethereum-classic',
-  MANA:'decentraland',SAND:'the-sandbox',AXS:'axie-infinity',CHZ:'chiliz',
-  HBAR:'hedera-hashgraph',EGLD:'elrond-erd-2',THETA:'theta-token',
-  FTM:'fantom',ONE:'harmony',IOTA:'iota',XLM:'stellar',TRX:'tron',
-  SHIB:'shiba-inu',PEPE:'pepe',FLOKI:'floki',
-  SUI:'sui',SEI:'sei-network',TIA:'celestia',INJ:'injective-protocol',
-  PYTH:'pyth-network',JTO:'jito-governance-token',RNDR:'render-token',
-  FET:'fetch-ai',AGIX:'singularitynet',WLD:'worldcoin-wld',
+
+// Coin ikon sistemi - CoinGecko doğru format: /images/{id}/thumb/{slug}.png
+const CGICO={
+  BTC:[1,'bitcoin'],ETH:[279,'ethereum'],BNB:[825,'bnb'],SOL:[4128,'solana'],
+  XRP:[44,'xrp'],DOGE:[5,'dogecoin'],ADA:[2010,'cardano'],
+  AVAX:[12559,'avalanche'],DOT:[6636,'polkadot'],LINK:[877,'chainlink'],
+  UNI:[12504,'uniswap'],ATOM:[3794,'cosmos'],LTC:[2,'litecoin'],
+  BCH:[1831,'bitcoin-cash'],TRX:[1094,'tron'],NEAR:[10365,'near'],
+  MATIC:[4713,'polygon-matic'],ARB:[11841,'arbitrum'],OP:[25244,'optimism'],
+  SUI:[26375,'sui'],INJ:[7226,'injective-protocol'],SHIB:[11939,'shiba-inu'],
+  HBAR:[4642,'hedera-hashgraph'],FIL:[2638,'filecoin'],ICP:[8916,'internet-computer'],
+  VET:[3077,'vechain'],ALGO:[4030,'algorand'],PEPE:[29850,'pepe'],
+  WLD:[13502,'worldcoin-wld'],FET:[3773,'fetch-ai'],RNDR:[11636,'render-token'],
+  AAVE:[7278,'aave'],MKR:[1900,'maker'],CRV:[6538,'curve-dao-token'],
+  SAND:[12767,'the-sandbox'],MANA:[1966,'decentraland'],AXS:[6783,'axie-infinity'],
+  GRT:[6719,'the-graph'],CHZ:[3890,'chiliz'],XLM:[512,'stellar'],
+  ETC:[1321,'ethereum-classic'],ZEC:[486,'zcash'],XMR:[328,'monero'],
+  DASH:[131,'dash'],EOS:[1765,'eos'],LDO:[8000,'lido-dao'],
+  APT:[18876,'aptos'],SEI:[28205,'sei-network'],TIA:[22861,'celestia'],
+  PYTH:[25021,'pyth-network'],JTO:[27819,'jito-governance-token'],
+  FLOKI:[10804,'floki'],FTM:[3513,'fantom'],SNX:[2586,'havven'],
 };
-// CoinGecko ikon ID -> sayısal ID mapping (CDN için)
-const COIN_IMG_IDS={
-  BTC:'1',ETH:'279',BNB:'825',SOL:'4128',XRP:'44',DOGE:'5',ADA:'2010',
-  AVAX:'12559',DOT:'6636',MATIC:'4713',LINK:'877',UNI:'12504',ATOM:'3794',
-  LTC:'2',BCH:'1831',NEAR:'10365',ARB:'11841',OP:'25244',FIL:'2638',
-  ICP:'8916',VET:'3077',ALGO:'4030',TRX:'1094',SHIB:'11939',
-  SUI:'26375',INJ:'7226',RNDR:'11636',FET:'3773',WLD:'13502',
-  PEPE:'29850',HBAR:'4642',
-};
-function coinLogoUrl(sym){
-  const numId=COIN_IMG_IDS[sym];
-  if(numId) return `https://assets.coingecko.com/coins/images/${numId}/thumb/thumb.png`;
-  const id=COIN_IDS[sym];
-  if(id) return `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/${sym.toLowerCase()}.png`;
-  return null;
-}
+
+// Yüklenmiş ikon cache
+const _icoLoaded={};
+
 function cIco(sym){
-  const ci=sym.charCodeAt(0)%PAL.length;const col=PAL[ci];
-  const logoUrl=coinLogoUrl(sym);
-  if(logoUrl){
-    return`<div class="cico" style="background:${col}10;border-color:${col}25;overflow:hidden;padding:0">
-      <img src="${logoUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"
-           onerror="this.parentElement.innerHTML='<span style=\'font-size:11px;font-weight:900;color:${col};font-family:Space Mono,monospace\'>${sym.slice(0,2)}</span>'"
-           loading="lazy">
-    </div>`;
+  const ci=sym.charCodeAt(0)%PAL.length;
+  const col=PAL[ci];
+  const info=CGICO[sym];
+  if(!info){
+    return `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-weight:900;font-size:11px">${sym.slice(0,2)}</div>`;
   }
-  return`<div class="cico" style="background:${col}15;color:${col};border-color:${col}35;font-family:Space Mono,monospace">${sym.slice(0,2)}</div>`;
+  const url=`https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
+  return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.08);overflow:hidden;background:#0d1525">
+    <img src="${url}" width="34" height="34"
+      style="border-radius:50%;display:block;object-fit:cover"
+      onerror="this.parentNode.innerHTML=\`<div style='width:34px;height:34px;border-radius:50%;background:${col}18;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:${col};font-family:Space Mono,monospace'>${sym.slice(0,2)}</div>\`"
+      loading="lazy">
+  </div>`;
 }
+
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
 
 // ── CLOCK ──
@@ -6025,6 +6025,78 @@ async def _start_miniapp_server(bot):
 
         import json as _json
 
+        async def _translate_news_items(items):
+            if not GROQ_API_KEY or not items:
+                log.info(f"Haber cevirisi atlanıyor: GROQ_KEY={'var' if GROQ_API_KEY else 'yok'}, items={len(items)}")
+                return items
+            try:
+                titles = "\n".join(f"{i+1}. {n['title']}" for i,n in enumerate(items))
+                prompt = (
+                    "Translate the following English crypto news headlines to Turkish. "
+                    "Output ONLY the translations, one per line, same order, no numbers or extra text.\n\n"
+                    + titles
+                )
+                async with aiohttp.ClientSession() as s:
+                    async with s.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                        json={
+                            "model": "llama3-8b-8192",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_tokens": 800, "temperature": 0.1
+                        },
+                        timeout=aiohttp.ClientTimeout(total=15)
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            raw = data["choices"][0]["message"]["content"].strip()
+                            translated = [l.strip() for l in raw.split("\n") if l.strip()]
+                            for i, item in enumerate(items):
+                                if i < len(translated):
+                                    item["title_tr"] = translated[i]
+                            log.info(f"Haber cevirisi OK: {len(items)} baslik")
+                        else:
+                            log.warning(f"Groq hata: {r.status}")
+            except Exception as e:
+                log.warning(f"Haber cevirisi basarisiz: {e}")
+            return items
+
+        async def _fetch_rss(feeds_list, max_per=6):
+            items = []
+            for feed_url, src_name in feeds_list:
+                if len(items) >= 10:
+                    break
+                try:
+                    async with aiohttp.ClientSession() as s:
+                        async with s.get(
+                            feed_url,
+                            headers={"User-Agent": "Mozilla/5.0"},
+                            timeout=aiohttp.ClientTimeout(total=7)
+                        ) as r:
+                            if r.status != 200:
+                                continue
+                            xml_text = await r.text()
+                    root = _ET_news.fromstring(xml_text)
+                    ch = root.find("channel") or root
+                    for item in list(ch.findall("item"))[:max_per]:
+                        title = item.findtext("title","").strip()
+                        if not title:
+                            continue
+                        desc = _clean_html_text(item.findtext("description",""))[:280]
+                        link = item.findtext("link","").strip()
+                        pubdate = item.findtext("pubDate","").strip()
+                        items.append({
+                            "title": title,
+                            "title_tr": title,
+                            "summary": desc,
+                            "source": src_name,
+                            "url": link,
+                            "published_at": pubdate[:16] if pubdate else "",
+                        })
+                except Exception:
+                    pass
+            return items
+
         async def handle_dashboard(request):
             """Ana sayfa için tüm veriyi sunucuda toplar — tek istek."""
             uid_str = request.rel_url.query.get("uid","")
@@ -6318,73 +6390,6 @@ async def _start_miniapp_server(bot):
         def _clean_html_text(text):
             t = _html_news.unescape(text or "").replace("<![CDATA[","").replace("]]>","")
             return _re_news.sub(r"<[^>]+>", "", t).strip()
-
-        async def _translate_news_items(items):
-            if not GROQ_API_KEY or not items:
-                return items
-            try:
-                titles = "\n".join(f"{i+1}. {n['title']}" for i,n in enumerate(items))
-                prompt = (
-                    "Asagidaki Ingilizce kripto haber basliklarini Turkceye cevir. "
-                    "Her satir icin SADECE ceviriyi yaz, numara veya aciklama ekleme. "
-                    "Ayni sirayi koru, her baslik ayri satirda olsun:\n\n" + titles
-                )
-                async with aiohttp.ClientSession() as s:
-                    async with s.post(
-                        "https://api.groq.com/openai/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                        json={
-                            "model": "llama3-8b-8192",
-                            "messages": [{"role": "user", "content": prompt}],
-                            "max_tokens": 600, "temperature": 0.2
-                        },
-                        timeout=aiohttp.ClientTimeout(total=12)
-                    ) as r:
-                        if r.status == 200:
-                            data = await r.json()
-                            translated = data["choices"][0]["message"]["content"].strip().split("\n")
-                            for i, item in enumerate(items):
-                                if i < len(translated) and translated[i].strip():
-                                    item["title_tr"] = translated[i].strip()
-            except Exception as e:
-                log.warning(f"Haber cevirisi basarisiz: {e}")
-            return items
-
-        async def _fetch_rss(feeds_list, max_per=6):
-            items = []
-            for feed_url, src_name in feeds_list:
-                if len(items) >= 10:
-                    break
-                try:
-                    async with aiohttp.ClientSession() as s:
-                        async with s.get(
-                            feed_url,
-                            headers={"User-Agent": "Mozilla/5.0"},
-                            timeout=aiohttp.ClientTimeout(total=7)
-                        ) as r:
-                            if r.status != 200:
-                                continue
-                            xml_text = await r.text()
-                    root = _ET_news.fromstring(xml_text)
-                    ch = root.find("channel") or root
-                    for item in list(ch.findall("item"))[:max_per]:
-                        title = item.findtext("title","").strip()
-                        if not title:
-                            continue
-                        desc = _clean_html_text(item.findtext("description",""))[:280]
-                        link = item.findtext("link","").strip()
-                        pubdate = item.findtext("pubDate","").strip()
-                        items.append({
-                            "title": title,
-                            "title_tr": title,
-                            "summary": desc,
-                            "source": src_name,
-                            "url": link,
-                            "published_at": pubdate[:16] if pubdate else "",
-                        })
-                except Exception:
-                    pass
-            return items
 
         async def handle_coin_news(request):
             sym = request.rel_url.query.get("symbol","BTC").upper().replace("USDT","")
