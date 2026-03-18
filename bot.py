@@ -4762,14 +4762,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
 
 <div id="main">
 <nav id="sidenav">
-  <button class="nb on"  onclick="go('home')"   ><span class="ic">🏠</span>Ana</button>
-  <button class="nb"     onclick="go('mkt')"    ><span class="ic">📈</span>Piyasa</button>
-  <button class="nb"     onclick="go('top')"    ><span class="ic">🏆</span>Lider</button>
-  <button class="nb"     onclick="go('analiz')" style="margin-top:8px"><span class="ic">🔬</span>Analiz</button>
-  <button class="nb"     onclick="go('fib')"    ><span class="ic">📐</span>Fib</button>
-  <button class="nb"     onclick="go('kar')"    style="margin-top:8px"><span class="ic">💰</span>K/Z</button>
-  <button class="nb"     onclick="go('alarmlar')"><span class="ic">🔔</span>Alarm</button>
-  <button class="nb"     onclick="go('takvim')" ><span class="ic">📅</span>Takvim</button>
+  <button class="nb on"  data-page="home"   ><span class="ic">🏠</span>Ana</button>
+  <button class="nb"     data-page="mkt"    ><span class="ic">📈</span>Piyasa</button>
+  <button class="nb"     data-page="top"    ><span class="ic">🏆</span>Lider</button>
+  <button class="nb"     data-page="analiz" style="margin-top:8px"><span class="ic">🔬</span>Analiz</button>
+  <button class="nb"     data-page="fib"    ><span class="ic">📐</span>Fib</button>
+  <button class="nb"     data-page="kar"    style="margin-top:8px"><span class="ic">💰</span>K/Z</button>
+  <button class="nb"     data-page="alarmlar"><span class="ic">🔔</span>Alarm</button>
+  <button class="nb"     data-page="takvim" ><span class="ic">📅</span>Takvim</button>
 </nav>
 
 <div id="scroll">
@@ -4825,16 +4825,15 @@ body{font-family:'DM Sans',system-ui,sans-serif;color:var(--text);font-size:13px
       </div>
     </div>
 
-    <!-- YÜKSELENLERm + DÜŞENLER -->
-    <div class="g2" style="margin-bottom:9px">
-      <div class="card cg" style="padding:11px">
-        <div class="sh" style="margin-bottom:6px"><div class="sh-t" style="font-size:8px">🚀 <span>Yükselenler</span></div><span class="sh-btn" style="font-size:9px;padding:3px 7px" onclick="go('top')">→</span></div>
-        <div id="hGain"></div>
-      </div>
-      <div class="card" style="padding:11px;border-color:rgba(255,45,85,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,45,85,.03))">
-        <div class="sh" style="margin-bottom:6px"><div class="sh-t" style="font-size:8px">💥 <span>Düşenler</span></div><span class="sh-btn" style="font-size:9px;padding:3px 7px" onclick="go('top')">→</span></div>
-        <div id="hLose"></div>
-      </div>
+    <!-- YÜKSELENLER -->
+    <div class="card cg" style="margin-bottom:9px;padding:11px">
+      <div class="sh" style="margin-bottom:7px"><div class="sh-t">🚀 <span>Yükselenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+      <div id="hGain"></div>
+    </div>
+    <!-- DÜŞENLER -->
+    <div class="card" style="margin-bottom:9px;padding:11px;border-color:rgba(255,45,85,.2);background:linear-gradient(135deg,var(--card) 70%,rgba(255,45,85,.03))">
+      <div class="sh" style="margin-bottom:7px"><div class="sh-t">💥 <span>Düşenler</span></div><span class="sh-btn" onclick="go('top')">Tümü →</span></div>
+      <div id="hLose"></div>
     </div>
 
     <!-- PORTFÖY ÖZET -->
@@ -5046,55 +5045,45 @@ function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
 
-// Binance ikon CDN — tüm Binance'deki coinleri destekler, CORS yok
-// Format: https://bin.bnbstatic.com/image/admin_mgs_image_upload/20201110/{hash}.png
-// Daha basit format: https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons/128/color/{sym}.png
-// En güvenilir: Binance kendi asset servisi
-function coinIconUrl(sym){
-  // Binance asset CDN — küçük harf sembol kullanır
-  const s = sym.toLowerCase();
-  return `https://bin.bnbstatic.com/image/pgc/202309/${s}.png`;
-}
-
-// Fallback renk sistemi
+// Coin renkleri (fallback SVG icin)
 const COIN_COL={
   BTC:'#f7931a',ETH:'#627eea',BNB:'#f3ba2f',SOL:'#9945ff',XRP:'#0085c0',
   DOGE:'#c2a633',ADA:'#0033ad',AVAX:'#e84142',DOT:'#e6007a',LINK:'#2a5ada',
   UNI:'#ff007a',ATOM:'#4a4d6b',LTC:'#bfbbbb',BCH:'#8dc351',TRX:'#ef0027',
   NEAR:'#00c08b',MATIC:'#8247e5',ARB:'#2d374b',OP:'#ff0420',SUI:'#4ca3ff',
   INJ:'#00b4d8',SHIB:'#ffa409',HBAR:'#00b388',FIL:'#0090ff',ICP:'#f15a24',
-  VET:'#15bdff',ALGO:'#000000',PEPE:'#00a86b',WLD:'#191c1e',FET:'#1d2c4a',
-  RNDR:'#e6394a',AAVE:'#b6509e',MKR:'#1aab9b',CRV:'#3a3a3a',XLM:'#14b6e7',
+  VET:'#15bdff',ALGO:'#333',PEPE:'#00a86b',WLD:'#191c1e',FET:'#1d2c4a',
+  RNDR:'#e6394a',AAVE:'#b6509e',MKR:'#1aab9b',XLM:'#14b6e7',
   ETC:'#328332',ZEC:'#ecb244',XMR:'#ff6600',DASH:'#008ce7',
   USDC:'#2775ca',USDT:'#26a17b',CHZ:'#cd0124',GRT:'#6747ed',
 };
 
-function cIco(sym){
-  const col = COIN_COL[sym] || PAL[sym.charCodeAt(0)%PAL.length];
-  // SVG fallback — her zaman çalışır, güzel görünür
-  const lbl = sym.slice(0,sym.length<=3?sym.length:3);
+function _colFor(sym){
+  return COIN_COL[sym]||PAL[sym.charCodeAt(0)%PAL.length];
+}
+
+function _svgFallback(sym){
+  const col=_colFor(sym);
   const r=parseInt(col.slice(1,3)||'3a',16);
   const g=parseInt(col.slice(3,5)||'9f',16);
   const b=parseInt(col.slice(5,7)||'ff',16);
   const lum=(r*299+g*587+b*114)/1000;
-  const txt=lum>130?'#111':'#fff';
-  const fs=lbl.length<=2?'12':'9';
+  const txt=lum>140?'#111':'#fff';
+  const lbl=sym.slice(0,sym.length<=3?sym.length:3);
+  const fs=lbl.length<=2?'12':'9.5';
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'%3E%3Cdefs%3E%3CradialGradient id='g' cx='38%25' cy='32%25' r='68%25'%3E%3Cstop offset='0%25' stop-color='${encodeURIComponent(col)}' stop-opacity='1'/%3E%3Cstop offset='100%25' stop-color='${encodeURIComponent(col)}' stop-opacity='.7'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='17' cy='17' r='17' fill='url(%23g)'/%3E%3Ccircle cx='12' cy='11' r='9' fill='white' opacity='.07'/%3E%3Ctext x='17' y='${lbl.length<=2?22:21}' text-anchor='middle' fill='${txt}' font-size='${fs}' font-weight='700' font-family='monospace'%3E${lbl}%3C/text%3E%3C/svg%3E`;
+}
 
-  const svgFallback=`<svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style="border-radius:50%;flex-shrink:0;display:block">
-    <circle cx="17" cy="17" r="17" fill="${col}" opacity=".9"/>
-    <circle cx="17" cy="17" r="17" fill="url(#sh${sym})" opacity=".3"/>
-    <defs><radialGradient id="sh${sym}" cx="35%" cy="30%" r="60%"><stop offset="0%" stop-color="#fff" stop-opacity=".4"/><stop offset="100%" stop-color="#000" stop-opacity=".2"/></radialGradient></defs>
-    <text x="17" y="${lbl.length<=2?'21.5':'21'}" text-anchor="middle" fill="${txt}" font-size="${fs}" font-weight="700" font-family="'Space Mono',monospace" letter-spacing="-0.5">${lbl}</text>
-  </svg>`;
-
-  // Önce gerçek ikonları dene (Binance CDN), başarısız olursa SVG göster
-  return `<div class="cico" style="padding:0;border:1px solid ${col}30;overflow:hidden;background:${col}12;position:relative" data-sym="${sym}">
-    <img src="https://bin.bnbstatic.com/image/pgc/202309/${sym.toLowerCase()}.png"
-      width="34" height="34"
-      style="display:block;border-radius:50%;object-fit:cover"
-      onerror="this.style.display='none';this.nextElementSibling.style.display='block'"
+function cIco(sym){
+  const col=_colFor(sym);
+  // Binance SVG ikon CDN - tum Binance coinlerini kapsar
+  const binanceUrl=`https://cdn.jsdelivr.net/gh/vadimmalykhin/binance-icons/crypto/${sym.toLowerCase()}.svg`;
+  const fallbackUrl=_svgFallback(sym);
+  return `<div class="cico" style="padding:2px;border-color:${col}25;background:${col}0d;overflow:hidden">
+    <img src="${binanceUrl}" width="30" height="30"
+      style="border-radius:50%;display:block;object-fit:contain"
+      onerror="this.src='${fallbackUrl}';this.onerror=null"
       loading="lazy">
-    <div style="display:none;position:absolute;inset:0">${svgFallback}</div>
   </div>`;
 }
 
@@ -5788,6 +5777,16 @@ async function doFibPage(){
 }
 
 // ── INIT ──
+// Sidebar butonları - onclick yerine addEventListener (Telegram WebView tap fix)
+document.querySelectorAll('#sidenav .nb').forEach(btn=>{
+  btn.addEventListener('click', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    const page=this.dataset.page;
+    if(page) go(page);
+  }, {passive:false});
+});
+
 loadHome();
 setInterval(()=>{if(CUR==='home')loadHome();},60000);
 </script>
