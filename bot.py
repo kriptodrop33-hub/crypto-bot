@@ -5085,13 +5085,19 @@ function cIco(sym){
   // Sunucu proxy - Railway kendi domain'inden serve eder, CORS yok
   const proxyUrl=`/api/icon?sym=${sym.toLowerCase()}`;
   const id=`ico_${sym}_${Math.random().toString(36).slice(2,6)}`;
+  // onerror: inline script yerine global fonksiyon çağrısı - Telegram CSP ile uyumlu
   return `<div class="cico" style="padding:0;border-color:${col}20;overflow:hidden" id="${id}">
     <img src="${proxyUrl}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover;width:34px;height:34px"
       onload="_icoOk['${sym}']=1"
-      onerror="_icoFail.add('${sym}');document.getElementById('${id}').innerHTML='${_svgIco(sym).replace(/'/g,"\'")}'"
+      onerror="_icoErr(this,'${sym}','${id}')"
       loading="lazy">
   </div>`;
+}
+function _icoErr(img, sym, id){
+  _icoFail.add(sym);
+  const el=document.getElementById(id);
+  if(el)el.innerHTML=_svgIco(sym);
 }
 
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
@@ -5112,13 +5118,13 @@ let CUR='home';
 
 // ── NAV ──
 function go(t){
+  if(CUR===t&&t!=='coin')return;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('#sidenav .nb').forEach(x=>x.classList.remove('on'));
   const pg=document.getElementById('p-'+t);if(!pg)return;
   pg.classList.add('on');
-  const nbs=document.querySelectorAll('#sidenav .nb');
-  const ni=['home','mkt','top','analiz','kar','alarmlar','takvim'].indexOf(t);
-  if(ni>=0&&nbs[ni])nbs[ni].classList.add('on');
+  const nb=document.querySelector('#sidenav .nb[data-page="'+t+'"]');
+  if(nb)nb.classList.add('on');
   if(t!=='coin')prevPage=CUR;
   CUR=t;
   document.getElementById('scroll').scrollTop=0;
