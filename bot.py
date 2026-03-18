@@ -5046,7 +5046,7 @@ function pc(p){return p>0?'up':p<0?'dn':'nu';}
 function pb(p){const c=p>0?'bg':p<0?'br':'by',s=p>0?'+':'';return`<span class="bdg ${c}">${s}${p.toFixed(2)}%</span>`;}
 const PAL=['#0a84ff','#bf5af2','#05d890','#ffd60a','#ff9f0a','#5ac8fa','#ff2d55','#4ecdc4'];
 
-// Coin ikon sistemi - CoinGecko doğru format: /images/{id}/thumb/{slug}.png
+// CoinGecko sayısal ID'leri olan coinler (kesin doğru ikonlar)
 const CGICO={
   BTC:[1,'bitcoin'],ETH:[279,'ethereum'],BNB:[825,'bnb'],SOL:[4128,'solana'],
   XRP:[44,'xrp'],DOGE:[5,'dogecoin'],ADA:[2010,'cardano'],
@@ -5064,27 +5064,61 @@ const CGICO={
   ETC:[1321,'ethereum-classic'],ZEC:[486,'zcash'],XMR:[328,'monero'],
   DASH:[131,'dash'],EOS:[1765,'eos'],LDO:[8000,'lido-dao'],
   APT:[18876,'aptos'],SEI:[28205,'sei-network'],TIA:[22861,'celestia'],
-  PYTH:[25021,'pyth-network'],JTO:[27819,'jito-governance-token'],
   FLOKI:[10804,'floki'],FTM:[3513,'fantom'],SNX:[2586,'havven'],
+  PENDLE:[21420,'pendle'],JUP:[34188,'jupiter-exchange-solana'],
+  WIF:[33566,'dogwifcoin'],BONK:[28600,'bonk'],PYTH:[25021,'pyth-network'],
+  STX:[4847,'blockstack'],CFX:[7334,'conflux-token'],KAVA:[4846,'kava'],
+  IMX:[10603,'immutable-x'],LRC:[1558,'loopring'],CAKE:[7186,'pancakeswap-token'],
+  ONE:[3945,'harmony'],ZIL:[2469,'zilliqa'],ENS:[13855,'ethereum-name-service'],
+  FLOW:[4558,'flow'],EGLD:[6892,'elrond-erd-2'],
 };
 
-// Yüklenmiş ikon cache
-const _icoLoaded={};
+// İkon ön belleği — başarısız olanları tekrar deneme
+const _iconFailed = new Set();
 
 function cIco(sym){
-  const ci=sym.charCodeAt(0)%PAL.length;
-  const col=PAL[ci];
-  const info=CGICO[sym];
-  if(!info){
-    return `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-weight:900;font-size:11px">${sym.slice(0,2)}</div>`;
+  const ci = sym.charCodeAt(0) % PAL.length;
+  const col = PAL[ci];
+
+  // Harf bazlı fallback HTML
+  const fallback = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900;letter-spacing:-.5px">${sym.slice(0,3)}</div>`;
+
+  if (_iconFailed.has(sym)) return fallback;
+
+  // Önce CoinGecko (kesin ikonlar)
+  const info = CGICO[sym];
+  if (info) {
+    const url = `https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
+    return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.07);overflow:hidden;background:#0a1020">
+      <img src="${url}" width="34" height="34"
+        style="border-radius:50%;display:block;object-fit:cover"
+        onerror="this.onerror=null;tryAltIcon(this,'${sym}','${col}')"
+        loading="lazy">
+    </div>`;
   }
-  const url=`https://assets.coingecko.com/coins/images/${info[0]}/thumb/${info[1]}.png`;
-  return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.08);overflow:hidden;background:#0d1525">
-    <img src="${url}" width="34" height="34"
+
+  // Diğer coinler için cryptocurrency-icons CDN (3000+ coin destekler)
+  const slug = sym.toLowerCase();
+  const altUrl = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/${slug}.png`;
+  return `<div class="cico" style="padding:0;border-color:rgba(255,255,255,.07);overflow:hidden;background:#0a1020">
+    <img src="${altUrl}" width="34" height="34"
       style="border-radius:50%;display:block;object-fit:cover"
-      onerror="this.parentNode.innerHTML=\`<div style='width:34px;height:34px;border-radius:50%;background:${col}18;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:${col};font-family:Space Mono,monospace'>${sym.slice(0,2)}</div>\`"
+      onerror="this.onerror=null;tryAltIcon(this,'${sym}','${col}')"
       loading="lazy">
   </div>`;
+}
+
+// İkon yükleme başarısız olunca alternatif dene
+function tryAltIcon(img, sym, col){
+  const slug = sym.toLowerCase();
+  // Daha önce CoinGecko denendiyse jsdelivr dene, aksi hâlde harf göster
+  if (!img.dataset.tried) {
+    img.dataset.tried = '1';
+    img.src = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@latest/32/color/${slug}.png`;
+  } else {
+    _iconFailed.add(sym);
+    img.parentNode.outerHTML = `<div class="cico" style="background:${col}18;color:${col};border-color:${col}30;font-family:'Space Mono',monospace;font-size:11px;font-weight:900;letter-spacing:-.5px">${sym.slice(0,3)}</div>`;
+  }
 }
 
 function toast(m,d=2400){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),d);}
