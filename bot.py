@@ -799,7 +799,7 @@ async def fetch_sentiment(symbol: str) -> dict:
             )
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
             payload = {
-                "model": "llama3-8b-8192",
+                "model": "llama-3.1-8b-instant",
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 200, "temperature": 0.3
             }
@@ -4105,6 +4105,30 @@ async def button_handler(update: Update, context):
 
     # Takvim callback
     if q.data.startswith("takvim_"):
+        # Grupta üye ise DM'e yönlendir
+        _takvim_chat = q.message.chat if q.message else None
+        _takvim_in_group = bool(_takvim_chat and _takvim_chat.type in ("group", "supergroup"))
+        if _takvim_in_group:
+            _takvim_is_adm = await is_group_admin(context.bot, _takvim_chat.id, q.from_user.id)
+            if not _takvim_is_adm:
+                try:
+                    await context.bot.send_message(
+                        chat_id=q.from_user.id,
+                        text="📅 *Ekonomik Takvim* özelliğini kullanmak için buraya tıklayın 👇\nBotu DM üzerinden kullanabilirsiniz.",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+                try:
+                    tip = await context.bot.send_message(
+                        chat_id=_takvim_chat.id,
+                        text=f"📅 Ekonomik Takvim için lütfen DM'den kullanın 👇 @{BOT_USERNAME}",
+                    )
+                    asyncio.create_task(auto_delete(context.bot, _takvim_chat.id, tip.message_id, 10))
+                except Exception:
+                    pass
+                await q.answer()
+                return
         await q.answer()
         if q.data == "takvim_refresh":
             events = await fetch_crypto_calendar()
@@ -6283,7 +6307,7 @@ async def _start_miniapp_server(bot):
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                         json={
-                            "model": "llama3-8b-8192",
+                            "model": "llama-3.1-8b-instant",
                             "messages": [{"role": "user", "content": prompt}],
                             "max_tokens": 800, "temperature": 0.1
                         },
