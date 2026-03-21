@@ -1858,12 +1858,18 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         if threshold_info:
             text += f"\n🔔 *Alarm Eşiği:* `%{threshold_info}`"
 
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "📈 Binance'de Goruntule",
-                url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
-            )
-        ]])
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
+                InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📈 Binance'de Görüntüle",
+                    url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
+                )
+            ]
+        ])
 
         msg = await bot.send_message(chat_id=chat_id, text=text,
                                      reply_markup=keyboard, parse_mode="Markdown")
@@ -2385,7 +2391,7 @@ async def my_alarm_v2(update: Update, context):
 
     if not rows:
         text = (
-            "🔔 *Kisisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
+            "🔔 *Kişisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
             "Henuz alarm yok.\n\n"
             "Alarm turleri:\n"
             "• `%`    : `/alarm_ekle BTCUSDT 3.5`\n"
@@ -2395,7 +2401,7 @@ async def my_alarm_v2(update: Update, context):
             "💡 Fiyat alarmı için `/hedef BTCUSDT 70000` da kullanabilirsiniz."
         )
     else:
-        text = "🔔 *Kisisel Alarmlariniz*\n━━━━━━━━━━━━━━━━━━\n"
+        text = "🔔 *Kişisel Alarmlarınız*\n━━━━━━━━━━━━━━━━━━\n"
         for r in rows:
             if not r["active"]:
                 durum = "⏹ Pasif"
@@ -2580,12 +2586,12 @@ async def my_alarm(update: Update, context):
         )
     if not rows:
         text = (
-            "🔔 *Kisisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
+            "🔔 *Kişisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
             "Henuz aktif alarminiz yok.\n\n"
             "➕ Alarm eklemek icin:\n`/alarm_ekle BTCUSDT 3.5`"
         )
     else:
-        text = "🔔 *Kisisel Alarmlariniz*\n━━━━━━━━━━━━━━━━━━\n"
+        text = "🔔 *Kişisel Alarmlarınız*\n━━━━━━━━━━━━━━━━━━\n"
         for r in rows:
             durum = "✅ Aktif" if r["active"] else "⏸ Durduruldu"
             text += f"• `{r['symbol']}` → `%{r['threshold']}` — {durum}\n"
@@ -3443,7 +3449,7 @@ async def send_weekly_report(bot, chat_id):
             "📅 *Haftalik Kripto Raporu*\n━━━━━━━━━━━━━━━━━━\n"
             "🗓 " + now_str + " · " + mood + "\n"
             "📊 Ort. Degisim: `" + ("%+.2f" % avg) + "%`\n\n"
-            "🚀 *En Cok Yukselen 5*\n"
+            "🚀 *En Çok Yükselen 5*\n"
         )
         for i, c in enumerate(top5, 1):
             text += get_number_emoji(i) + " `" + c["symbol"] + "` 🟢 `" + ("%+.2f" % float(c["priceChangePercent"])) + "%`\n"
@@ -3546,14 +3552,23 @@ async def start(update: Update, context):
     await register_user(update)
 
     # ── DM butonları (tam menü) ──
-    dm_buttons = [
+    _murl = get_miniapp_url()
+    dm_buttons = []
+
+    # Mini App butonu en üstte (URL varsa)
+    if _murl:
+        dm_buttons.append([InlineKeyboardButton(
+            "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl)
+        )])
+
+    dm_buttons += [
         [InlineKeyboardButton("📊 Market",        callback_data="market"),
          InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
         [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
          InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
         [InlineKeyboardButton("🔔 Alarmlarım",    callback_data="my_alarm"),
          InlineKeyboardButton("⭐ Favorilerim",   callback_data="fav_liste")],
-        [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help"),
+        [InlineKeyboardButton("📉 MTF Analiz",    callback_data="mtf_help"),
          InlineKeyboardButton("📅 Zamanla",       callback_data="zamanla_help")],
         [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
          InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
@@ -3564,13 +3579,6 @@ async def start(update: Update, context):
         [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
          InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
     ]
-
-    # Mini App butonu — URL runtime'da alınır (server başladıktan sonra da çalışır)
-    _murl = get_miniapp_url()
-    if _murl:
-        dm_buttons.insert(-1, [InlineKeyboardButton(
-            "🖥 Dashboard Mini App", web_app=WebAppInfo(url=_murl)
-        )])
 
     # Admin / Bot sahibi DM butonları
     if not in_group and user_id:
@@ -3594,7 +3602,7 @@ async def start(update: Update, context):
              InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
             [InlineKeyboardButton("🔔 Alarmlarım",    callback_data="my_alarm"),
              InlineKeyboardButton("⭐ Favorilerim",   callback_data="fav_liste")],
-            [InlineKeyboardButton("📊 MTF Analiz",    callback_data="mtf_help"),
+            [InlineKeyboardButton("📉 MTF Analiz",    callback_data="mtf_help"),
              InlineKeyboardButton("📅 Zamanla",       callback_data="zamanla_help")],
             [InlineKeyboardButton("🎯 Fiyat Hedefi",  callback_data="hedef_liste"),
              InlineKeyboardButton("💰 Kar/Zarar",     callback_data="kar_help")],
@@ -3708,10 +3716,16 @@ async def top24(update: Update, context):
         pct = safe_pct(c)
         if pct is None: continue
         filtered.append((c, pct))
-    usdt = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
+    top_gainers = sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
+    top_losers  = sorted(filtered, key=lambda x: x[1])[:5]
+
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-    for i, (c, pct) in enumerate(usdt, 1):
-        text += f"{get_number_emoji(i)} `{c['symbol']:<12}` → `%{pct:+6.2f}`\n"
+    text += "🟢 *YÜKSELENLER*\n"
+    for i, (c, pct) in enumerate(top_gainers, 1):
+        text += f"{get_number_emoji(i)} 🟢▲ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
+    text += "\n🔴 *DÜŞENLER*\n"
+    for i, (c, pct) in enumerate(top_losers, 1):
+        text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
 
     target = update.callback_query.message if is_cb else update.message
     msg = await target.reply_text(text, parse_mode="Markdown")
@@ -3730,12 +3744,12 @@ async def top5(update: Update, context):
         positives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:5]
         negatives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]))[:5]
 
-        text = "⚡ *Piyasanin En Hareketlileri (24s baz)*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "🟢 *YUKSELENLER*\n"
+        text = "⚡ *Piyasanın En Hareketlileri (24s baz)*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "🟢 *YÜKSELENLER*\n"
         for i, c in enumerate(positives, 1):
             pct = float(c["priceChangePercent"])
             text += f"{get_number_emoji(i)} 🟢▲ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
-        text += "\n🔴 *DUSENLER*\n"
+        text += "\n🔴 *DÜŞENLER*\n"
         for i, c in enumerate(negatives, 1):
             pct = float(c["priceChangePercent"])
             text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
@@ -3749,17 +3763,17 @@ async def top5(update: Update, context):
         positives = sorted([x for x in changes if x[1] > 0], key=lambda x: x[1], reverse=True)[:5]
         negatives = sorted([x for x in changes if x[1] < 0], key=lambda x: x[1])[:5]
 
-        text = "⚡ *Son 5 Dakikanin En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "🟢 *YUKSELENLER — En Hizli 5*\n"
+        text = "⚡ *Son 5 Dakikanın En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "🟢 *YÜKSELENLER — En Hızlı 5*\n"
         for i, (s, c) in enumerate(positives, 1):
             text += f"{get_number_emoji(i)} 🟢▲ `{s:<12}` `%{c:+6.2f}`\n"
         if not positives:
-            text += "_Yukseliş yok_\n"
-        text += "\n🔴 *DUSENLER — En Hizli 5*\n"
+            text += "_Yükseliş yok_\n"
+        text += "\n🔴 *DÜŞENLER — En Hızlı 5*\n"
         for i, (s, c) in enumerate(negatives, 1):
             text += f"{get_number_emoji(i)} 🔴▼ `{s:<12}` `%{c:+6.2f}`\n"
         if not negatives:
-            text += "_Dusus yok_\n"
+            text += "_Düşüş yok_\n"
 
     chat  = update.effective_chat
     is_group = chat and chat.type in ("group", "supergroup")
@@ -3779,11 +3793,11 @@ async def status(update: Update, context):
             GROUP_CHAT_ID
         )
     text = (
-        "ℹ️ *Sistem Yapilandirmasi*\n"
+        "ℹ️ *Sistem Yapılandırması*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🔔 *Alarm Durumu:* `{'AKTIF' if r['alarm_active'] else 'KAPALI'}`\n"
-        f"🎯 *Esik Degeri:* `% {r['threshold']}`\n"
-        f"🔄 *Izleme Modu:* `{r['mode'].upper()}`\n"
+        f"🎯 *Eşik Değeri:* `%{r['threshold']}`\n"
+        f"🔄 *İzleme Modu:* `{r['mode'].upper()}`\n"
         f"📦 *Takip Edilen Sembol:* `{len(price_memory)}`"
     )
     chat = update.effective_chat
@@ -4609,7 +4623,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
             cooldowns[key] = now
-            yon = "⚡🟢 5dk YUKSELIS UYARISI 🟢⚡" if ch5 > 0 else "⚡🔴 5dk DUSUS UYARISI 🔴⚡"
+            yon = "⚡🟢 5dk YÜKSELİŞ UYARISI 🟢⚡" if ch5 > 0 else "⚡🔴 5dk DÜŞÜŞ UYARISI 🔴⚡"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2), alarm_mode=True)
 
     for row in user_rows:
@@ -4695,7 +4709,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if suggest_msg:
                 await context.bot.send_message(user_id, suggest_msg, parse_mode="Markdown")
         except Exception as e:
-            log.warning(f"Kisisel alarm gonderilemedi ({user_id}): {e}")
+            log.warning(f"Kişisel alarm gönderilemedi ({user_id}): {e}")
 
 # ================= MINI APP WEB SUNUCUSU =================
 
