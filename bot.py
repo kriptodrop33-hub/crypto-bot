@@ -5531,34 +5531,25 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   const ctx=canvas.getContext('2d');
   ctx.scale(devicePixelRatio,devicePixelRatio);
 
-  // klines format: [open, high, low, close, volume]  (indices 0-4)
   const O=0,HI=1,LO=2,CL=3,VO=4;
   const hasFib=!!(fibData&&fibData.levels&&fibData.levels.length);
 
-  // Layout — sol Y ekseni geniş tutuyoruz
-  const PL=50,   // sol padding (Y ekseni fiyat etiketleri için)
-        PR=hasFib?44:8, // sağ padding (fib etiketleri için)
-        PT=8,    // üst
-        PB=22,   // alt (X ekseni)
-        VH=32;   // hacim bölge yüksekliği
-  const CW=W-PL-PR;   // grafik genişliği
-  const CH=H-PT-PB-VH; // mum grafik yüksekliği
+  const PL=50, PR=hasFib?46:8, PT=8, PB=22, VH=32;
+  const CW=W-PL-PR;
+  const CH=H-PT-PB-VH;
 
-  // Mum genişliği
   const n=klines.length;
   const cW=Math.max(1.5, CW/n);
   const bW=Math.max(1, cW*0.6);
 
-  // Fiyat min/max — fib dahil
   let allP=klines.flatMap(k=>[k[HI],k[LO]]);
+  if(hasFib) fibData.levels.forEach(l=>allP.push(l.price));
   const rawMin=Math.min(...allP), rawMax=Math.max(...allP);
   const padP=(rawMax-rawMin)*0.05;
   const pMin=rawMin-padP, pMax=rawMax+padP, pRng=pMax-pMin||1;
 
-  // Y koordinat dönüşümü — mumlar için
   const yP=(p)=>PT+CH*(1-(p-pMin)/pRng);
-  // Hacim Y
-  const volTop=PT+CH+2; // hacim bölgesi başlangıcı
+  const volTop=PT+CH+2;
   const vols=klines.map(k=>k[VO]||0);
   const maxV=Math.max(...vols,1);
 
@@ -5566,7 +5557,21 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
   ctx.fillStyle='#050810';
   ctx.fillRect(0,0,W,H);
 
-  // ── GRID (yatay çizgiler) ──
+  // ── FİBONACCİ ZONE DOLGUSU (fiyat bölgesi) ──
+  if(hasFib && fibData.zone_lo && fibData.zone_hi){
+    const zy1=yP(fibData.zone_hi.price);
+    const zy2=yP(fibData.zone_lo.price);
+    const zH=zy2-zy1;
+    if(zH>0){
+      ctx.save();
+      ctx.globalAlpha=0.07;
+      ctx.fillStyle='#0a84ff';
+      ctx.fillRect(PL, zy1, CW, zH);
+      ctx.restore();
+    }
+  }
+
+  // ── GRID ──
   ctx.strokeStyle='rgba(255,255,255,.05)';
   ctx.lineWidth=0.5;
   for(let i=0;i<=4;i++){
@@ -5574,24 +5579,35 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
     ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(PL+CW,gy);ctx.stroke();
   }
 
-  // ── FİBONACCİ ÇİZGİLERİ (mumların altında) ──
+  // ── FİBONACCİ ÇİZGİLERİ ──
   if(hasFib){
+    const cur=fibData.cur;
     fibData.levels.forEach(l=>{
       if(l.price<pMin||l.price>pMax) return;
       const ly=yP(l.price);
       if(ly<PT-2||ly>PT+CH+2) return;
       const col=FCOL_FIB[String(l.pct)]||'#5577aa';
+      const isNearest=Math.abs(l.price-cur)/cur<0.012;
       ctx.save();
-      ctx.globalAlpha=0.55;
-      ctx.strokeStyle=col; ctx.lineWidth=0.8; ctx.setLineDash([5,3]);
+      ctx.globalAlpha=isNearest?0.9:0.5;
+      ctx.strokeStyle=col;
+      ctx.lineWidth=isNearest?1.4:0.7;
+      ctx.setLineDash(isNearest?[6,2]:[4,4]);
       ctx.beginPath(); ctx.moveTo(PL,ly); ctx.lineTo(PL+CW,ly); ctx.stroke();
       ctx.setLineDash([]);
       // Sağ etiket
-      ctx.globalAlpha=0.9;
+      ctx.globalAlpha=isNearest?1:0.75;
       ctx.fillStyle=col;
-      ctx.font='bold 7.5px Space Mono,monospace';
+      ctx.font=`${isNearest?'bold ':''}${isNearest?8.5:7.5}px Space Mono,monospace`;
       ctx.textAlign='left';
       ctx.fillText(l.pct+'%', PL+CW+3, ly+3);
+      // Yakın seviyeye nokta işareti
+      if(isNearest){
+        ctx.fillStyle=col;
+        ctx.beginPath();
+        ctx.arc(PL+CW+1, ly, 2.5, 0, Math.PI*2);
+        ctx.fill();
+      }
       ctx.restore();
     });
   }
@@ -5611,12 +5627,8 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
     const isUp=k[CL]>=k[O];
     const col=isUp?'#05d890':'#ff2d55';
     const yO=yP(k[O]), yC=yP(k[CL]), yH=yP(k[HI]), yL=yP(k[LO]);
-
-    // Fitil
     ctx.strokeStyle=col; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(x,yH); ctx.lineTo(x,yL); ctx.stroke();
-
-    // Gövde
     const top=Math.min(yO,yC);
     const bh=Math.max(1.5,Math.abs(yC-yO));
     ctx.fillStyle=col;
@@ -5633,24 +5645,50 @@ function drawCandleFib(canvasId, klines, fibData, ohlcElId){
     ctx.fillText('$'+fp(p), PL-3, gy+3);
   }
 
-  // ── SON FİYAT ÇİZGİSİ + FİYAT BALONU ──
+  // ── SON FİYAT ÇİZGİSİ — belirgin ──
   const last=klines[klines.length-1];
   const lastY=yP(last[CL]);
+
+  // Glow efekti (birden fazla stroke)
   ctx.save();
-  ctx.strokeStyle='rgba(10,132,255,.65)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.strokeStyle='rgba(10,132,255,.15)'; ctx.lineWidth=5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(PL,lastY); ctx.lineTo(PL+CW,lastY); ctx.stroke();
+  ctx.strokeStyle='rgba(10,132,255,.4)'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
   ctx.beginPath(); ctx.moveTo(PL,lastY); ctx.lineTo(PL+CW,lastY); ctx.stroke();
   ctx.setLineDash([]);
-  // Balon — sol tarafta fiyat
+
+  // Sol ok işareti — "fiyat burada"
+  const arrowX=PL+4;
+  ctx.fillStyle='#0a84ff';
+  ctx.beginPath();
+  ctx.moveTo(arrowX,lastY);
+  ctx.lineTo(arrowX+8,lastY-5);
+  ctx.lineTo(arrowX+8,lastY+5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Fiyat balonu — sağda belirgin
   const lbl='$'+fp(last[CL]);
-  ctx.font='bold 9px Space Mono,monospace';
-  const tw=ctx.measureText(lbl).width+10;
+  ctx.font='bold 9.5px Space Mono,monospace';
+  const tw=ctx.measureText(lbl).width+12;
   const bx=PL+CW-tw-2, by=lastY-9, bh2=16;
-  ctx.fillStyle='rgba(10,132,255,.9)';
+  // Glow
+  ctx.shadowColor='rgba(10,132,255,.6)';
+  ctx.shadowBlur=8;
+  ctx.fillStyle='rgba(10,132,255,.95)';
   if(ctx.roundRect) ctx.roundRect(bx,by,tw,bh2,3);
   else ctx.rect(bx,by,tw,bh2);
   ctx.fill();
+  ctx.shadowBlur=0;
   ctx.fillStyle='#ffffff'; ctx.textAlign='left';
   ctx.fillText(lbl, bx+5, by+11);
+
+  // Sol kenar "▶ FİYAT" etiketi
+  ctx.font='bold 7px Space Mono,monospace';
+  ctx.fillStyle='rgba(10,132,255,.9)';
+  ctx.textAlign='right';
+  ctx.fillText('▶', PL-2, lastY+3);
+
   ctx.restore();
 
   // ── OHLC ──
@@ -6235,7 +6273,7 @@ async function doFibPage(){
   const out=document.getElementById('fibOut');
   out.innerHTML='<div class="ld"><div class="spin"></div>Yükleniyor...</div>';
 
-  const [klinesRes, fibRes] = await Promise.all([
+  const [klinesRes, fib] = await Promise.all([
     api(`/api/klines?symbol=${sym}&interval=${tf}&limit=80`),
     api(`/api/fib?symbol=${sym}&interval=${tf}`)
   ]);
@@ -6245,31 +6283,126 @@ async function doFibPage(){
   }
 
   const klines=klinesRes.klines;
-  const fib=fibRes;
   const FCOL={'0':'#ff2d55','23.6':'#ff9f0a','38.2':'#ffd60a','50':'#8a9ab0','61.8':'#05d890','78.6':'#0a84ff','100':'#bf5af2'};
 
-  // Canvas ID benzersiz olsun
-  out.innerHTML=`
-    <div class="chart-wrap" style="margin-bottom:9px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,.04)">
-        <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;font-weight:700">${sym} — ${tf.toUpperCase()} FİBONACCİ</span>
-        <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace" id="fibOHLC"></span>
-      </div>
-      <canvas id="fibCanvas" height="220" style="display:block;width:100%"></canvas>
-    </div>
-    ${fib&&fib.levels?`<div class="card">
-      <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:9px;font-family:'Space Mono',monospace">📊 Seviyeler</div>
-      ${fib.levels.map(l=>{
-        const isCur=Math.abs(l.price-fib.cur)/fib.cur<0.008;
-        const col=FCOL[String(l.pct)]||'#5577aa';
-        return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px ${isCur?'9':'0'}px;border-bottom:1px solid rgba(255,255,255,.04);border-radius:${isCur?'8':'0'}px;background:${isCur?'rgba(10,132,255,.08)':'transparent'};margin:${isCur?'0 -9px':'0'}">
-          <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:14px;border-radius:2px;background:${col}"></div><span style="font-size:9.5px;color:${col};font-weight:700;font-family:'Space Mono',monospace">%${l.pct}</span></div>
-          <span style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace">$${fp(l.price)}</span>
-          <span style="font-size:9.5px;${l.dist>=0?'color:var(--g)':'color:var(--r)'};font-family:'Space Mono',monospace">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</span>
-        </div>`;}).join('')}
-    </div>`:''}`;
+  const hasFib=fib&&fib.levels&&fib.levels.length;
+  const trendUp=fib&&fib.trend_up;
+  const trendLbl=trendUp?'📈 Yukarı Trend':'📉 Aşağı Trend';
+  const trendCol=trendUp?'var(--g)':'var(--r)';
 
-  // Kısa gecikme ile canvas render (DOM'a eklendikten sonra)
+  // Fib seviyeleri içinde fiyatın yüzdesi (range bar için)
+  const rangePos = hasFib ? Math.min(100, Math.max(0,
+    ((fib.cur - fib.low) / (fib.high - fib.low)) * 100
+  )) : 50;
+
+  out.innerHTML=`
+  <!-- GRAFIK -->
+  <div class="chart-wrap" style="margin-bottom:9px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <span style="font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;font-weight:700">${sym} · ${tf.toUpperCase()} · FİBONACCİ</span>
+      <span style="font-size:9px;font-family:'Space Mono',monospace" id="fibOHLC"></span>
+    </div>
+    <canvas id="fibCanvas" height="220" style="display:block;width:100%"></canvas>
+  </div>
+
+  ${hasFib ? `
+  <!-- ÖZET KART -->
+  <div style="background:rgba(255,255,255,.04);border-radius:12px;padding:12px 14px;margin-bottom:8px;border:.5px solid rgba(255,255,255,.08)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:${trendCol}">${trendLbl}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">Retracement: <span style="color:var(--text);font-weight:700">${fib.retrace_pct}%</span></div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:9px;color:var(--muted)">Bölge</div>
+        <div style="font-size:11px;font-weight:700;color:var(--b);font-family:'Space Mono',monospace">${fib.zone_label}</div>
+      </div>
+    </div>
+
+    <!-- Swing range bar -->
+    <div style="margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-bottom:4px">
+        <span>Low $${fp(fib.low)}</span>
+        <span style="color:#0a84ff;font-weight:700">▼ $${fp(fib.cur)}</span>
+        <span>High $${fp(fib.high)}</span>
+      </div>
+      <div style="position:relative;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:visible">
+        <!-- Fib seviyeleri bar üzerinde -->
+        ${fib.levels.map(l=>{
+          const pos=((l.price-fib.low)/(fib.high-fib.low)*100).toFixed(1);
+          const col=FCOL[String(l.pct)]||'#5577aa';
+          return`<div style="position:absolute;left:${pos}%;top:-1px;width:1.5px;height:10px;background:${col};opacity:.7"></div>`;
+        }).join('')}
+        <!-- Dolgu -->
+        <div style="height:8px;width:${rangePos.toFixed(1)}%;background:linear-gradient(90deg,var(--r),var(--y),var(--g));border-radius:4px;max-width:100%"></div>
+        <!-- Fiyat işareti -->
+        <div style="position:absolute;left:${rangePos.toFixed(1)}%;top:-3px;transform:translateX(-50%);width:4px;height:14px;background:#0a84ff;border-radius:2px;box-shadow:0 0 6px rgba(10,132,255,.8)"></div>
+      </div>
+    </div>
+
+    <!-- En yakın destek/direnç -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div style="background:rgba(5,216,144,.08);border:.5px solid rgba(5,216,144,.2);border-radius:8px;padding:8px 10px">
+        <div style="font-size:9px;color:var(--g);font-weight:700;margin-bottom:3px">▲ En Yakın Destek</div>
+        ${fib.nearest_sup ? `
+          <div style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace;color:var(--g)">$${fp(fib.nearest_sup.price)}</div>
+          <div style="font-size:9px;color:var(--muted)">Fib %${fib.nearest_sup.pct} · <span style="color:var(--g)">${fib.nearest_sup.dist.toFixed(2)}%</span></div>
+        ` : '<div style="font-size:10px;color:var(--muted)">—</div>'}
+      </div>
+      <div style="background:rgba(255,45,85,.08);border:.5px solid rgba(255,45,85,.2);border-radius:8px;padding:8px 10px">
+        <div style="font-size:9px;color:var(--r);font-weight:700;margin-bottom:3px">▼ En Yakın Direnç</div>
+        ${fib.nearest_res ? `
+          <div style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace;color:var(--r)">$${fp(fib.nearest_res.price)}</div>
+          <div style="font-size:9px;color:var(--muted)">Fib %${fib.nearest_res.pct} · <span style="color:var(--r)">+${fib.nearest_res.dist.toFixed(2)}%</span></div>
+        ` : '<div style="font-size:10px;color:var(--muted)">—</div>'}
+      </div>
+    </div>
+  </div>
+
+  <!-- TÜM SEVİYELER -->
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+    <div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.08em;margin-bottom:8px">📊 FİBONACCİ SEVİYELERİ</div>
+    ${fib.levels.map(l=>{
+      const col=FCOL[String(l.pct)]||'#5577aa';
+      const isZoneLo=fib.zone_lo&&fib.zone_lo.pct===l.pct;
+      const isZoneHi=fib.zone_hi&&fib.zone_hi.pct===l.pct;
+      const isCur=Math.abs(l.price-fib.cur)/fib.cur<0.012;
+      const isSup=fib.nearest_sup&&fib.nearest_sup.pct===l.pct;
+      const isRes=fib.nearest_res&&fib.nearest_res.pct===l.pct;
+      const bg=isCur?'rgba(10,132,255,.12)':isZoneLo||isZoneHi?'rgba(255,255,255,.03)':'transparent';
+      const border=isCur?'.5px solid rgba(10,132,255,.4)':'none';
+      const badge=isCur
+        ?`<span style="font-size:8px;background:rgba(10,132,255,.2);color:#0a84ff;padding:2px 6px;border-radius:10px;font-weight:700">◀ FİYAT</span>`
+        :isSup?`<span style="font-size:8px;background:rgba(5,216,144,.15);color:var(--g);padding:2px 6px;border-radius:10px">DESTEK</span>`
+        :isRes?`<span style="font-size:8px;background:rgba(255,45,85,.15);color:var(--r);padding:2px 6px;border-radius:10px">DİRENÇ</span>`:'';
+      return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 8px;margin:0 -8px;border-radius:8px;background:${bg};border:${border}">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div style="width:3px;height:16px;border-radius:2px;background:${col};flex-shrink:0"></div>
+          <div>
+            <span style="font-size:10px;color:${col};font-weight:700;font-family:'Space Mono',monospace">%${l.pct}</span>
+            ${badge}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;font-weight:800;font-family:'Space Mono',monospace;color:${isCur?'#0a84ff':col}">$${fp(l.price)}</div>
+          <div style="font-size:9px;color:${l.dist>=0?'var(--g)':'var(--r)'};font-family:'Space Mono',monospace">${l.dist>=0?'+':''}${l.dist.toFixed(2)}%</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+
+  <!-- VOLATİLİTE -->
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:10px;color:var(--muted)">Hacim Trendi</span>
+      <span style="font-size:11px;font-weight:700;color:${fib.vol_ratio>1.2?'var(--g)':fib.vol_ratio<0.8?'var(--r)':'var(--muted)'}">
+        ${fib.vol_ratio}x ${fib.vol_ratio>1.2?'↑ Artıyor':fib.vol_ratio<0.8?'↓ Azalıyor':'→ Normal'}
+      </span>
+    </div>
+  </div>
+  ` : ''}
+  `;
+
   requestAnimationFrame(()=>drawCandleFib('fibCanvas', klines, fib, 'fibOHLC'));
 }
 
@@ -7022,7 +7155,7 @@ async def _start_miniapp_server(bot):
                     content_type="application/json", headers=CORS_HEADERS)
 
         async def handle_fib(request):
-            """Sunucu taraflı Fibonacci."""
+            """Sunucu taraflı Fibonacci — genişletilmiş."""
             sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
             iv  = request.rel_url.query.get("interval","4h")
             try:
@@ -7030,17 +7163,58 @@ async def _start_miniapp_server(bot):
                     async with s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={iv}&limit=100",
                                      timeout=aiohttp.ClientTimeout(total=8)) as r:
                         data = await r.json()
-                hs=[float(x[2]) for x in data];ls=[float(x[3]) for x in data];cs=[float(x[4]) for x in data]
-                high=max(hs);low=min(ls);cur=cs[-1];diff=high-low
-                isUp=cur>(high+low)/2
-                lvls=[0,0.236,0.382,0.5,0.618,0.786,1]
+                hs=[float(x[2]) for x in data]; ls=[float(x[3]) for x in data]
+                cs=[float(x[4]) for x in data]; vs=[float(x[5]) for x in data]
+                high=max(hs); low=min(ls); cur=cs[-1]; diff=high-low
+
+                # Trend: son kapanış ilk kapanıştan yüksekse yukarı
+                trend_up = cs[-1] > cs[0]
+
+                # Retracement yüzdesi
+                retrace_pct = round((high-cur)/(high-low)*100, 1) if trend_up else round((cur-low)/(high-low)*100, 1)
+
+                lvls=[0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
                 levels=[]
                 for l in lvls:
-                    p=high-diff*l if isUp else low+diff*l
-                    dist=(p-cur)/cur*100
-                    levels.append({"pct":round(l*100,1),"price":p,"dist":round(dist,2)})
+                    p = high-diff*l if trend_up else low+diff*l
+                    dist = (p-cur)/cur*100
+                    levels.append({"pct":round(l*100,1), "price":p, "dist":round(dist,2)})
+
+                # Fiyata göre nearest sup/res fib seviyeleri
+                prices_sorted = sorted(levels, key=lambda x: x["price"])
+                nearest_sup = next((l for l in reversed(prices_sorted) if l["price"] <= cur), None)
+                nearest_res = next((l for l in prices_sorted if l["price"] > cur), None)
+
+                # Hangi zone'da?
+                below = [l for l in levels if l["price"] <= cur]
+                above = [l for l in levels if l["price"] > cur]
+                zone_lo = max(below, key=lambda x: x["price"]) if below else levels[0]
+                zone_hi = min(above, key=lambda x: x["price"]) if above else levels[-1]
+                zone_label = f"%{zone_lo['pct']} — %{zone_hi['pct']}"
+
+                # Fib range içinde fiyatın pozisyonu (0-100%)
+                zone_range = zone_hi["price"] - zone_lo["price"]
+                zone_pos = round((cur - zone_lo["price"]) / zone_range * 100, 1) if zone_range else 50
+
+                # Momentum: son 5 mum hacim ortalaması vs önceki
+                vol_now = sum(vs[-5:])/5 if len(vs)>=5 else vs[-1]
+                vol_prev = sum(vs[-15:-5])/10 if len(vs)>=15 else vol_now
+                vol_ratio = round(vol_now/vol_prev, 2) if vol_prev else 1.0
+
                 return aiohttp_web.Response(
-                    text=_json.dumps({"high":high,"low":low,"cur":cur,"levels":levels}),
+                    text=_json.dumps({
+                        "high": high, "low": low, "cur": cur,
+                        "trend_up": trend_up,
+                        "retrace_pct": retrace_pct,
+                        "zone_label": zone_label,
+                        "zone_pos": zone_pos,
+                        "zone_lo": zone_lo,
+                        "zone_hi": zone_hi,
+                        "nearest_sup": nearest_sup,
+                        "nearest_res": nearest_res,
+                        "vol_ratio": vol_ratio,
+                        "levels": levels
+                    }),
                     content_type="application/json", headers=CORS_HEADERS)
             except Exception as e:
                 return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
