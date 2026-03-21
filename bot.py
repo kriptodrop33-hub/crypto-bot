@@ -3545,16 +3545,6 @@ async def start(update: Update, context):
 
     await register_user(update)
 
-    # ── Grup butonları (herkes görür) ──
-    group_buttons = [
-        [InlineKeyboardButton("📊 Market",        callback_data="market"),
-         InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
-        [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
-         InlineKeyboardButton("⚙️ Durum",         callback_data="status")],
-        [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
-         InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
-    ]
-
     # ── DM butonları (tam menü) ──
     dm_buttons = [
         [InlineKeyboardButton("📊 Market",        callback_data="market"),
@@ -3682,9 +3672,17 @@ async def market(update: Update, context):
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     avg  = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
     status_emoji = "🐂" if avg > 0 else "🐻"
-    msg = f"{status_emoji} *Piyasa Duyarliligi:* `%{avg:+.2f}`"
-    target = update.callback_query.message if update.callback_query else update.message
-    await target.reply_text(msg, parse_mode="Markdown")
+    msg_text = f"{status_emoji} *Piyasa Duyarliligi:* `%{avg:+.2f}`"
+    chat = update.effective_chat
+    is_group = chat and chat.type in ("group", "supergroup")
+    is_cb = bool(update.callback_query)
+    target = update.callback_query.message if is_cb else update.message
+    sent = await target.reply_text(msg_text, parse_mode="Markdown")
+    if is_group:
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
+        if not is_cb and update.message:
+            asyncio.create_task(auto_delete(context.bot, chat.id, update.message.message_id, 3))
 
 async def top24(update: Update, context):
     chat = update.effective_chat
@@ -3788,8 +3786,16 @@ async def status(update: Update, context):
         f"🔄 *Izleme Modu:* `{r['mode'].upper()}`\n"
         f"📦 *Takip Edilen Sembol:* `{len(price_memory)}`"
     )
-    target = update.callback_query.message if update.callback_query else update.message
-    await target.reply_text(text, parse_mode="Markdown")
+    chat = update.effective_chat
+    is_group = chat and chat.type in ("group", "supergroup")
+    is_cb = bool(update.callback_query)
+    target = update.callback_query.message if is_cb else update.message
+    sent = await target.reply_text(text, parse_mode="Markdown")
+    if is_group:
+        delay = await get_member_delete_delay()
+        asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
+        if not is_cb and update.message:
+            asyncio.create_task(auto_delete(context.bot, chat.id, update.message.message_id, 3))
 
 async def dashboard_command(update: Update, context):
     """/dashboard — Mini App'i açar; grupta üyeler için DM yönlendirme yapar."""
@@ -4275,15 +4281,8 @@ async def button_handler(update: Update, context):
         "ne_help", "miniapp_dm",
     }
 
-    # Grupta üye bu butonlara tıklayınca DM yönlendirmesi yapılır
-    GROUP_DM_REDIRECT = {
-        "my_alarm", "fav_liste", "zamanla_help", "kar_help",
-        "mtf_help", "alarm_guide", "alarm_history",
-        "takvim_refresh",
-    }
-
     async def dm_redirect(feature_name: str):
-        """Fiyat Hedefi ile aynı pattern: DM'e mesaj + gruba kısa uyarı."""
+        """DM'e mesaj + gruba kısa uyarı."""
         try:
             await context.bot.send_message(
                 chat_id=q.from_user.id,
