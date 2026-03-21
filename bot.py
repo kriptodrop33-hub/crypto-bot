@@ -1122,7 +1122,7 @@ async def _fetch_te_rss() -> list:
 
 async def translate_calendar_events(events: list) -> list:
     """
-    RSS'ten gelen İngilizce takvim başlıklarını ve açıklamalarını Türkçe'ye çevirir.
+    RSS'ten gelen İngilizce takvim başlıklarını VE açıklamalarını Türkçe'ye çevirir.
     Statik (zaten Türkçe) olaylar atlanır.
     """
     if not GROQ_API_KEY or not events:
@@ -1132,11 +1132,20 @@ async def translate_calendar_events(events: list) -> list:
     if not to_translate:
         return events
     try:
-        lines = "\n".join(f"{i+1}. {e['title']}" for i, e in enumerate(to_translate))
+        # Başlık + açıklamaları tek seferde çevir
+        # Format: "T: başlık\nD: açıklama" her olay için ayrı blok
+        blocks = []
+        for e in to_translate:
+            t = e.get("title", "")
+            d = e.get("desc", "")
+            blocks.append(f"T: {t}\nD: {d}" if d else f"T: {t}\nD: -")
+        combined = "\n---\n".join(blocks)
         prompt = (
-            "Translate the following economic/crypto news headlines to Turkish. "
-            "Output ONLY the translations, one per line, same order, no numbers or extra text.\n\n"
-            + lines
+            "Translate the following economic/crypto news titles (T:) and descriptions (D:) to Turkish. "
+            "Keep the exact format: T: and D: prefixes, --- separators. "
+            "If description is '-', keep it as '-'. "
+            "Output ONLY the translated blocks, nothing else.\n\n"
+            + combined
         )
         async with aiohttp.ClientSession() as s:
             async with s.post(
@@ -1145,18 +1154,27 @@ async def translate_calendar_events(events: list) -> list:
                 json={
                     "model": "llama-3.1-8b-instant",
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 1000, "temperature": 0.1
+                    "max_tokens": 1500, "temperature": 0.1
                 },
-                timeout=aiohttp.ClientTimeout(total=15)
+                timeout=aiohttp.ClientTimeout(total=20)
             ) as r:
                 if r.status == 200:
                     data = await r.json()
                     raw = data["choices"][0]["message"]["content"].strip()
-                    translated = [l.strip() for l in raw.split("\n") if l.strip()]
+                    result_blocks = [b.strip() for b in raw.split("---") if b.strip()]
                     for i, ev in enumerate(to_translate):
-                        if i < len(translated):
-                            ev["title"] = translated[i]
-                    log.info(f"Takvim cevirisi OK: {len(to_translate)} baslik")
+                        if i >= len(result_blocks):
+                            break
+                        block = result_blocks[i]
+                        for line in block.split("\n"):
+                            line = line.strip()
+                            if line.startswith("T:"):
+                                ev["title"] = line[2:].strip()
+                            elif line.startswith("D:"):
+                                desc_tr = line[2:].strip()
+                                if desc_tr and desc_tr != "-":
+                                    ev["desc"] = desc_tr
+                    log.info(f"Takvim cevirisi OK: {len(to_translate)} olay (baslik+aciklama)")
                 else:
                     log.warning(f"Takvim cevirisi Groq hata: {r.status}")
     except Exception as e:
@@ -1288,21 +1306,29 @@ async def takvim_command(update: Update, context):
     except Exception: pass
 
     now = datetime.utcnow()
-    text = "📅 *Ekonomik & Kripto Takvim*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    text = "📅 *EKONOMİK & KRİPTO TAKVİM*\n━━━━━━━━━━━━━━━━━━━━━\n"
     for ev in events[:8]:
         try:
             ev_dt  = datetime.strptime(ev["date"], "%Y-%m-%d")
             diff   = (ev_dt.date() - now.date()).days
-            zamanl = "⚡ *BUGÜN*" if diff==0 else ("🔜 Yarın" if diff==1 else (f"📆 {diff}g sonra" if diff<7 else f"📆 {ev['date']}"))
-            imp    = ev.get("importance", 0)
-            imp_str= "🔴" if imp>=80 else ("🟡" if imp>=50 else "🟢")
-            coins  = f" `{ev['coins']}`" if ev.get("coins") else ""
-            text  += f"\n{imp_str} {zamanl}\n📌 {ev['title']}{coins}\n"
-            if ev.get("desc"):
-                text += f"   _{ev['desc']}_\n"
+            if diff == 0:
+                zamanl = "⚡ *BUGÜN*"
+            elif diff == 1:
+                zamanl = "🔜 *Yarın*"
+            elif diff < 0:
+                zamanl = f"📌 _{abs(diff)}g önce_"
+            elif diff < 7:
+                zamanl = f"📆 *{diff}g sonra*"
+            else:
+                zamanl = f"📆 {ev['date']}"
+            imp     = ev.get("importance", 0)
+            imp_str = "🔴" if imp >= 80 else ("🟡" if imp >= 50 else "🟢")
+            coins   = f"\n🪙 _{ev['coins']}_" if ev.get("coins") else ""
+            desc    = f"\n💬 _{ev['desc']}_" if ev.get("desc") else ""
+            text   += f"\n{imp_str} {zamanl}\n📌 *{ev['title']}*{coins}{desc}\n"
         except Exception:
             pass
-    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n⏰ _{now.strftime('%d.%m.%Y %H:%M')} UTC_"
+    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yüksek  🟡 Orta  🟢 Düşük etki\n⏰ _{now.strftime('%d.%m.%Y %H:%M')} UTC_"
 
     is_group = chat.type in ("group", "supergroup")
     delay    = (await get_member_delete_delay()) if is_group else None
@@ -1322,11 +1348,14 @@ async def takvim_job(context):
         if not bugun_evs: return
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT user_id FROM takvim_subscribers WHERE active=1")
-        text = "📅 *Bugünkü Önemli Ekonomik Olaylar*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text = "📅 *BUGÜNKÜ ÖNEMLİ EKONOMİK OLAYLAR*\n━━━━━━━━━━━━━━━━━━━━━\n"
         for ev in bugun_evs:
-            text += f"\n🔴 *{ev['title']}*\n"
-            if ev.get("desc"): text += f"_{ev['desc']}_\n"
-        text += "\n💡 _Kapatmak için /takvim → 'Bildirim Kapat'_"
+            imp     = ev.get("importance", 0)
+            imp_str = "🔴" if imp >= 80 else ("🟡" if imp >= 50 else "🟢")
+            text += f"\n{imp_str} 📌 *{ev['title']}*\n"
+            if ev.get("desc"):
+                text += f"💬 _{ev['desc']}_\n"
+        text += "\n━━━━━━━━━━━━━━━━━━━━━\n💡 _Kapatmak için /takvim → 'Bildirim Kapat'_"
         for row in rows:
             try: await context.bot.send_message(row["user_id"], text, parse_mode="Markdown")
             except Exception: pass
@@ -4179,16 +4208,28 @@ async def button_handler(update: Update, context):
         if q.data == "takvim_refresh":
             events = await fetch_crypto_calendar()
             now    = datetime.utcnow()
-            text   = "📅 *Ekonomik & Kripto Takvim*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            text   = "📅 *EKONOMİK & KRİPTO TAKVİM*\n━━━━━━━━━━━━━━━━━━━━━\n"
             for ev in events[:8]:
                 try:
                     ev_dt  = datetime.strptime(ev["date"], "%Y-%m-%d")
                     diff   = (ev_dt.date() - now.date()).days
-                    zamanl = "⚡ *BUGÜN*" if diff==0 else ("🔜 Yarın" if diff==1 else f"📆 {diff}g sonra")
-                    imp    = ev.get("importance", 0)
-                    text  += f"\n{'🔴' if imp>=80 else '🟡'} {zamanl}\n📌 {ev['title']}\n"
-                    if ev.get("desc"): text += f"   _{ev['desc']}_\n"
+                    if diff == 0:
+                        zamanl = "⚡ *BUGÜN*"
+                    elif diff == 1:
+                        zamanl = "🔜 *Yarın*"
+                    elif diff < 0:
+                        zamanl = f"📌 _{abs(diff)}g önce_"
+                    elif diff < 7:
+                        zamanl = f"📆 *{diff}g sonra*"
+                    else:
+                        zamanl = f"📆 {ev['date']}"
+                    imp     = ev.get("importance", 0)
+                    imp_str = "🔴" if imp >= 80 else ("🟡" if imp >= 50 else "🟢")
+                    coins   = f"\n🪙 _{ev['coins']}_" if ev.get("coins") else ""
+                    desc    = f"\n💬 _{ev['desc']}_" if ev.get("desc") else ""
+                    text   += f"\n{imp_str} {zamanl}\n📌 *{ev['title']}*{coins}{desc}\n"
                 except Exception: pass
+            text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yüksek  🟡 Orta  🟢 Düşük etki\n⏰ _{now.strftime('%d.%m.%Y %H:%M')} UTC_"
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔔 Bildirim Aç/Kapat", callback_data="takvim_toggle"),
                 InlineKeyboardButton("🔄 Yenile",             callback_data="takvim_refresh"),
