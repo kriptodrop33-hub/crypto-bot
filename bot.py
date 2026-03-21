@@ -1990,8 +1990,9 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
 # ================= GRUP ERİŞİM KONTROLÜ =================
 
-# Grup üyelerinin kullanabileceği komutlar
-GROUP_ALLOWED_CMDS = {"start", "top5", "top24", "mtf"}
+# Grup üyelerinin komut olarak kullanabileceği özellikler
+# (buton tıklamalarından bağımsız — command handler seviyesinde)
+GROUP_ALLOWED_CMDS = {"start", "top5", "top24", "top5", "market", "status", "mtf"}
 
 async def check_group_access(update: Update, context, feature_name: str = None) -> bool:
     """
@@ -2523,11 +2524,18 @@ async def alarm_ekle_v2(update: Update, context):
 
     if len(args) < 2:
         await send_temp(context.bot, update.effective_chat.id,
-            "📌 *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
-            "• `%`    : `/alarm_ekle BTCUSDT 3.5`\n"
-            "• Fiyat  : `/alarm_ekle BTCUSDT fiyat 70000`\n"
-            "• RSI    : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
-            "• Bant   : `/alarm_ekle BTCUSDT bant 60000 70000`",
+            "🔔 *Alarm Ekle — Kullanım*\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "📊 *Yüzde Alarmı* _(5dk harekette)_\n"
+            "`/alarm_ekle BTCUSDT 3.5`\n\n"
+            "🎯 *Fiyat Alarmı* _(hedefe ulaşınca)_\n"
+            "`/alarm_ekle BTCUSDT fiyat 70000`\n\n"
+            "📈 *RSI Alarmı* _(seviyeye girince)_\n"
+            "`/alarm_ekle BTCUSDT rsi 30 asagi`\n"
+            "`/alarm_ekle BTCUSDT rsi 70 yukari`\n\n"
+            "📦 *Bant Alarmı* _(bant dışına çıkınca)_\n"
+            "`/alarm_ekle BTCUSDT bant 60000 70000`\n\n"
+            "💡 _Alarmlarınız: /alarmim_",
             parse_mode="Markdown"
         )
         return
@@ -2539,11 +2547,11 @@ async def alarm_ekle_v2(update: Update, context):
     if args[1].lower() in ("fiyat", "price", "hedef"):
         if len(args) < 3:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/alarm_ekle BTCUSDT fiyat 70000`", parse_mode="Markdown"); return
+                "Kullanım: `/alarm_ekle BTCUSDT fiyat 70000`", parse_mode="Markdown"); return
         try:
             target_price = float(args[2].replace(",","."))
         except:
-            await send_temp(context.bot, update.effective_chat.id, "Fiyat degeri sayi olmali.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Fiyat değeri sayı olmalı.", parse_mode="Markdown"); return
 
         # Anlık fiyatı al, direction belirle
         fiyat_map = await _hedef_canli_fiyat([symbol])
@@ -2577,10 +2585,10 @@ async def alarm_ekle_v2(update: Update, context):
     if args[1].lower() == "rsi":
         if len(args) < 3:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
+                "Kullanım: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
         try:    rsi_lvl = float(args[2])
         except:
-            await send_temp(context.bot, update.effective_chat.id, "RSI degeri sayi olmali.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "RSI değeri sayı olmalı.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,rsi_level,active)
@@ -2588,10 +2596,17 @@ async def alarm_ekle_v2(update: Update, context):
                 ON CONFLICT(user_id,symbol) DO UPDATE
                 SET alarm_type='rsi', rsi_level=$4, threshold=0, active=1
             """, user_id, username, symbol, rsi_lvl)
-        direction_str = "asagi" if len(args) < 4 or args[3].lower() in ("asagi","aşağı") else "yukari"
-        yon_str = "altina dusunce" if direction_str == "asagi" else "ustune cikinca"
+        direction_str = "asagi" if len(args) < 4 or args[3].lower() in ("asagi","aşağı","down") else "yukari"
+        yon_str = "altına düşünce 📉" if direction_str == "asagi" else "üstüne çıkınca 📈"
+        # Yön bilgisini DB'ye kaydet (alarm_job'un doğru tetikleyebilmesi için)
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE user_alarms SET rsi_level=$1
+                WHERE user_id=$2 AND symbol=$3
+            """, rsi_lvl * (-1 if direction_str == "asagi" else 1), user_id, symbol)
         await send_temp(context.bot, update.effective_chat.id,
-            "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!",
+            "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!\n"
+            "_Yön: " + ("aşağı 📉" if direction_str == "asagi" else "yukarı 📈") + "_",
             parse_mode="Markdown"
         )
         return
@@ -2599,12 +2614,12 @@ async def alarm_ekle_v2(update: Update, context):
     if args[1].lower() == "bant":
         if len(args) < 4:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/alarm_ekle BTCUSDT bant 60000 70000`", parse_mode="Markdown"); return
+                "Kullanım: `/alarm_ekle BTCUSDT bant 60000 70000`", parse_mode="Markdown"); return
         try:
             band_low  = float(args[2].replace(",","."))
             band_high = float(args[3].replace(",","."))
         except:
-            await send_temp(context.bot, update.effective_chat.id, "Fiyat degerleri sayi olmali.", parse_mode="Markdown"); return
+            await send_temp(context.bot, update.effective_chat.id, "Fiyat değerleri sayı olmalı.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,band_low,band_high,active)
@@ -2614,14 +2629,14 @@ async def alarm_ekle_v2(update: Update, context):
             """, user_id, username, symbol, band_low, band_high)
         await send_temp(context.bot, update.effective_chat.id,
             "✅ *" + symbol + "* `" + format_price(band_low) + " - " + format_price(band_high) +
-            " USDT` bandından cikinca alarm verilecek!",
+            " USDT` bandından çıkınca alarm verilecek!",
             parse_mode="Markdown"
         )
         return
 
     try:    threshold = float(args[1])
     except:
-        await send_temp(context.bot, update.effective_chat.id, "Esik sayi olmalidir. Ornek: `3.5`", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "Eşik sayı olmalıdır. Örnek: `3.5`", parse_mode="Markdown"); return
     async with db_pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO user_alarms(user_id,username,symbol,threshold,alarm_type,active)
@@ -2630,7 +2645,7 @@ async def alarm_ekle_v2(update: Update, context):
             SET threshold=$4, alarm_type='percent', active=1
         """, user_id, username, symbol, threshold)
     await send_temp(context.bot, update.effective_chat.id,
-        "✅ *" + symbol + "* icin `%" + str(threshold) + "` alarmi eklendi!",
+        "✅ *" + symbol + "* için `%" + str(threshold) + "` alarmı eklendi!",
         parse_mode="Markdown"
     )
 
@@ -2640,7 +2655,7 @@ async def alarm_sil(update: Update, context):
     user_id = update.effective_user.id
     if not context.args:
         await send_temp(context.bot, update.effective_chat.id,
-            "Kullanim: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
+            "Kullanım: `/alarm_sil BTCUSDT`", parse_mode="Markdown")
         return
     symbol = context.args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
@@ -2650,35 +2665,10 @@ async def alarm_sil(update: Update, context):
         )
     if result == "DELETE 0":
         await send_temp(context.bot, update.effective_chat.id,
-            f"`{symbol}` icin kayitli alarm bulunamadi.", parse_mode="Markdown")
+            f"`{symbol}` için kayıtlı alarm bulunamadı.", parse_mode="Markdown")
     else:
         await send_temp(context.bot, update.effective_chat.id,
             f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
-
-async def my_alarm(update: Update, context):
-    user_id = update.effective_user.id
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT symbol, threshold, active FROM user_alarms WHERE user_id=$1", user_id
-        )
-    if not rows:
-        text = (
-            "🔔 *Kişisel Alarm Paneli*\n━━━━━━━━━━━━━━━━━━\n"
-            "Henuz aktif alarminiz yok.\n\n"
-            "➕ Alarm eklemek icin:\n`/alarm_ekle BTCUSDT 3.5`"
-        )
-    else:
-        text = "🔔 *Kişisel Alarmlarınız*\n━━━━━━━━━━━━━━━━━━\n"
-        for r in rows:
-            durum = "✅ Aktif" if r["active"] else "⏸ Durduruldu"
-            text += f"• `{r['symbol']}` → `%{r['threshold']}` — {durum}\n"
-        text += "\n`/alarm_ekle BTCUSDT 3.5` — yeni ekle\n`/alarm_sil BTCUSDT` — sil"
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("➕ Alarm Ekle",  callback_data="alarm_guide"),
-        InlineKeyboardButton("🗑 Tumunu Sil", callback_data=f"alarm_deleteall_{user_id}")
-    ]])
-    msg = update.callback_query.message if update.callback_query else update.message
-    await msg.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 async def favori_command(update: Update, context):
     if not await check_group_access(update, context, "Favoriler"):
@@ -2706,7 +2696,7 @@ async def favori_command(update: Update, context):
     if args[0].lower() == "ekle":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
+                "Kullanım: `/favori ekle BTCUSDT`", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
@@ -2717,7 +2707,7 @@ async def favori_command(update: Update, context):
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
+                "Kullanım: `/favori sil BTCUSDT`", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
@@ -2739,7 +2729,7 @@ async def favori_command(update: Update, context):
         return
 
     await send_temp(context.bot, update.effective_chat.id,
-        "Kullanim:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n`/favori liste`\n`/favori analiz`",
+        "Kullanım:\n`/favori ekle BTCUSDT`\n`/favori sil BTCUSDT`\n`/favori liste`\n`/favori analiz`",
         parse_mode="Markdown"
     )
 
@@ -2750,12 +2740,12 @@ async def alarm_duraklat(update: Update, context):
     args    = context.args or []
     if len(args) < 2:
         await send_temp(context.bot, update.effective_chat.id,
-            "Kullanim: `/alarm_duraklat BTCUSDT 2` (saat)", parse_mode="Markdown"); return
+            "Kullanım: `/alarm_duraklat BTCUSDT 2` (saat)", parse_mode="Markdown"); return
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     try:    saat = float(args[1])
     except:
-        await send_temp(context.bot, update.effective_chat.id, "Saat sayi olmali.", parse_mode="Markdown"); return
+        await send_temp(context.bot, update.effective_chat.id, "Saat sayı olmalı.", parse_mode="Markdown"); return
     until = datetime.utcnow() + timedelta(hours=saat)
     async with db_pool.acquire() as conn:
         r = await conn.execute(
@@ -2764,7 +2754,7 @@ async def alarm_duraklat(update: Update, context):
         )
     if r == "UPDATE 0":
         await send_temp(context.bot, update.effective_chat.id,
-            f"`{symbol}` icin alarm bulunamadi.", parse_mode="Markdown")
+            f"`{symbol}` için alarm bulunamadı.", parse_mode="Markdown")
     else:
         await send_temp(context.bot, update.effective_chat.id,
             f"⏸ *{symbol}* alarmi `{int(saat)} saat` duraklatildi. "
@@ -2973,7 +2963,7 @@ async def hedef_command(update: Update, context):
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim:\n`/hedef sil BTCUSDT` — sembol sil\n`/hedef sil hepsi` — tümünü sil",
+                "Kullanım:\n`/hedef sil BTCUSDT` — sembol sil\n`/hedef sil hepsi` — tümünü sil",
                 parse_mode="Markdown"); return
         if args[1].lower() in ("hepsi", "tumu", "tümü"):
             async with db_pool.acquire() as conn:
@@ -3002,7 +2992,7 @@ async def hedef_command(update: Update, context):
 
     if not hedef_fiyatlar:
         await send_temp(context.bot, update.effective_chat.id,
-            "Kullanim: `/hedef BTCUSDT 70000`\n"
+            "Kullanım: `/hedef BTCUSDT 70000`\n"
             "Çoklu: `/hedef BTCUSDT 60000 70000 80000`",
             parse_mode="Markdown"); return
 
@@ -3142,7 +3132,7 @@ async def kar_command(update: Update, context):
             await send_temp(context.bot, update.effective_chat.id,
                 "💰 *Kar/Zarar Takibi*\n━━━━━━━━━━━━━━━━━━\n"
                 "Kayıtlı pozisyon yok.\n\n"
-                "Eklemek icin:\n`/kar BTCUSDT 0.5 60000` — miktar alış_fiyatı\n"
+                "Eklemek için:\n`/kar BTCUSDT 0.5 60000` — miktar alış_fiyatı\n"
                 "`/kar sil BTCUSDT` — pozisyonu sil",
                 parse_mode="Markdown")
             return
@@ -3170,7 +3160,7 @@ async def kar_command(update: Update, context):
     if args[0].lower() == "sil":
         if len(args) < 2:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/kar sil BTCUSDT`", parse_mode="Markdown"); return
+                "Kullanım: `/kar sil BTCUSDT`", parse_mode="Markdown"); return
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
@@ -3187,7 +3177,7 @@ async def kar_command(update: Update, context):
             buy_price = float(args[2].replace(",","."))
         except:
             await send_temp(context.bot, update.effective_chat.id,
-                "Kullanim: `/kar BTCUSDT 0.5 60000`", parse_mode="Markdown"); return
+                "Kullanım: `/kar BTCUSDT 0.5 60000`", parse_mode="Markdown"); return
 
         canli = await _hedef_canli_fiyat([symbol])
         cur   = canli.get(symbol)
@@ -3242,7 +3232,7 @@ async def mtf_command(update: Update, context):
     if not args:
         await send_temp(context.bot, update.effective_chat.id,
             "📊 *MTF Analiz*\n━━━━━━━━━━━━━━━━━━\n"
-            "Kullanim: `/mtf BTCUSDT`\n"
+            "Kullanım: `/mtf BTCUSDT`\n"
             "Örnek: `/mtf XRPUSDT`",
             parse_mode="Markdown")
         return
@@ -3499,9 +3489,9 @@ async def whale_job(context):
                 "💎 *" + sym + "*\n"
                 "💵 Fiyat: `" + format_price(price) + " USDT`\n"
                 "📦 Hacim: `" + ("%.1f" % (curr/1_000_000)) + "M USDT`\n"
-                "📈 Hacim Artisi: `+" + ("%.0f" % pct) + "%`\n"
+                "📈 Hacim Artışı: `+" + ("%.0f" % pct) + "%`\n"
                 "🔄 24s: `" + ("%+.2f" % ch24) + "%`\n"
-                "_Buyuk oyuncu hareketi!_"
+                "_Büyük oyuncu hareketi!_"
             )
             await context.bot.send_message(GROUP_CHAT_ID, text, parse_mode="Markdown")
     except Exception as e:
@@ -3519,21 +3509,21 @@ async def send_weekly_report(bot, chat_id):
         top5    = sorted(usdt, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:5]
         bot5    = sorted(usdt, key=lambda x: float(x["priceChangePercent"]))[:5]
         avg     = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
-        mood    = "🐂 Boga" if avg > 1 else "🐻 Ayi" if avg < -1 else "😐 Yatay"
+        mood    = "🐂 Boğa" if avg > 1 else "🐻 Ayı" if avg < -1 else "😐 Yatay"
         now_str = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y")
 
         text = (
-            "📅 *Haftalik Kripto Raporu*\n━━━━━━━━━━━━━━━━━━\n"
+            "📅 *Haftalık Kripto Raporu*\n━━━━━━━━━━━━━━━━━━\n"
             "🗓 " + now_str + " · " + mood + "\n"
-            "📊 Ort. Degisim: `" + ("%+.2f" % avg) + "%`\n\n"
+            "📊 Ort. Değişim: `" + ("%+.2f" % avg) + "%`\n\n"
             "🚀 *En Çok Yükselen 5*\n"
         )
         for i, c in enumerate(top5, 1):
             text += get_number_emoji(i) + " `" + c["symbol"] + "` 🟢 `" + ("%+.2f" % float(c["priceChangePercent"])) + "%`\n"
-        text += "\n📉 *En Cok Dusen 5*\n"
+        text += "\n📉 *En Çok Düşen 5*\n"
         for i, c in enumerate(bot5, 1):
             text += get_number_emoji(i) + " `" + c["symbol"] + "` 🔴 `" + ("%+.2f" % float(c["priceChangePercent"])) + "%`\n"
-        text += "\n_Iyi haftalar! 🎯_"
+        text += "\n_İyi haftalar! 🎯_"
         await bot.send_message(chat_id, text, parse_mode="Markdown")
     except Exception as e:
         log.error("Haftalik rapor: " + str(e))
@@ -3600,7 +3590,7 @@ async def zamanla_command(update: Update, context):
             parse_mode="Markdown"); return
 
     await send_temp(context.bot, update.effective_chat.id,
-        "Kullanim:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
+        "Kullanım:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
         "`/zamanla liste`\n`/zamanla sil`",
         parse_mode="Markdown")
 
@@ -3954,7 +3944,16 @@ async def dashboard_command(update: Update, context):
 
 async def istatistik(update: Update, context):
     """Bot istatistiklerini sadece ADMIN_ID'ye gösterir."""
+    chat    = update.effective_chat
     user_id = update.effective_user.id if update.effective_user else None
+
+    # Grupta yazılırsa sessizce sil
+    if chat and chat.type in ("group", "supergroup"):
+        if update.message:
+            try: await update.message.delete()
+            except Exception: pass
+        return
+
     if not is_bot_admin(user_id):
         await update.message.reply_text("🚫 Bu komut sadece bot sahibine açıktır.", parse_mode="Markdown")
         return
@@ -4733,8 +4732,14 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 async with aiohttp.ClientSession() as sess:
                     kdata = await fetch_klines(sess, symbol, "1h", limit=50)
                 rsi_now = calc_rsi(kdata, 14)
-                triggered = rsi_now <= rsi_level or rsi_now >= (100 - rsi_level)
-                direction = "down" if rsi_now <= rsi_level else "up"
+                # rsi_level negatifse "aşağı" yön, pozitifse "yukarı" yön
+                abs_level = abs(rsi_level)
+                if rsi_level < 0:   # aşağı alarm
+                    triggered = rsi_now <= abs_level
+                    direction = "down"
+                else:               # yukarı alarm
+                    triggered = rsi_now >= abs_level
+                    direction = "up"
             except:
                 pass
         elif alarm_type == "band" and band_low is not None and band_high is not None:
