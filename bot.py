@@ -1120,6 +1120,49 @@ async def _fetch_te_rss() -> list:
 
     return events
 
+async def translate_calendar_events(events: list) -> list:
+    """
+    RSS'ten gelen İngilizce takvim başlıklarını ve açıklamalarını Türkçe'ye çevirir.
+    Statik (zaten Türkçe) olaylar atlanır.
+    """
+    if not GROQ_API_KEY or not events:
+        return events
+    # Sadece RSS kaynaklı (İngilizce) olayları çevir
+    to_translate = [e for e in events if e.get("source") not in ("Makro Takvim",)]
+    if not to_translate:
+        return events
+    try:
+        lines = "\n".join(f"{i+1}. {e['title']}" for i, e in enumerate(to_translate))
+        prompt = (
+            "Translate the following economic/crypto news headlines to Turkish. "
+            "Output ONLY the translations, one per line, same order, no numbers or extra text.\n\n"
+            + lines
+        )
+        async with aiohttp.ClientSession() as s:
+            async with s.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1000, "temperature": 0.1
+                },
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    raw = data["choices"][0]["message"]["content"].strip()
+                    translated = [l.strip() for l in raw.split("\n") if l.strip()]
+                    for i, ev in enumerate(to_translate):
+                        if i < len(translated):
+                            ev["title"] = translated[i]
+                    log.info(f"Takvim cevirisi OK: {len(to_translate)} baslik")
+                else:
+                    log.warning(f"Takvim cevirisi Groq hata: {r.status}")
+    except Exception as e:
+        log.warning(f"Takvim cevirisi basarisiz: {e}")
+    return events
+
 async def fetch_crypto_calendar() -> list:
     """
     Ekonomik takvim verilerini toplar:
@@ -1193,6 +1236,9 @@ async def fetch_crypto_calendar() -> list:
         if key not in seen:
             seen.add(key)
             unique.append(ev)
+
+    # RSS'ten gelen İngilizce başlıkları Türkçe'ye çevir
+    unique = await translate_calendar_events(unique)
 
     return unique[:20]
 
