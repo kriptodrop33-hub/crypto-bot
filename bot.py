@@ -5904,27 +5904,199 @@ function showTop(m){
 }
 
 // ── ANALİZ ──
+function _fp2(v){return v<1?v.toFixed(4):v>=1000?v.toLocaleString('tr-TR',{maximumFractionDigits:2}):v.toFixed(2);}
+function _rsiCol(r){return r<30?'var(--g)':r>70?'var(--r)':r<45?'#ff9f0a':r>55?'#5ac8fa':'var(--muted)';}
+function _rsiLbl(r){return r<30?'Aşırı Satım':r>70?'Aşırı Alım':r<45?'Zayıf':r>55?'Güçlü':'Nötr';}
+
 async function doAnaliz(){
   const raw=(document.getElementById('aIn').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const sym=raw.endsWith('USDT')?raw:raw+'USDT';
   const out=document.getElementById('aOut');
   out.innerHTML='<div class="ld"><div class="spin"></div>Analiz yapılıyor...</div>';
   const d=await api(`/api/analiz?symbol=${sym}`);
-  if(!d){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
-  const {rsi1,rsi4,rsiD,score,signals}=d;
-  const col=score>=70?'var(--g)':score>=55?'var(--b)':score>=45?'var(--y)':score>=30?'var(--o)':'var(--r)';
-  const lbl=score>=70?'🟢 AL':score>=55?'🔵 ZAYIF AL':score>=45?'⚪ NÖTR':score>=30?'🟠 ZAYIF SAT':'🔴 SAT';
-  out.innerHTML=`<div class="card" style="margin-bottom:9px;text-align:center">
-    <div style="font-size:26px;font-weight:900;color:${col};font-family:'Space Mono',monospace;padding:8px 0">${lbl}</div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:10px">Sinyal: ${score}/100</div>
-    <div class="pb"><div class="pbf" style="width:${score}%;background:${col}"></div></div>
+  if(!d||d.error){out.innerHTML='<div class="mt"><div class="mt-i">⚠️</div><div class="mt-t">Veri alınamadı</div></div>';return;}
+
+  const {score,bull_cnt,bear_cnt,signals,
+         rsi1,rsi4,rsiD,rsi7_1h,
+         macd1h,sig1h,hist1h,macd4h,sig4h,hist4h,
+         srsi1h,srsi4h,
+         bb_up1h,bb_mid1h,bb_lo1h,bb_pct1h,
+         bb_up4h,bb_mid4h,bb_lo4h,
+         e9_1h,e21_1h,e9_4h,e21_4h,e50_4h,e200_4h,e50_1d,e200_1d,
+         atr1h,atr4h,atr_pct,vol_ratio1h,vol_ratio4h,
+         ch1h,ch4h,ch24h,ch7d,sup,res,cur}=d;
+
+  const col=score>=70?'var(--g)':score>=60?'#5ac8fa':score>=50?'#ffd60a':score>=40?'#ff9f0a':'var(--r)';
+  const lbl=score>=70?'GÜÇLÜ AL':score>=60?'AL':score>=50?'NÖTR':score>=40?'SAT':'GÜÇLÜ SAT';
+  const lbl_em=score>=70?'🟢':score>=60?'🔵':score>=50?'⚪':score>=40?'🟠':'🔴';
+
+  // Sinyalleri kategoriye göre grupla
+  const cats={trend:[],momentum:[],osc:[],volume:[],perf:[]};
+  (signals||[]).forEach(s=>{ if(cats[s.cat]) cats[s.cat].push(s); });
+
+  const catNames={trend:'📈 Trend',momentum:'⚡ Momentum',osc:'🔄 Osilatör',volume:'📦 Hacim',perf:'⏱ Performans'};
+
+  function sigRows(arr){
+    return arr.map(s=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.05)">
+        <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text)">
+          <span style="width:7px;height:7px;border-radius:50%;background:${s.bull?'var(--g)':'var(--r)'};flex-shrink:0"></span>
+          ${s.label}
+        </span>
+        <span style="font-size:10px;color:${s.bull?'var(--g)':'var(--r)'};font-family:'Space Mono',monospace;font-weight:700">${s.val}</span>
+      </div>`).join('');
+  }
+
+  function catBlock(key){
+    const arr=cats[key]||[];
+    if(!arr.length) return '';
+    const bc=arr.filter(s=>s.bull).length;
+    const br=arr.length-bc;
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.05em">${catNames[key]}</span>
+        <span style="font-size:10px;font-family:'Space Mono',monospace">
+          <span style="color:var(--g)">▲${bc}</span>
+          <span style="color:var(--r);margin-left:4px">▼${br}</span>
+        </span>
+      </div>
+      <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:0 10px">${sigRows(arr)}</div>
+    </div>`;
+  }
+
+  // RSI mini bar helper
+  function rsiBar(val){
+    const c=_rsiCol(val);
+    const pct=val;
+    return `<div style="position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;margin-top:4px">
+      <div style="position:absolute;left:0;top:0;height:4px;width:${pct}%;background:${c};border-radius:2px;transition:width .4s"></div>
+      <div style="position:absolute;left:30%;top:-1px;width:.5px;height:6px;background:rgba(255,255,255,.2)"></div>
+      <div style="position:absolute;left:70%;top:-1px;width:.5px;height:6px;background:rgba(255,255,255,.2)"></div>
+    </div>`;
+  }
+
+  out.innerHTML=`
+  <!-- SKOR KARTI -->
+  <div style="background:rgba(255,255,255,.04);border-radius:12px;padding:14px 16px;margin-bottom:8px;text-align:center;border:.5px solid ${col}40">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${sym} — Teknik Skor</div>
+    <div style="font-size:32px;font-weight:900;color:${col};font-family:'Space Mono',monospace;line-height:1">${lbl_em} ${lbl}</div>
+    <div style="font-size:13px;font-weight:700;color:${col};margin:6px 0 10px;font-family:'Space Mono',monospace">${score}/100</div>
+    <div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">
+      <div style="height:6px;width:${score}%;background:linear-gradient(90deg,var(--r),var(--y),var(--g));border-radius:3px;transition:width .6s;clip-path:inset(0 ${100-score}% 0 0 round 3px)"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px">
+      <span style="color:var(--r)">🔴 SAT</span>
+      <span style="color:var(--muted)">🟢 ${bull_cnt} AL · 🔴 ${bear_cnt} SAT · Toplam ${(signals||[]).length} sinyal</span>
+      <span style="color:var(--g)">AL 🟢</span>
+    </div>
   </div>
-  <div class="g3" style="margin-bottom:9px">
-    <div class="sb"><div class="sv ${rsi1<30?'up':rsi1>70?'dn':'nu'}">${Math.round(rsi1)}</div><div class="sl">RSI 1s</div></div>
-    <div class="sb"><div class="sv ${rsi4<30?'up':rsi4>70?'dn':'nu'}">${Math.round(rsi4)}</div><div class="sl">RSI 4s</div></div>
-    <div class="sb"><div class="sv ${rsiD<30?'up':rsiD>70?'dn':'nu'}">${Math.round(rsiD)}</div><div class="sl">RSI 1g</div></div>
+
+  <!-- RSI KARTI -->
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:10px;letter-spacing:.05em">🔄 RSI GÖSTERGELERİ</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      ${[['RSI 14','1s',rsi1],['RSI 14','4s',rsi4],['RSI 14','1g',rsiD]].map(([n,tf,v])=>`
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:900;color:${_rsiCol(v)};font-family:'Space Mono',monospace">${Math.round(v)}</div>
+          <div style="font-size:9px;color:var(--muted);margin:2px 0">${n} · ${tf}</div>
+          <div style="font-size:9px;color:${_rsiCol(v)}">${_rsiLbl(v)}</div>
+          ${rsiBar(v)}
+        </div>`).join('')}
+    </div>
   </div>
-  <div class="card">${(signals||[]).map(s=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px"><span style="color:${s.bull?'var(--g)':'var(--r)'}">${s.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${s.val}</span></div>`).join('')}</div>`;
+
+  <!-- MACD + BOLLINGER -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">⚡ MACD (1s)</div>
+      <div style="font-size:11px;display:grid;gap:4px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">MACD</span><span style="color:${macd1h>0?'var(--g)':'var(--r)'};font-family:'Space Mono',monospace">${macd1h.toFixed(4)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Sinyal</span><span style="font-family:'Space Mono',monospace;color:var(--text)">${sig1h.toFixed(4)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Hist</span><span style="color:${hist1h>0?'var(--g)':'var(--r)'};font-weight:700;font-family:'Space Mono',monospace">${hist1h>0?'▲':'▼'} ${Math.abs(hist1h).toFixed(4)}</span></div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">⚡ MACD (4s)</div>
+      <div style="font-size:11px;display:grid;gap:4px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">MACD</span><span style="color:${macd4h>0?'var(--g)':'var(--r)'};font-family:'Space Mono',monospace">${macd4h.toFixed(4)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Sinyal</span><span style="font-family:'Space Mono',monospace;color:var(--text)">${sig4h.toFixed(4)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Hist</span><span style="color:${hist4h>0?'var(--g)':'var(--r)'};font-weight:700;font-family:'Space Mono',monospace">${hist4h>0?'▲':'▼'} ${Math.abs(hist4h).toFixed(4)}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOLLINGER + STOCH RSI -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">📊 BOLLINGER (1s)</div>
+      <div style="font-size:11px;display:grid;gap:4px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Üst</span><span style="font-family:'Space Mono',monospace;color:var(--r)">${_fp2(bb_up1h)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Orta</span><span style="font-family:'Space Mono',monospace;color:var(--text)">${_fp2(bb_mid1h)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Alt</span><span style="font-family:'Space Mono',monospace;color:var(--g)">${_fp2(bb_lo1h)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:2px"><span style="color:var(--muted)">%B</span><span style="font-weight:700;color:${bb_pct1h>80?'var(--r)':bb_pct1h<20?'var(--g)':'var(--y)'}">${bb_pct1h}%</span></div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">🎯 STOCH RSI</div>
+      <div style="font-size:11px;display:grid;gap:6px">
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="color:var(--muted)">1 Saat</span><span style="color:${srsi1h<20?'var(--g)':srsi1h>80?'var(--r)':'var(--y)'};font-weight:700">${Math.round(srsi1h)}</span></div>
+          <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="height:4px;width:${srsi1h}%;background:${srsi1h<20?'var(--g)':srsi1h>80?'var(--r)':'var(--y)'};border-radius:2px"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="color:var(--muted)">4 Saat</span><span style="color:${srsi4h<20?'var(--g)':srsi4h>80?'var(--r)':'var(--y)'};font-weight:700">${Math.round(srsi4h)}</span></div>
+          <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="height:4px;width:${srsi4h}%;background:${srsi4h<20?'var(--g)':srsi4h>80?'var(--r)':'var(--y)'};border-radius:2px"></div></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">ATR(14): <span style="color:var(--text)">${_fp2(atr1h)}</span> · <span style="color:${atr_pct>3?'var(--r)':atr_pct>1.5?'var(--y)':'var(--g)'}">${atr_pct}%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMA SEVİYELERİ -->
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+    <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">📐 EMA SEVİYELERİ</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
+      ${[['EMA 9','1s',e9_1h],['EMA 21','1s',e21_1h],['EMA 9','4s',e9_4h],['EMA 21','4s',e21_4h],
+         ['EMA 50','4s',e50_4h],['EMA 200','4s',e200_4h],['EMA 50','1g',e50_1d],['EMA 200','1g',e200_1d]].map(([n,tf,v])=>`
+        <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:.5px solid rgba(255,255,255,.04)">
+          <span style="color:var(--muted)">${n} <span style="font-size:9px">(${tf})</span></span>
+          <span style="font-family:'Space Mono',monospace;color:${cur>v?'var(--g)':'var(--r)'};font-weight:700">${_fp2(v)}</span>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- DESTEK/DİRENÇ + PERFORMANS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">🎯 DESTEK / DİRENÇ</div>
+      <div style="font-size:11px;display:grid;gap:5px">
+        ${res?`<div style="display:flex;justify-content:space-between"><span style="color:var(--r)">Direnç</span><span style="font-family:'Space Mono',monospace;color:var(--r)">${_fp2(res)}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Fiyat</span><span style="font-family:'Space Mono',monospace;color:var(--text);font-weight:700">${_fp2(cur)}</span></div>
+        ${sup?`<div style="display:flex;justify-content:space-between"><span style="color:var(--g)">Destek</span><span style="font-family:'Space Mono',monospace;color:var(--g)">${_fp2(sup)}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;border-top:.5px solid rgba(255,255,255,.05);padding-top:5px;margin-top:2px">
+          <span style="color:var(--muted)">Hacim(1s)</span>
+          <span style="color:${vol_ratio1h>2?'var(--g)':vol_ratio1h>1?'var(--y)':'var(--muted)'}">${vol_ratio1h}x</span>
+        </div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;margin-bottom:8px">⏱ PERFORMANS</div>
+      <div style="font-size:11px;display:grid;gap:5px">
+        ${[['1 Saat',ch1h],['4 Saat',ch4h],['24 Saat',ch24h],['7 Gün',ch7d]].map(([lbl,v])=>`
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">${lbl}</span>
+            <span style="color:${v>0?'var(--g)':'var(--r)'};font-weight:700;font-family:'Space Mono',monospace">${v>0?'+':''}${v.toFixed(2)}%</span>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <!-- TÜM SİNYALLER -->
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+    <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:10px;letter-spacing:.05em">📊 TÜM SİNYALLER (${(signals||[]).length})</div>
+    ${['trend','momentum','osc','volume','perf'].map(catBlock).join('')}
+  </div>
+  `;
 }
 
 // ── TAKVİM & HABERLER ──
@@ -6655,50 +6827,195 @@ async def _start_miniapp_server(bot):
                 content_type="application/json", headers=CORS_HEADERS)
 
         async def handle_analiz(request):
-            """Sunucu taraflı teknik analiz."""
+            """Sunucu taraflı kapsamlı teknik analiz — 20+ gösterge."""
             sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
-            def calc_rsi(closes, p=14):
+
+            def _rsi(closes, p=14):
                 g,l2=[],[]
                 for i in range(1,len(closes)):
                     d=closes[i]-closes[i-1];g.append(max(d,0));l2.append(max(-d,0))
-                if len(g)<p:return 50
-                ag=sum(g[:p])/p;al=sum(l2[:p])/p
-                for i in range(p,len(g)):ag=(ag*(p-1)+g[i])/p;al=(al*(p-1)+l2[i])/p
-                return 100-100/(1+ag/al) if al else 100
-            def calc_ema(closes,p):
-                e=closes[0];k=2/(p+1)
-                for c in closes[1:]:e=c*k+e*(1-k)
+                if len(g)<p: return 50.0
+                ag=sum(g[:p])/p; al=sum(l2[:p])/p
+                for i in range(p,len(g)): ag=(ag*(p-1)+g[i])/p; al=(al*(p-1)+l2[i])/p
+                return round(100-100/(1+ag/al) if al else 100, 2)
+
+            def _ema(closes, p):
+                if len(closes)<p: return closes[-1]
+                e=sum(closes[:p])/p; k=2/(p+1)
+                for c in closes[p:]: e=c*k+e*(1-k)
                 return e
+
+            def _macd(closes, fast=12, slow=26, sig_p=9):
+                if len(closes)<slow+sig_p: return 0,0,0
+                ef=sum(closes[:fast])/fast; es=sum(closes[:slow])/slow
+                kf=2/(fast+1); ks=2/(slow+1)
+                macd_vals=[]
+                for i,c in enumerate(closes):
+                    ef=c*kf+ef*(1-kf); es=c*ks+es*(1-ks)
+                    if i>=slow-1: macd_vals.append(ef-es)
+                if len(macd_vals)<sig_p: return 0,0,0
+                sg=sum(macd_vals[:sig_p])/sig_p; ks2=2/(sig_p+1)
+                for m in macd_vals[sig_p:]: sg=m*ks2+sg*(1-ks2)
+                hist=macd_vals[-1]-sg
+                return round(macd_vals[-1],8), round(sg,8), round(hist,8)
+
+            def _boll(closes, p=20, mult=2.0):
+                if len(closes)<p: return closes[-1],closes[-1],closes[-1]
+                w=closes[-p:]; mn=sum(w)/p
+                std=(sum((c-mn)**2 for c in w)/p)**0.5
+                return round(mn+mult*std,6), round(mn,6), round(mn-mult*std,6)
+
+            def _stoch_rsi(closes, rsi_p=14, stoch_p=14):
+                g,l2=[],[]
+                for i in range(1,len(closes)):
+                    d=closes[i]-closes[i-1]; g.append(max(d,0)); l2.append(max(-d,0))
+                rsi_vals=[]
+                ag=sum(g[:rsi_p])/rsi_p; al=sum(l2[:rsi_p])/rsi_p
+                rsi_vals.append(100-100/(1+ag/al) if al else 100)
+                for i in range(rsi_p, len(g)):
+                    ag=(ag*(rsi_p-1)+g[i])/rsi_p; al=(al*(rsi_p-1)+l2[i])/rsi_p
+                    rsi_vals.append(100-100/(1+ag/al) if al else 100)
+                if len(rsi_vals)<stoch_p: return 50.0
+                w=rsi_vals[-stoch_p:]; lo=min(w); hi=max(w)
+                return round((rsi_vals[-1]-lo)/(hi-lo)*100,2) if hi>lo else 50.0
+
+            def _vol_ratio(vols):
+                if len(vols)<10: return 1.0
+                avg=sum(vols[:-1])/len(vols[:-1])
+                return round(vols[-1]/avg,2) if avg else 1.0
+
+            def _atr(klines, p=14):
+                trs=[]
+                for i in range(1,len(klines)):
+                    h=float(klines[i][2]); l=float(klines[i][3]); pc=float(klines[i-1][4])
+                    trs.append(max(h-l, abs(h-pc), abs(l-pc)))
+                if not trs: return 0
+                return round(sum(trs[-p:])/min(p,len(trs)),6)
+
+            def _fp(v):
+                return f"${v:,.4f}" if v<1 else f"${v:,.2f}"
+
             try:
                 async with aiohttp.ClientSession() as s:
-                    k1h,k4h,k1d = await asyncio.gather(
-                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1h&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
-                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=4h&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
-                        s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1d&limit=50",timeout=aiohttp.ClientTimeout(total=8)).__aenter__(),
-                    )
-                    c1=[float(x[4]) for x in await k1h.json()]
-                    c4=[float(x[4]) for x in await k4h.json()]
-                    cd=[float(x[4]) for x in await k1d.json()]
-                r1=calc_rsi(c1);r4=calc_rsi(c4);rD=calc_rsi(cd)
-                e20=calc_ema(c4,20);e50=calc_ema(c4,50);e200=calc_ema(cd,200)
+                    r1h = await (await s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1h&limit=100",timeout=aiohttp.ClientTimeout(total=8))).json()
+                    r4h = await (await s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=4h&limit=100",timeout=aiohttp.ClientTimeout(total=8))).json()
+                    r1d = await (await s.get(f"https://api.binance.com/api/v3/klines?symbol={sym}&interval=1d&limit=100",timeout=aiohttp.ClientTimeout(total=8))).json()
+                    tic = await (await s.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={sym}",timeout=aiohttp.ClientTimeout(total=6))).json()
+
+                c1=[float(x[4]) for x in r1h]; v1=[float(x[5]) for x in r1h]
+                c4=[float(x[4]) for x in r4h]; v4=[float(x[5]) for x in r4h]
+                cd=[float(x[4]) for x in r1d]
                 cur=c1[-1]
-                sc=0;tot=0;signals=[]
-                def sig(label,bull,val):
+
+                # ── RSI ──
+                rsi1=_rsi(c1,14); rsi4=_rsi(c4,14); rsiD=_rsi(cd,14)
+                rsi7_1h=_rsi(c1,7); rsi7_4h=_rsi(c4,7)
+
+                # ── EMA ──
+                e9_1h =_ema(c1,9);  e21_1h=_ema(c1,21)
+                e9_4h =_ema(c4,9);  e21_4h=_ema(c4,21)
+                e50_4h=_ema(c4,50); e200_4h=_ema(c4,200) if len(c4)>=200 else _ema(c4,len(c4))
+                e50_1d=_ema(cd,50); e200_1d=_ema(cd,200) if len(cd)>=200 else _ema(cd,len(cd))
+
+                # ── MACD ──
+                macd1h, sig1h, hist1h = _macd(c1)
+                macd4h, sig4h, hist4h = _macd(c4)
+
+                # ── Bollinger ──
+                bb_up1h, bb_mid1h, bb_lo1h = _boll(c1,20)
+                bb_up4h, bb_mid4h, bb_lo4h = _boll(c4,20)
+                bb_pct1h = round((cur-bb_lo1h)/(bb_up1h-bb_lo1h)*100,1) if bb_up1h!=bb_lo1h else 50
+
+                # ── Stoch RSI ──
+                srsi1h=_stoch_rsi(c1); srsi4h=_stoch_rsi(c4)
+
+                # ── Hacim ──
+                vol_ratio1h=_vol_ratio(v1); vol_ratio4h=_vol_ratio(v4)
+
+                # ── ATR ──
+                atr1h=_atr(r1h); atr4h=_atr(r4h)
+                atr_pct=round(atr1h/cur*100,2) if cur else 0
+
+                # ── Performans ──
+                ch1h  = round((c1[-1]-c1[-2])/c1[-2]*100,2) if len(c1)>=2 else 0
+                ch4h  = round((c1[-1]-c1[-5])/c1[-5]*100,2) if len(c1)>=5 else 0
+                ch24h = float(tic.get("priceChangePercent",0))
+                ch7d  = round((cd[-1]-cd[-8])/cd[-8]*100,2) if len(cd)>=8 else 0
+
+                # ── Destek / Direnç ──
+                highs4h=[float(x[2]) for x in r4h]; lows4h=[float(x[3]) for x in r4h]
+                res=min((h for h in highs4h if h>cur), default=None)
+                sup=max((l for l in lows4h if l<cur), default=None)
+
+                # ══════════════════════════════════
+                # SİNYAL HESAPLAMA — 20 gösterge
+                # ══════════════════════════════════
+                sc=0; tot=0; signals=[]
+
+                def sig(cat, label, bull, val, w=1):
                     nonlocal sc,tot
-                    w=2 if '4s' in label or '1g' in label else 1
-                    sc+=(w if bull else -w);tot+=w
-                    signals.append({"label":label,"bull":bull,"val":val})
-                if r1<30:sig("RSI 1s — Aşırı Satım",True,str(round(r1)))
-                elif r1>70:sig("RSI 1s — Aşırı Alım",False,str(round(r1)))
-                if r4<30:sig("RSI 4s — Aşırı Satım",True,str(round(r4)))
-                elif r4>70:sig("RSI 4s — Aşırı Alım",False,str(round(r4)))
-                sig(f"EMA20 {'Üstü' if cur>e20 else 'Altı'} (4s)",cur>e20,f"${round(e20,4)}")
-                sig(f"EMA50 {'Üstü' if cur>e50 else 'Altı'} (4s)",cur>e50,f"${round(e50,4)}")
-                sig(f"EMA200 {'Üstü' if cur>e200 else 'Altı'} (1g)",cur>e200,f"${round(e200,4)}")
-                score=round((sc/tot)*50+50) if tot else 50
+                    sc+=(w if bull else -w); tot+=w
+                    signals.append({"cat":cat,"label":label,"bull":bull,"val":val,"w":w})
+
+                # TREND (ağırlık 2-3)
+                sig("trend","EMA9 vs EMA21 (1s)",  e9_1h>e21_1h,  f"9:{_fp(e9_1h)} / 21:{_fp(e21_1h)}",2)
+                sig("trend","EMA9 vs EMA21 (4s)",  e9_4h>e21_4h,  f"9:{_fp(e9_4h)} / 21:{_fp(e21_4h)}",3)
+                sig("trend","Fiyat vs EMA50 (4s)", cur>e50_4h,    _fp(e50_4h),2)
+                sig("trend","Fiyat vs EMA200 (4s)",cur>e200_4h,   _fp(e200_4h),3)
+                sig("trend","Fiyat vs EMA50 (1g)", cur>e50_1d,    _fp(e50_1d),2)
+                sig("trend","Fiyat vs EMA200 (1g)",cur>e200_1d,   _fp(e200_1d),3)
+
+                # MOMENTUM (ağırlık 1-2)
+                sig("momentum","RSI 14 (1s)",  rsi1>50, str(round(rsi1)),1)
+                sig("momentum","RSI 14 (4s)",  rsi4>50, str(round(rsi4)),2)
+                sig("momentum","RSI 14 (1g)",  rsiD>50, str(round(rsiD)),2)
+                sig("momentum","RSI 7 (1s)",   rsi7_1h>50, str(round(rsi7_1h)),1)
+                sig("momentum","MACD Hist (1s)",hist1h>0, f"{hist1h:+.6f}",1)
+                sig("momentum","MACD Hist (4s)",hist4h>0, f"{hist4h:+.6f}",2)
+                sig("momentum","Stoch RSI (1s)",srsi1h>50, f"{round(srsi1h)}",1)
+                sig("momentum","Stoch RSI (4s)",srsi4h>50, f"{round(srsi4h)}",2)
+
+                # OSİLATÖR — özel koşullar
+                if rsi1<30:  sig("osc","RSI 1s Aşırı Satım 🟢",True, str(round(rsi1)),2)
+                elif rsi1>70:sig("osc","RSI 1s Aşırı Alım 🔴",False,str(round(rsi1)),2)
+                if rsi4<30:  sig("osc","RSI 4s Aşırı Satım 🟢",True, str(round(rsi4)),3)
+                elif rsi4>70:sig("osc","RSI 4s Aşırı Alım 🔴",False,str(round(rsi4)),3)
+                sig("osc","Bollinger %B (1s)", bb_pct1h>50, f"%{bb_pct1h}",1)
+                sig("osc","Bollinger %B (4s)", (cur-bb_lo4h)/(bb_up4h-bb_lo4h)*100>50 if bb_up4h!=bb_lo4h else False,
+                    f"%{round((cur-bb_lo4h)/(bb_up4h-bb_lo4h)*100,1) if bb_up4h!=bb_lo4h else 50}",1)
+
+                # HACİM
+                sig("volume","Hacim Artışı (1s)", vol_ratio1h>1.0, f"{vol_ratio1h}x",1)
+                sig("volume","Hacim Artışı (4s)", vol_ratio4h>1.0, f"{vol_ratio4h}x",1)
+
+                # PERFORMANS
+                sig("perf","Değişim 1s",  ch1h>0,  f"{ch1h:+.2f}%",1)
+                sig("perf","Değişim 4s",  ch4h>0,  f"{ch4h:+.2f}%",1)
+                sig("perf","Değişim 24s", ch24h>0, f"{ch24h:+.2f}%",2)
+                sig("perf","Değişim 7g",  ch7d>0,  f"{ch7d:+.2f}%",2)
+
+                score=max(0, min(100, round((sc/tot)*50+50))) if tot else 50
+                bull_cnt=sum(1 for s in signals if s["bull"])
+                bear_cnt=len(signals)-bull_cnt
+
                 return aiohttp_web.Response(
-                    text=_json.dumps({"rsi1":r1,"rsi4":r4,"rsiD":rD,"ema20":e20,"ema50":e50,"ema200":e200,
-                                      "cur":cur,"score":score,"signals":signals}),
+                    text=_json.dumps({
+                        "rsi1":rsi1,"rsi4":rsi4,"rsiD":rsiD,
+                        "rsi7_1h":rsi7_1h,"rsi7_4h":rsi7_4h,
+                        "macd1h":macd1h,"sig1h":sig1h,"hist1h":hist1h,
+                        "macd4h":macd4h,"sig4h":sig4h,"hist4h":hist4h,
+                        "srsi1h":srsi1h,"srsi4h":srsi4h,
+                        "bb_up1h":bb_up1h,"bb_mid1h":bb_mid1h,"bb_lo1h":bb_lo1h,"bb_pct1h":bb_pct1h,
+                        "e9_1h":e9_1h,"e21_1h":e21_1h,
+                        "e9_4h":e9_4h,"e21_4h":e21_4h,"e50_4h":e50_4h,"e200_4h":e200_4h,
+                        "e50_1d":e50_1d,"e200_1d":e200_1d,
+                        "atr1h":atr1h,"atr4h":atr4h,"atr_pct":atr_pct,
+                        "vol_ratio1h":vol_ratio1h,"vol_ratio4h":vol_ratio4h,
+                        "ch1h":ch1h,"ch4h":ch4h,"ch24h":ch24h,"ch7d":ch7d,
+                        "sup":sup,"res":res,"cur":cur,
+                        "score":score,"bull_cnt":bull_cnt,"bear_cnt":bear_cnt,
+                        "signals":signals
+                    }),
                     content_type="application/json", headers=CORS_HEADERS)
             except Exception as e:
                 return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
