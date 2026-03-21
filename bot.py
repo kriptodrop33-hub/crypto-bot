@@ -525,6 +525,7 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
     try:
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
+        import matplotlib.lines as mlines
 
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -549,11 +550,27 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
         swing_low  = df["low"].min()
         diff       = swing_high - swing_low
         trend_up   = df["close"].iloc[-1] > df["close"].iloc[0]
+        cur        = df["close"].iloc[-1]
 
         fib_prices = {}
         for lvl in FIB_LEVELS:
             fib_prices[lvl] = swing_high - diff * lvl if trend_up else swing_low + diff * lvl
 
+        # En yakın fib seviyeleri (destek + direnç)
+        nearest     = min(fib_prices.items(), key=lambda x: abs(x[1] - cur))
+        sup_fib     = max(((lvl, p) for lvl, p in fib_prices.items() if p <= cur), key=lambda x: x[1], default=None)
+        res_fib     = min(((lvl, p) for lvl, p in fib_prices.items() if p > cur),  key=lambda x: x[1], default=None)
+
+        # Hangi zone içinde
+        zone_lo = sup_fib[1] if sup_fib else swing_low
+        zone_hi = res_fib[1] if res_fib else swing_high
+        zone_lo_lvl = sup_fib[0] if sup_fib else 1.0
+        zone_hi_lvl = res_fib[0] if res_fib else 0.0
+
+        # Retracement yüzdesi
+        retrace_pct = round((swing_high - cur) / diff * 100, 1) if trend_up else round((cur - swing_low) / diff * 100, 1)
+
+        # ── GRAFİK ──
         mc = mpf.make_marketcolors(
             up="#00e676", down="#ff1744",
             edge="inherit", wick="inherit",
@@ -569,48 +586,108 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
 
         fig, axes = mpf.plot(
             df, type="candle", style=style,
-            title=f"\n{symbol} - Fibonacci Retracement ({interval})",
+            title=f"\n{symbol} — Fibonacci Retracement ({interval})",
             ylabel="Fiyat (USDT)", volume=True, figsize=(10, 6),
             returnfig=True
         )
         ax = axes[0]
+        n = len(df)
 
+        # Zone dolgusu (fiyatın bulunduğu iki fib arasını renklendir)
+        ax.axhspan(zone_lo, zone_hi, alpha=0.07, color="#0a84ff", zorder=0)
+
+        # Fib çizgileri
         for lvl, color in zip(FIB_LEVELS, FIB_COLORS):
             price = fib_prices[lvl]
-            ax.axhline(y=price, color=color, linewidth=1.0, linestyle="--", alpha=0.85)
-            label_price = f"{price:,.4f}" if price < 1 else f"{price:,.2f}"
+            is_nearest = (lvl == nearest[0])
+            is_sup = sup_fib and lvl == sup_fib[0]
+            is_res = res_fib and lvl == res_fib[0]
+
+            lw        = 1.6 if is_nearest else (1.1 if (is_sup or is_res) else 0.7)
+            alpha_val = 1.0 if is_nearest else (0.9 if (is_sup or is_res) else 0.65)
+            ls        = "-" if is_nearest else "--"
+
+            ax.axhline(y=price, color=color, linewidth=lw, linestyle=ls, alpha=alpha_val, zorder=1)
+
+            lp = f"{price:,.4f}" if price < 1 else f"{price:,.2f}"
+            badge = ""
+            if is_nearest:   badge = " ◀"
+            elif is_sup:     badge = " ▲"
+            elif is_res:     badge = " ▼"
+
             ax.text(
-                len(df) * 0.01, price,
-                f" {lvl:.3f} — {label_price}",
-                color=color, fontsize=7, va="bottom", alpha=0.95
+                n * 0.005, price,
+                f" {lvl:.3f} — {lp}{badge}",
+                color=color, fontsize=7.5 if is_nearest else 6.5,
+                va="bottom", alpha=alpha_val,
+                fontweight="bold" if is_nearest else "normal"
             )
 
+        # Mevcut fiyat yatay çizgisi — belirgin mavi
+        ax.axhline(y=cur, color="#0a84ff", linewidth=1.8, linestyle="-", alpha=0.9, zorder=5)
+
+        # Fiyat balonu — sağ kenarda
+        fp_str = f"{cur:,.4f}" if cur < 1 else f"{cur:,.2f}"
+        ax.text(
+            n * 1.001, cur,
+            f" ${fp_str}",
+            color="#ffffff",
+            fontsize=8, fontweight="bold", va="center",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="#0a84ff", edgecolor="none", alpha=0.92)
+        )
+
+        # Sol kenarda "▶" ok işareti
+        ax.text(
+            n * 0.005, cur,
+            "▶",
+            color="#0a84ff", fontsize=9, va="center", fontweight="bold"
+        )
+
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight", dpi=100, facecolor="#0d1117")
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=110, facecolor="#0d1117")
         plt.close(fig)
         buf.seek(0)
 
-        cur = df["close"].iloc[-1]
-        nearest = min(fib_prices.items(), key=lambda x: abs(x[1]-cur))
+        # ── MESAJ METNİ ──
+        def fp(v): return f"{v:,.4f}" if v < 1 else f"{v:,.2f}"
+
+        trend_icon = "📈" if trend_up else "📉"
+        trend_lbl  = "Yukarı Trend" if trend_up else "Aşağı Trend"
+
         text = (
             f"📐 *{symbol} — Fibonacci Retracement* ({interval})\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📈 *Swing High:* `{swing_high:,.4f}` USDT\n" if swing_high < 1 else
-            f"📐 *{symbol} — Fibonacci Retracement* ({interval})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📈 *Swing High:* `{swing_high:,.2f}` USDT\n"
-        )
-        text += (
-            f"📉 *Swing Low:*  `{swing_low:,.2f}` USDT\n"
-            f"🎯 *Mevcut:* `{cur:,.2f}` USDT\n"
-            f"🔍 *En yakın Fib:* `{nearest[0]:.3f}` → `{nearest[1]:,.2f}`\n"
+            f"{trend_icon} *Trend:* {trend_lbl}  |  *Retracement:* `%{retrace_pct}`\n"
+            f"📊 *Swing High:* `{fp(swing_high)}` USDT\n"
+            f"📊 *Swing Low:*  `{fp(swing_low)}` USDT\n"
+            f"🔵 *Mevcut Fiyat:* `{fp(cur)}` USDT\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
+
+        # Destek / Direnç özeti
+        if sup_fib:
+            dist_sup = round((cur - sup_fib[1]) / cur * 100, 2)
+            text += f"🟢 *Destek:* Fib `{sup_fib[0]:.3f}` → `{fp(sup_fib[1])}` USDT  `(-{dist_sup}%)`\n"
+        if res_fib:
+            dist_res = round((res_fib[1] - cur) / cur * 100, 2)
+            text += f"🔴 *Direnç:* Fib `{res_fib[0]:.3f}` → `{fp(res_fib[1])}` USDT  `(+{dist_res}%)`\n"
+        text += f"━━━━━━━━━━━━━━━━━━━━━\n"
+
+        # Tüm seviyeler
         for lvl in FIB_LEVELS:
             p = fib_prices[lvl]
-            marker = "◀️" if lvl == nearest[0] else "  "
-            lp = f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
-            text += f"{marker}`{lvl:.3f}` → `{lp}` USDT\n"
+            lp = fp(p)
+            dist = round((p - cur) / cur * 100, 2)
+            dist_str = f"`{dist:+.2f}%`"
+            if lvl == nearest[0]:
+                marker = "◀️"
+            elif sup_fib and lvl == sup_fib[0]:
+                marker = "🟢"
+            elif res_fib and lvl == res_fib[0]:
+                marker = "🔴"
+            else:
+                marker = "  "
+            text += f"{marker} `{lvl:.3f}` → `{lp}` USDT  {dist_str}\n"
 
         return buf, text
     except Exception as e:
