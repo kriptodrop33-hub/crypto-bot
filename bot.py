@@ -1064,7 +1064,16 @@ async def ne_command(update: Update, context):
 
     is_group = chat.type in ("group", "supergroup")
     delay    = (await get_member_delete_delay()) if is_group else None
-    msg      = await context.bot.send_message(chat.id, text, parse_mode="Markdown")
+    # İlgili terimler için hızlı butonlar (en fazla 4 rastgele)
+    import random
+    diger = [k for k in SOZLUK if k != arama][:8]
+    random.shuffle(diger)
+    ilgili = diger[:4]
+    kb_ne_rows = [[InlineKeyboardButton(f"📖 {k}", callback_data=f"ne_{k}") for k in ilgili[:2]]]
+    if len(ilgili) > 2:
+        kb_ne_rows.append([InlineKeyboardButton(f"📖 {k}", callback_data=f"ne_{k}") for k in ilgili[2:4]])
+    kb_ne = InlineKeyboardMarkup(kb_ne_rows)
+    msg = await context.bot.send_message(chat.id, text, parse_mode="Markdown", reply_markup=kb_ne)
     if is_group and delay:
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
 
@@ -2604,10 +2613,14 @@ async def alarm_ekle_v2(update: Update, context):
                 UPDATE user_alarms SET rsi_level=$1
                 WHERE user_id=$2 AND symbol=$3
             """, rsi_lvl * (-1 if direction_str == "asagi" else 1), user_id, symbol)
+        kb_rsi = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+            InlineKeyboardButton("➕ Başka Ekle", callback_data="alarm_guide"),
+        ]])
         await send_temp(context.bot, update.effective_chat.id,
             "✅ *" + symbol + "* RSI `" + str(rsi_lvl) + "` " + yon_str + " alarm verilecek!\n"
             "_Yön: " + ("aşağı 📉" if direction_str == "asagi" else "yukarı 📈") + "_",
-            parse_mode="Markdown"
+            parse_mode="Markdown", reply_markup=kb_rsi
         )
         return
 
@@ -2627,10 +2640,14 @@ async def alarm_ekle_v2(update: Update, context):
                 ON CONFLICT(user_id,symbol) DO UPDATE
                 SET alarm_type='band', band_low=$4, band_high=$5, threshold=0, active=1
             """, user_id, username, symbol, band_low, band_high)
+        kb_bant = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+            InlineKeyboardButton("➕ Başka Ekle", callback_data="alarm_guide"),
+        ]])
         await send_temp(context.bot, update.effective_chat.id,
-            "✅ *" + symbol + "* `" + format_price(band_low) + " - " + format_price(band_high) +
+            "✅ *" + symbol + "* `" + format_price(band_low) + " — " + format_price(band_high) +
             " USDT` bandından çıkınca alarm verilecek!",
-            parse_mode="Markdown"
+            parse_mode="Markdown", reply_markup=kb_bant
         )
         return
 
@@ -2644,9 +2661,13 @@ async def alarm_ekle_v2(update: Update, context):
             ON CONFLICT(user_id,symbol) DO UPDATE
             SET threshold=$4, alarm_type='percent', active=1
         """, user_id, username, symbol, threshold)
+    kb_ekle = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+        InlineKeyboardButton("➕ Başka Ekle", callback_data="alarm_guide"),
+    ]])
     await send_temp(context.bot, update.effective_chat.id,
         "✅ *" + symbol + "* için `%" + str(threshold) + "` alarmı eklendi!",
-        parse_mode="Markdown"
+        parse_mode="Markdown", reply_markup=kb_ekle
     )
 
 async def alarm_sil(update: Update, context):
@@ -2663,12 +2684,18 @@ async def alarm_sil(update: Update, context):
         result = await conn.execute(
             "DELETE FROM user_alarms WHERE user_id=$1 AND symbol=$2", user_id, symbol
         )
+    kb_sil = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+        InlineKeyboardButton("➕ Alarm Ekle", callback_data="alarm_guide"),
+    ]])
     if result == "DELETE 0":
         await send_temp(context.bot, update.effective_chat.id,
-            f"`{symbol}` için kayıtlı alarm bulunamadı.", parse_mode="Markdown")
+            f"⚠️ `{symbol}` için kayıtlı alarm bulunamadı.",
+            parse_mode="Markdown", reply_markup=kb_sil)
     else:
         await send_temp(context.bot, update.effective_chat.id,
-            f"🗑 `{symbol}` alarmi silindi.", parse_mode="Markdown")
+            f"🗑 `{symbol}` alarmı silindi.",
+            parse_mode="Markdown", reply_markup=kb_sil)
 
 async def favori_command(update: Update, context):
     if not await check_group_access(update, context, "Favoriler"):
@@ -2701,8 +2728,13 @@ async def favori_command(update: Update, context):
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute("INSERT INTO favorites(user_id,symbol) VALUES($1,$2) ON CONFLICT DO NOTHING", user_id, symbol)
+        kb_fav = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⭐ Favorilerim",     callback_data="fav_liste"),
+            InlineKeyboardButton("📊 Analiz Et",       callback_data="fav_analiz"),
+        ]])
         await send_temp(context.bot, update.effective_chat.id,
-            "⭐ `" + symbol + "` favorilere eklendi!", parse_mode="Markdown"); return
+            "⭐ `" + symbol + "` favorilere eklendi!",
+            parse_mode="Markdown", reply_markup=kb_fav); return
 
     if args[0].lower() == "sil":
         if len(args) < 2:
@@ -2712,8 +2744,12 @@ async def favori_command(update: Update, context):
         if not symbol.endswith("USDT"): symbol += "USDT"
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM favorites WHERE user_id=$1 AND symbol=$2", user_id, symbol)
+        kb_fav_sil = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⭐ Favorilerim", callback_data="fav_liste"),
+        ]])
         await send_temp(context.bot, update.effective_chat.id,
-            "🗑 `" + symbol + "` favorilerden silindi.", parse_mode="Markdown"); return
+            "🗑 `" + symbol + "` favorilerden silindi.",
+            parse_mode="Markdown", reply_markup=kb_fav_sil); return
 
     if args[0].lower() == "analiz":
         async with db_pool.acquire() as conn:
@@ -2752,14 +2788,20 @@ async def alarm_duraklat(update: Update, context):
             "UPDATE user_alarms SET paused_until=$1 WHERE user_id=$2 AND symbol=$3",
             until, user_id, symbol
         )
+    kb_dur = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔔 Alarmlarım",  callback_data="my_alarm"),
+        InlineKeyboardButton("▶️ Devam Ettir", callback_data=f"alarm_unpause_{symbol}"),
+    ]])
     if r == "UPDATE 0":
         await send_temp(context.bot, update.effective_chat.id,
-            f"`{symbol}` için alarm bulunamadı.", parse_mode="Markdown")
+            f"⚠️ `{symbol}` için alarm bulunamadı.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm")]]))
     else:
         await send_temp(context.bot, update.effective_chat.id,
-            f"⏸ *{symbol}* alarmi `{int(saat)} saat` duraklatildi. "
-            f"Tekrar aktif: `{until.strftime('%H:%M')} UTC`",
-            parse_mode="Markdown"
+            f"⏸ *{symbol}* alarmı `{int(saat)} saat` duraklatıldı.\n"
+            f"⏰ Tekrar aktif: `{until.strftime('%H:%M')} UTC`",
+            parse_mode="Markdown", reply_markup=kb_dur
         )
 
 async def alarm_gecmis(update: Update, context):
@@ -2772,24 +2814,29 @@ async def alarm_gecmis(update: Update, context):
             FROM alarm_history WHERE user_id=$1
             ORDER BY triggered_at DESC LIMIT 15
         """, user_id)
+    kb_gec = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔔 Alarmlarım", callback_data="my_alarm"),
+        InlineKeyboardButton("➕ Alarm Ekle", callback_data="alarm_guide"),
+    ]])
     if not rows:
         await send_temp(context.bot, update.effective_chat.id,
-            "📋 *Alarm Gecmisi*\n━━━━━━━━━━━━━━━━━━\nHenuz tetiklenen alarm yok.",
-            parse_mode="Markdown"
+            "📋 *Alarm Geçmişi*\n━━━━━━━━━━━━━━━━━━\nHenüz tetiklenen alarm yok.",
+            parse_mode="Markdown", reply_markup=kb_gec
         )
         return
-    text = "📋 *Son 15 Alarm*\n━━━━━━━━━━━━━━━━━━\n"
+    text = "📋 *Son 15 Alarm Tetiklenmesi*\n━━━━━━━━━━━━━━━━━━\n"
     for r in rows:
         dt  = r["triggered_at"].strftime("%d.%m %H:%M")
         yon = "📈" if r["direction"] == "up" else "📉"
         if r["alarm_type"] == "rsi":
             detail = "RSI:" + str(round(r["trigger_val"], 1))
         elif r["alarm_type"] == "band":
-            detail = "Bant cikisi"
+            detail = "Bant çıkışı"
         else:
             detail = "%" + str(round(r["trigger_val"], 2))
         text += yon + " `" + r["symbol"] + "` " + detail + "  `" + dt + "`\n"
-    await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
+    await send_temp(context.bot, update.effective_chat.id, text,
+                    parse_mode="Markdown", reply_markup=kb_gec)
 
 
 # ================= FİYAT HEDEFİ (GELİŞTİRİLMİŞ) =================
@@ -3589,6 +3636,10 @@ async def zamanla_command(update: Update, context):
             "⏰ Her Pazartesi `" + ("%02d:%02d" % (h,m)) + "` UTC'de haftalik rapor gonderilecek!",
             parse_mode="Markdown"); return
 
+    kb_zaman = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📋 Listemi Gör",  callback_data="zamanla_help"),
+        InlineKeyboardButton("🗑 Görevi Sil",    callback_data="zamanla_help"),
+    ]])
     await send_temp(context.bot, update.effective_chat.id,
         "Kullanım:\n`/zamanla analiz BTCUSDT 09:00`\n`/zamanla rapor 08:00`\n"
         "`/zamanla liste`\n`/zamanla sil`",
@@ -3751,8 +3802,13 @@ async def market(update: Update, context):
     chat = update.effective_chat
     is_group = chat and chat.type in ("group", "supergroup")
     is_cb = bool(update.callback_query)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔄 Yenile",     callback_data="market"),
+        InlineKeyboardButton("📈 24s Lider",  callback_data="top24"),
+        InlineKeyboardButton("⚡ 5dk Flash",  callback_data="top5"),
+    ]])
     target = update.callback_query.message if is_cb else update.message
-    sent = await target.reply_text(msg_text, parse_mode="Markdown")
+    sent = await target.reply_text(msg_text, parse_mode="Markdown", reply_markup=keyboard)
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
@@ -3794,8 +3850,13 @@ async def top24(update: Update, context):
     for i, (c, pct) in enumerate(top_losers, 1):
         text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
 
+    kb24 = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔄 Yenile",    callback_data="top24"),
+        InlineKeyboardButton("⚡ 5dk Flash", callback_data="top5"),
+        InlineKeyboardButton("📊 Market",    callback_data="market"),
+    ]])
     target = update.callback_query.message if is_cb else update.message
-    msg = await target.reply_text(text, parse_mode="Markdown")
+    msg = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb24)
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -3845,8 +3906,13 @@ async def top5(update: Update, context):
     chat  = update.effective_chat
     is_group = chat and chat.type in ("group", "supergroup")
     is_cb    = bool(update.callback_query)
+    kb5 = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔄 Yenile",     callback_data="top5"),
+        InlineKeyboardButton("📈 24s Lider",  callback_data="top24"),
+        InlineKeyboardButton("📊 Market",     callback_data="market"),
+    ]])
     target = update.callback_query.message if is_cb else update.message
-    msg = await target.reply_text(text, parse_mode="Markdown")
+    msg = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb5)
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -3870,8 +3936,13 @@ async def status(update: Update, context):
     chat = update.effective_chat
     is_group = chat and chat.type in ("group", "supergroup")
     is_cb = bool(update.callback_query)
+    kb_st = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔄 Yenile",    callback_data="status"),
+        InlineKeyboardButton("📊 Market",    callback_data="market"),
+        InlineKeyboardButton("📈 24s Lider", callback_data="top24"),
+    ]])
     target = update.callback_query.message if is_cb else update.message
-    sent = await target.reply_text(text, parse_mode="Markdown")
+    sent = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb_st)
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
@@ -4348,6 +4419,25 @@ async def button_handler(update: Update, context):
             await q.answer(f"📅 Takvim bildirimleri {status}", show_alert=True)
         return
 
+    # Terim sözlüğü direkt açma callback — ne_TERIM formatı
+    if q.data.startswith("ne_") and q.data != "ne_help":
+        await q.answer()
+        terim = q.data[3:].lower()
+        if terim in SOZLUK:
+            text_ne = SOZLUK[terim]
+        else:
+            eslesme = [k for k in SOZLUK if terim in k or k in terim]
+            text_ne = SOZLUK[eslesme[0]] if eslesme else f"❓ `{terim}` bulunamadı."
+        import random
+        diger2 = [k for k in SOZLUK if k != terim][:8]
+        random.shuffle(diger2)
+        ilgili2 = diger2[:4]
+        kb_ne2_rows = [[InlineKeyboardButton(f"📖 {k}", callback_data=f"ne_{k}") for k in ilgili2[:2]]]
+        if len(ilgili2) > 2:
+            kb_ne2_rows.append([InlineKeyboardButton(f"📖 {k}", callback_data=f"ne_{k}") for k in ilgili2[2:4]])
+        await q.message.reply_text(text_ne, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb_ne2_rows))
+        return
+
     # Terim sözlüğü help callback
     if q.data == "ne_help":
         await q.answer()
@@ -4489,6 +4579,19 @@ async def button_handler(update: Update, context):
             await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
     elif q.data == "alarm_history":
         await alarm_gecmis(update, context)
+    elif q.data.startswith("alarm_unpause_"):
+        symbol_up = q.data.replace("alarm_unpause_", "")
+        user_id_up = q.from_user.id
+        async with db_pool.acquire() as conn:
+            r_up = await conn.execute(
+                "UPDATE user_alarms SET paused_until=NULL WHERE user_id=$1 AND symbol=$2",
+                user_id_up, symbol_up
+            )
+        if r_up == "UPDATE 0":
+            await q.answer(f"⚠️ {symbol_up} için alarm bulunamadı.", show_alert=True)
+        else:
+            await q.answer(f"▶️ {symbol_up} alarmı yeniden aktif!", show_alert=True)
+        await my_alarm_v2(update, context)
 
     # ── Favori ──
     elif q.data == "fav_liste":
