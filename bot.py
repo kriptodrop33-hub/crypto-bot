@@ -680,7 +680,7 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
             dist = round((p - cur) / cur * 100, 2)
             dist_str = f"`{dist:+.2f}%`"
             if lvl == nearest[0]:
-                marker = "◀️"
+                marker = "🟢"
             elif sup_fib and lvl == sup_fib[0]:
                 marker = "🟢"
             elif res_fib and lvl == res_fib[0]:
