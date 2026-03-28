@@ -680,7 +680,7 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
             dist = round((p - cur) / cur * 100, 2)
             dist_str = f"`{dist:+.2f}%`"
             if lvl == nearest[0]:
-                marker = "◀️"
+                marker = "🟢"
             elif sup_fib and lvl == sup_fib[0]:
                 marker = "🟢"
             elif res_fib and lvl == res_fib[0]:
@@ -3712,8 +3712,17 @@ async def start(update: Update, context):
                 pass
 
     if in_group:
-        # Grup için tüm butonlar + DM yönlendirme butonu
-        group_full_buttons = [
+        # Grup için DM ile aynı butonlar (Mini App hariç callback ile)
+        group_full_buttons = []
+
+        # Mini App butonu: grupta web_app desteklenmez, callback ile DM'e yönlendir
+        _murl_group = get_miniapp_url()
+        if _murl_group:
+            group_full_buttons.append([InlineKeyboardButton(
+                "🖥 Dashboard Mini App", callback_data="miniapp_dm"
+            )])
+
+        group_full_buttons += [
             [InlineKeyboardButton("📊 Market",        callback_data="market"),
              InlineKeyboardButton("⚡ 5dk Flashlar",  callback_data="top5")],
             [InlineKeyboardButton("📈 24s Liderleri", callback_data="top24"),
@@ -3730,14 +3739,9 @@ async def start(update: Update, context):
              InlineKeyboardButton("📚 Terim Sözlüğü", callback_data="ne_help")],
             [InlineKeyboardButton("💬 Gruba Katıl",   url="https://t.me/kriptodroptr"),
              InlineKeyboardButton("📢 Kanala Katıl",  url="https://t.me/kriptodropduyuru")],
+            [InlineKeyboardButton("📈 Binance'de Görüntüle", url="https://www.binance.com/tr/markets/overview")],
             [InlineKeyboardButton("➡️ Bota DM At (Tüm Özellikler)", url=f"https://t.me/{BOT_USERNAME}?start=hello")],
         ]
-        # Mini App butonu: grupta web_app desteklenmez, callback ile DM'e yönlendir
-        _murl_group = get_miniapp_url()
-        if _murl_group:
-            group_full_buttons.insert(len(group_full_buttons) - 1, [InlineKeyboardButton(
-                "🖥 Dashboard Mini App", callback_data="miniapp_dm"
-            )])
 
         keyboard    = InlineKeyboardMarkup(group_full_buttons)
         welcome_text = (
