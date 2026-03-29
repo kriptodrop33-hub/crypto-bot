@@ -1944,21 +1944,6 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         if threshold_info:
             text += f"\n🔔 *Alarm Eşiği:* `%{threshold_info}`"
 
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
-                InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
-            ],
-            [
-                InlineKeyboardButton(
-                    "📈 Binance'de Görüntüle",
-                    url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
-                )
-            ]
-        ])
-
-        msg = await bot.send_message(chat_id=chat_id, text=text,
-                                     reply_markup=keyboard, parse_mode="Markdown")
         # DM'e gönderimde mesajları silme, sadece grup kanallarında sil
         is_group_chat = False
         try:
@@ -1966,6 +1951,34 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             is_group_chat = chat_obj.type in ("group", "supergroup", "channel")
         except Exception:
             pass
+
+        if is_group_chat:
+            # Grupta sadece Binance butonu
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "📈 Binance'de Görüntüle",
+                        url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
+                    )
+                ]
+            ])
+        else:
+            # DM'de tüm butonlar
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
+                    InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📈 Binance'de Görüntüle",
+                        url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
+                    )
+                ]
+            ])
+
+        msg = await bot.send_message(chat_id=chat_id, text=text,
+                                     reply_markup=keyboard, parse_mode="Markdown")
 
         if alarm_mode and is_group_chat:
             alarm_delay = await get_delete_delay()
@@ -4341,11 +4354,21 @@ async def button_handler(update: Update, context):
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ _{datetime.utcnow().strftime('%H:%M UTC')}_"
         )
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
-            InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
-            InlineKeyboardButton("🔄 Yenile",    callback_data=f"analyse_{symbol}"),
-        ]])
+        _cb_chat = q.message.chat if q.message else None
+        _cb_in_group = bool(_cb_chat and _cb_chat.type in ("group", "supergroup"))
+        if _cb_in_group:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "📈 Binance'de Görüntüle",
+                    url=f"https://www.binance.com/tr/trade/{symbol.replace('USDT','_USDT')}"
+                )
+            ]])
+        else:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("📐 Fibonacci", callback_data=f"fib_{symbol}_4h"),
+                InlineKeyboardButton("🧠 Sentiment", callback_data=f"sent_{symbol}"),
+                InlineKeyboardButton("🔄 Yenile",    callback_data=f"analyse_{symbol}"),
+            ]])
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
         return
 
