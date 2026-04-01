@@ -417,8 +417,9 @@ async def auto_delete(bot, chat_id, message_id, delay=30):
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
-        pass
+        log.info(f"[auto_delete] ✅ Mesaj silindi: chat={chat_id} msg={message_id}")
+    except Exception as e:
+        log.warning(f"[auto_delete] ❌ Silinemedi: chat={chat_id} msg={message_id} | Hata: {e}")
     finally:
         try:
             _pending_deletes.remove((delete_at, chat_id, message_id))
