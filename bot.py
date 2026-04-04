@@ -656,23 +656,26 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
         trend_lbl  = "Yukarı Trend" if trend_up else "Aşağı Trend"
 
         text = (
-            f"📐 *{symbol} — Fibonacci Retracement* ({interval})\n"
+            f"📐 *{symbol} — Fibonacci Haritasi*\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{trend_icon} *Trend:* {trend_lbl}  |  *Retracement:* `%{retrace_pct}`\n"
-            f"📊 *Swing High:* `{fp(swing_high)}` USDT\n"
-            f"📊 *Swing Low:*  `{fp(swing_low)}` USDT\n"
-            f"🔵 *Mevcut Fiyat:* `{fp(cur)}` USDT\n"
+            f"🕰️ *Periyot:* `{interval}`\n"
+            f"{trend_icon} *Trend:* {trend_lbl}\n"
+            f"↕️ *Geri Cekilme:* `%{retrace_pct}`\n"
+            f"📈 *Swing High:* `{fp(swing_high)} USDT`\n"
+            f"📉 *Swing Low:* `{fp(swing_low)} USDT`\n"
+            f"📍 *Anlik Fiyat:* `{fp(cur)} USDT`\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🧭 *Yakin Seviyeler*\n"
         )
 
         # Destek / Direnç özeti
         if sup_fib:
             dist_sup = round((cur - sup_fib[1]) / cur * 100, 2)
-            text += f"🟢 *Destek:* Fib `{sup_fib[0]:.3f}` → `{fp(sup_fib[1])}` USDT  `(-{dist_sup}%)`\n"
+            text += f"🟢 *Destek:* Fib `{sup_fib[0]:.3f}` → `{fp(sup_fib[1])} USDT`  `(-{dist_sup}%)`\n"
         if res_fib:
             dist_res = round((res_fib[1] - cur) / cur * 100, 2)
-            text += f"🔴 *Direnç:* Fib `{res_fib[0]:.3f}` → `{fp(res_fib[1])}` USDT  `(+{dist_res}%)`\n"
-        text += f"━━━━━━━━━━━━━━━━━━━━━\n"
+            text += f"🔴 *Direnc:* Fib `{res_fib[0]:.3f}` → `{fp(res_fib[1])} USDT`  `(+{dist_res}%)`\n"
+        text += f"━━━━━━━━━━━━━━━━━━━━━\n📌 *Fib Seviyeleri*\n"
 
         # Tüm seviyeler
         for lvl in FIB_LEVELS:
@@ -687,8 +690,8 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
             elif res_fib and lvl == res_fib[0]:
                 marker = "🔴"
             else:
-                marker = "  "
-            text += f"{marker} `{lvl:.3f}` → `{lp}` USDT  {dist_str}\n"
+                marker = "⚪"
+            text += f"{marker} Fib `{lvl:.3f}` → `{lp} USDT`  •  {dist_str}\n"
 
         return buf, text
     except Exception as e:
@@ -754,7 +757,7 @@ async def fib_command(update: Update, context):
         photo=buf,
         caption=text,
         parse_mode="Markdown",
-        reply_markup=None if is_group else keyboard,
+        reply_markup=keyboard,
     )
     if is_group and delay:
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -954,7 +957,11 @@ async def sentiment_command(update: Update, context):
     args = context.args or []
     if not args:
         await send_temp(context.bot, chat.id,
-            "🧠 *Sentiment Kullanımı:*\n`/sentiment BTCUSDT`\n`/sentiment ETH`",
+            "🧠 *Sentiment Analizi*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "Kullanim icin bir sembol gir:\n"
+            "`/sentiment BTCUSDT`\n"
+            "`/sentiment ETH`",
             parse_mode="Markdown")
         return
     await register_user(update)
@@ -962,7 +969,7 @@ async def sentiment_command(update: Update, context):
     if not symbol.endswith("USDT"): symbol += "USDT"
 
     loading = await send_temp(context.bot, chat.id,
-        f"🧠 `{symbol}` haber analizi yapılıyor...", parse_mode="Markdown")
+        f"🧠 `{symbol}` icin sentiment verileri toplanıyor...", parse_mode="Markdown")
     result  = await fetch_sentiment(symbol)
     try: await context.bot.delete_message(chat.id, loading.message_id)
     except Exception: pass
@@ -972,15 +979,16 @@ async def sentiment_command(update: Update, context):
         f"🧠 *{symbol} — Sentiment Analizi*\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💭 *Genel Duygu:* {result['label']}\n"
-        f"📊 *Skor:* `{result['score']:.2f}` / 1.00\n"
+        f"📊 *Skor:* `{result['score']:.2f}` / `1.00`\n"
         f"{bar}\n"
-        f"📰 *Haber Sayısı:* `{result['news_count']}`\n"
-        f"🔍 *Kaynak:* `{result['source']}`\n"
+        f"📰 *Haber Sayisi:* `{result['news_count']}`\n"
+        f"🔎 *Kaynak:* `{result['source']}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💬 _{result['summary']}_\n"
-        f"⏰ _{datetime.utcnow().strftime('%H:%M UTC')}_"
+        f"💬 *Ozet:* _{result['summary']}_\n"
+        f"🕒 _Guncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
     )
     is_group = chat.type in ("group", "supergroup")
+    is_private = chat.type == "private"
     delay    = (await get_member_delete_delay()) if is_group else None
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🔄 Yenile",  callback_data=f"sent_{symbol}"),
@@ -990,7 +998,7 @@ async def sentiment_command(update: Update, context):
         chat.id,
         text,
         parse_mode="Markdown",
-        reply_markup=None if is_group else keyboard,
+        reply_markup=keyboard if is_private else None,
     )
     if is_group and delay:
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -1055,8 +1063,10 @@ async def ne_command(update: Update, context):
     if not args:
         terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
         await send_temp(context.bot, chat.id,
-            f"📚 *Kripto Terim Sözlüğü*\n━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Kullanım: `/ne MACD`\n\n📖 *Terimler:*\n{terimler}",
+            f"📚 *Kripto Terim Sozlugu*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Bir terim yazarak aciklamasini gorebilirsin.\n"
+            f"Ornek: `/ne MACD`\n\n"
+            f"📖 *Mevcut Terimler:*\n{terimler}",
             parse_mode="Markdown")
         return
 
@@ -1071,7 +1081,11 @@ async def ne_command(update: Update, context):
             text = SOZLUK[eslesme[0]]
         else:
             terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
-            text = f"❓ `{arama}` bulunamadı.\n\nMevcut terimler:\n{terimler}"
+            text = (
+                f"❓ `{arama}` bulunamadi.\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📚 *Mevcut Terimler:*\n{terimler}"
+            )
 
     is_group = chat.type in ("group", "supergroup")
     delay    = (await get_member_delete_delay()) if is_group else None
@@ -1379,9 +1393,8 @@ async def takvim_command(update: Update, context):
                     chat_id=user_id,
                     text=(
                         "📅 *Ekonomik Takvim*\n━━━━━━━━━━━━━━━━━━\n"
-                        "Bu özelliği DM üzerinden kullanabilirsiniz.\n\n"
-                        "Aşağıdaki butona tıklayarak takvimi görebilir "
-                        "veya Dashboard Mini App'i açabilirsiniz 👇"
+                        "Bu ozellik DM uzerinden daha rahat kullanilir.\n\n"
+                        "Asagidaki butonlarla takvimi acabilir veya Dashboard Mini App'e gecebilirsin."
                     ),
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(dm_keyboard_rows)
@@ -1397,13 +1410,13 @@ async def takvim_command(update: Update, context):
             return
 
     await register_user(update)
-    loading = await send_temp(context.bot, chat.id, "📅 Ekonomik takvim yükleniyor...", parse_mode="Markdown")
+    loading = await send_temp(context.bot, chat.id, "📅 Yaklasan ekonomik takvim verileri yukleniyor...", parse_mode="Markdown")
     events  = await fetch_crypto_calendar()
     try: await context.bot.delete_message(chat.id, loading.message_id)
     except Exception: pass
 
     now = datetime.utcnow()
-    text = "📅 *EKONOMİK & KRİPTO TAKVİM*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    text = "📅 *Ekonomik ve Kripto Takvimi*\n━━━━━━━━━━━━━━━━━━━━━\n"
     for ev in events[:8]:
         try:
             ev_dt  = datetime.strptime(ev["date"], "%Y-%m-%d")
@@ -1425,7 +1438,7 @@ async def takvim_command(update: Update, context):
             text   += f"\n{imp_str} {zamanl}\n📌 *{ev['title']}*{coins}{desc}\n"
         except Exception:
             pass
-    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yüksek  🟡 Orta  🟢 Düşük etki\n⏰ _{now.strftime('%d.%m.%Y %H:%M')} UTC_"
+    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yuksek  •  🟡 Orta  •  🟢 Dusuk etki\n🕒 _Guncelleme: {now.strftime('%d.%m.%Y %H:%M')} UTC_"
 
     is_group = chat.type in ("group", "supergroup")
     delay    = (await get_member_delete_delay()) if is_group else None
@@ -1923,33 +1936,38 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
 
         header = f"*{extra_title}*\n"
 
+        market_ctx = ""
+        if mood is not None and btc_dom is not None and mkt_avg is not None:
+            market_ctx = f"🌍 *Piyasa Nabzi:* {mood}  •  BTC Dominansi `{btc_dom}%`  •  Ort. `{mkt_avg:+.2f}%`\n━━━━━━━━━━━━━━━━━━\n"
+
         text = header + (
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💎 `{symbol}` 💎\n"
-            f"\n"
-            f"💵 *Fiyat:* `{format_price(price)} USDT`\n"
+            f"💎 `{symbol}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 *Anlik Fiyat:* `{format_price(price)} USDT`\n"
             f"{rank_line}"
             f"{vol_anom}"
-            f"\n*Performans:*\n"
-            f"{e5} `5dk  :` `{s5}{ch5m:+.2f}%`\n"
-            f"{e1} `1sa  :` `{s1}{ch1h:+.2f}%`\n"
-            f"{e4} `4sa  :` `{s4}{ch4h:+.2f}%`\n"
-            f"{e24} `24sa :` `{s24}{ch24:+.2f}%`\n"
-            f"{e7} `7gün :` `{s7}{ch7d:+.2f}%`\n"
-            f"{e30} `30gün:` `{s30}{ch30d:+.2f}%`\n\n"
-            f"*RSI:*\n"
-            f"• 4sa  RSI 14 : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
-            f"• 1gün RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
+            f"{market_ctx}"
+            f"📈 *Performans*\n"
+            f"{e5} `5dk  `  `{s5}{ch5m:+.2f}%`\n"
+            f"{e1} `1sa  `  `{s1}{ch1h:+.2f}%`\n"
+            f"{e4} `4sa  `  `{s4}{ch4h:+.2f}%`\n"
+            f"{e24} `24sa `  `{s24}{ch24:+.2f}%`\n"
+            f"{e7} `7gun `  `{s7}{ch7d:+.2f}%`\n"
+            f"{e30} `30gun`  `{s30}{ch30d:+.2f}%`\n\n"
+            f"📊 *RSI Ozeti*\n"
+            f"• 4sa RSI 14  : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
+            f"• 1gun RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
         )
         if div_line:
             text += f"{div_line}\n"
         else:
             text += "\n"
         text += (
-            f"*Piyasa Skoru:*\n"
-            f"⏱ Saatlik : `{sh}/100` — _{lh}_\n"
-            f"📅 Günlük  : `{sd}/100` — _{ld}_\n"
-            f"📆 Haftalık: `{sw}/100` — _{lw}_\n"
+            f"📌 *Piyasa Skoru*\n"
+            f"⏱ Saatlik  : `{sh}/100` — _{lh}_\n"
+            f"📅 Gunluk   : `{sd}/100` — _{ld}_\n"
+            f"🗓 Haftalik : `{sw}/100` — _{lw}_\n"
             f"──────────────────"
         )
         if threshold_info:
@@ -3584,17 +3602,17 @@ async def send_weekly_report(bot, chat_id):
         now_str = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y")
 
         text = (
-            "📅 *Haftalık Kripto Raporu*\n━━━━━━━━━━━━━━━━━━\n"
-            "🗓 " + now_str + " · " + mood + "\n"
-            "📊 Ort. Değişim: `" + ("%+.2f" % avg) + "%`\n\n"
-            "🚀 *En Çok Yükselen 5*\n"
+            "📅 *Haftalik Kripto Ozeti*\n━━━━━━━━━━━━━━━━━━\n"
+            "🗓 " + now_str + "  •  " + mood + "\n"
+            "📊 Ortalama Degisim: `" + ("%+.2f" % avg) + "%`\n\n"
+            "🚀 *Haftanin Yukselenleri*\n"
         )
         for i, c in enumerate(top5, 1):
             text += get_number_emoji(i) + " `" + c["symbol"] + "` 🟢 `" + ("%+.2f" % float(c["priceChangePercent"])) + "%`\n"
-        text += "\n📉 *En Çok Düşen 5*\n"
+        text += "\n📉 *Haftanin Düşenleri*\n"
         for i, c in enumerate(bot5, 1):
             text += get_number_emoji(i) + " `" + c["symbol"] + "` 🔴 `" + ("%+.2f" % float(c["priceChangePercent"])) + "%`\n"
-        text += "\n_İyi haftalar! 🎯_"
+        text += "\n✨ _Iyi haftalar ve bol kazanc!_"
         await bot.send_message(chat_id, text, parse_mode="Markdown")
     except Exception as e:
         log.error("Haftalik rapor: " + str(e))
@@ -3769,8 +3787,8 @@ async def start(update: Update, context):
 
         keyboard    = InlineKeyboardMarkup(group_full_buttons)
         welcome_text = (
-            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
-            "7/24 piyasayı izliyorum.\n\n"
+            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayi izliyor, hizli analizler uretiyorum.\n\n"
             "💡 *Analiz:* `BTCUSDT` yaz\n"
             "🔔 *Alarm:* `/alarm_ekle BTCUSDT 3.5`\n"
             "🎯 *Hedef:* `/hedef BTCUSDT 70000`\n"
@@ -3779,7 +3797,7 @@ async def start(update: Update, context):
             "📅 *Takvim:* `/takvim`\n"
             "💰 *Kar/Zarar:* `/kar BTCUSDT 0.5 60000`\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "📢 *Topluluğumuza katıl:*\n"
+            "📢 *Toplulugumuza Katil:*\n"
             "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
             "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
         )
@@ -3799,18 +3817,18 @@ async def start(update: Update, context):
     else:
         keyboard    = InlineKeyboardMarkup(dm_buttons)
         welcome_text = (
-            "👋 *Kripto Analiz Asistanı*\n━━━━━━━━━━━━━━━━━━\n"
-            "7/24 piyasayı izliyorum.\n\n"
+            "👋 *Kripto Analiz Asistani*\n━━━━━━━━━━━━━━━━━━\n"
+            "7/24 piyasayi izliyor, tum araclari tek ekranda sunuyorum.\n\n"
             "💡 *Analiz:* `BTCUSDT` yaz\n"
             "🔔 *Alarm:* `/alarm_ekle BTCUSDT 3.5`\n"
             "🎯 *Hedef:* `/hedef BTCUSDT 70000`\n"
             "📐 *Fibonacci:* `/fib BTCUSDT`\n"
             "🧠 *Sentiment:* `/sentiment BTCUSDT`\n"
             "📅 *Takvim:* `/takvim`\n"
-            "📚 *Sözlük:* `/ne MACD`\n"
+            "📚 *Sozluk:* `/ne MACD`\n"
             "💰 *Kar/Zarar:* `/kar BTCUSDT 0.5 60000`\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "📢 *Topluluğumuza katıl:*\n"
+            "📢 *Toplulugumuza Katil:*\n"
             "💬 [Kripto Drop Grubu](https://t.me/kriptodroptr)\n"
             "📣 [Kripto Drop Duyuru](https://t.me/kriptodropduyuru)"
         )
@@ -3826,7 +3844,11 @@ async def market(update: Update, context):
     usdt = [x for x in data if x["symbol"].endswith("USDT")]
     avg  = sum(float(x["priceChangePercent"]) for x in usdt) / len(usdt)
     status_emoji = "🐂" if avg > 0 else "🐻"
-    msg_text = f"{status_emoji} *Piyasa Duyarliligi:* `%{avg:+.2f}`"
+    msg_text = (
+        f"{status_emoji} *Piyasa Duyarliligi*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Ortalama degisim: `%{avg:+.2f}`"
+    )
     chat = update.effective_chat
     is_group = chat and chat.type in ("group", "supergroup")
     is_cb = bool(update.callback_query)
@@ -3875,10 +3897,10 @@ async def top24(update: Update, context):
     top_losers  = sorted(filtered, key=lambda x: x[1])[:5]
 
     text = "🏆 *24 Saatlik Performans Liderleri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-    text += "🟢 *YÜKSELENLER*\n"
+    text += "🟢 *Yukselenler*\n"
     for i, (c, pct) in enumerate(top_gainers, 1):
         text += f"{get_number_emoji(i)} 🟢▲ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
-    text += "\n🔴 *DÜŞENLER*\n"
+    text += "\n🔴 *Dusenler*\n"
     for i, (c, pct) in enumerate(top_losers, 1):
         text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
 
@@ -3908,16 +3930,17 @@ async def top5(update: Update, context):
         positives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]), reverse=True)[:5]
         negatives = sorted(usdt_list, key=lambda x: float(x["priceChangePercent"]))[:5]
 
-        text = "⚡ *Piyasanın En Hareketlileri (24s baz)*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "🟢 *YÜKSELENLER*\n"
+        text = "⚡ *Piyasanin En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "🕒 _5 dakikalik veri henuz hazir degil, 24s bazli liste gosteriliyor._\n\n"
+        text += "🟢 *Yukselenler*\n"
         for i, c in enumerate(positives, 1):
             pct = float(c["priceChangePercent"])
             text += f"{get_number_emoji(i)} 🟢▲ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
-        text += "\n🔴 *DÜŞENLER*\n"
+        text += "\n🔴 *Dusenler*\n"
         for i, c in enumerate(negatives, 1):
             pct = float(c["priceChangePercent"])
             text += f"{get_number_emoji(i)} 🔴▼ `{c['symbol']:<12}` `%{pct:+6.2f}`\n"
-        text += "\n_⏳ WebSocket verisi henuz doluyor..._"
+        text += "\n⏳ _Canli akıs oturunca liste otomatik daha isabetli olur._"
     else:
         changes = []
         for s, p in price_memory.items():
@@ -3927,13 +3950,13 @@ async def top5(update: Update, context):
         positives = sorted([x for x in changes if x[1] > 0], key=lambda x: x[1], reverse=True)[:5]
         negatives = sorted([x for x in changes if x[1] < 0], key=lambda x: x[1])[:5]
 
-        text = "⚡ *Son 5 Dakikanın En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "🟢 *YÜKSELENLER — En Hızlı 5*\n"
+        text = "⚡ *Son 5 Dakikanin En Hareketlileri*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "🟢 *Yukselenler — En Hizli 5*\n"
         for i, (s, c) in enumerate(positives, 1):
             text += f"{get_number_emoji(i)} 🟢▲ `{s:<12}` `%{c:+6.2f}`\n"
         if not positives:
             text += "_Yükseliş yok_\n"
-        text += "\n🔴 *DÜŞENLER — En Hızlı 5*\n"
+        text += "\n🔴 *Dusenler — En Hizli 5*\n"
         for i, (s, c) in enumerate(negatives, 1):
             text += f"{get_number_emoji(i)} 🔴▼ `{s:<12}` `%{c:+6.2f}`\n"
         if not negatives:
@@ -3966,11 +3989,11 @@ async def status(update: Update, context):
             GROUP_CHAT_ID
         )
     text = (
-        "ℹ️ *Sistem Yapılandırması*\n"
+        "ℹ️ *Sistem Durumu*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🔔 *Alarm Durumu:* `{'AKTIF' if r['alarm_active'] else 'KAPALI'}`\n"
-        f"🎯 *Eşik Değeri:* `%{r['threshold']}`\n"
-        f"🔄 *İzleme Modu:* `{r['mode'].upper()}`\n"
+        f"🎯 *Esik Degeri:* `%{r['threshold']}`\n"
+        f"🔄 *Izleme Modu:* `{r['mode'].upper()}`\n"
         f"📦 *Takip Edilen Sembol:* `{len(price_memory)}`"
     )
     chat = update.effective_chat
@@ -4259,21 +4282,20 @@ async def button_handler(update: Update, context):
                     InlineKeyboardButton("1d", callback_data=f"fib_{symbol}_1d"),
                     InlineKeyboardButton("1w", callback_data=f"fib_{symbol}_1w"),
                 ]])
-                _fib_group = q.message.chat.type in ("group", "supergroup")
                 await context.bot.send_photo(
                     chat_id=q.message.chat.id,
                     photo=buf,
                     caption=text,
                     parse_mode="Markdown",
-                    reply_markup=None if _fib_group else keyboard,
+                    reply_markup=keyboard,
                 )
         elif q.data == "fib_help":
             await q.message.reply_text(
-                "📐 *Fibonacci Retracement*\n━━━━━━━━━━━━━━━━━━━━━\n"
-                "Kullanım: `/fib BTCUSDT`\n"
+                "📐 *Fibonacci Rehberi*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Kullanim: `/fib BTCUSDT`\n"
                 "Zaman dilimleri: `1h` `4h` `1d` `1w`\n\n"
-                "Fibonacci seviyeleri destek/direnç tahmini için kullanılır.\n"
-                "📖 Detaylı bilgi: `/ne fibonacci`",
+                "Fibonacci seviyeleri destek ve direnc tahmini icin kullanilir.\n"
+                "📖 Detayli bilgi: `/ne fibonacci`",
                 parse_mode="Markdown"
             )
         return
@@ -4283,10 +4305,10 @@ async def button_handler(update: Update, context):
         await q.answer()
         if q.data == "sent_help":
             await q.message.reply_text(
-                "🧠 *Sentiment Analizi*\n━━━━━━━━━━━━━━━━━━━━━\n"
-                "Kullanım: `/sentiment BTCUSDT`\n\n"
-                "Haber ve topluluk verilerinden coin duygu analizi yapılır.\n"
-                "Groq AI + CryptoPanic entegrasyonu ile çalışır.",
+                "🧠 *Sentiment Rehberi*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Kullanim: `/sentiment BTCUSDT`\n\n"
+                "Haber ve topluluk verilerinden duygu analizi uretir.\n"
+                "Groq AI + CryptoPanic entegrasyonu ile calisir.",
                 parse_mode="Markdown"
             )
         elif q.data.startswith("sent_") and len(q.data) > 5:
@@ -4299,19 +4321,21 @@ async def button_handler(update: Update, context):
             text = (
                 f"🧠 *{symbol} — Sentiment Analizi*\n━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💭 *Genel Duygu:* {result['label']}\n"
-                f"📊 *Skor:* `{result['score']:.2f}` / 1.00\n{bar}\n"
-                f"📰 *Haber:* `{result['news_count']}`  🔍 *Kaynak:* `{result['source']}`\n"
-                f"━━━━━━━━━━━━━━━━━━━━━\n💬 _{result['summary']}_"
+                f"📊 *Skor:* `{result['score']:.2f}` / `1.00`\n{bar}\n"
+                f"📰 *Haber Sayisi:* `{result['news_count']}`\n"
+                f"🔎 *Kaynak:* `{result['source']}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💬 *Ozet:* _{result['summary']}_"
             )
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔄 Yenile", callback_data=f"sent_{symbol}"),
                 InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
             ]])
-            _sent_group = q.message.chat.type in ("group", "supergroup")
+            _sent_private = q.message.chat.type == "private"
             await q.message.reply_text(
                 text,
                 parse_mode="Markdown",
-                reply_markup=None if _sent_group else keyboard,
+                reply_markup=keyboard if _sent_private else None,
             )
         return
 
@@ -4378,17 +4402,17 @@ async def button_handler(update: Update, context):
             return f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
 
         text = (
-            f"🔍 *{symbol} — Teknik Analiz*\n"
+            f"🔍 *{symbol} — Teknik Ozet*\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 *Fiyat:* `${fmt(price)}`  {pct_icon} `{pct24:+.2f}%`\n"
-            f"📊 *24s Hacim:* `${vol24/1e6:.1f}M`\n"
-            f"📈 *24s Yüksek:* `${fmt(high24)}`\n"
-            f"📉 *24s Düşük:*  `${fmt(low24)}`\n"
+            f"💰 *Anlik Fiyat:* `${fmt(price)}`  {pct_icon} `{pct24:+.2f}%`\n"
+            f"📦 *24s Hacim:* `${vol24/1e6:.1f}M`\n"
+            f"📈 *24s Yuksek:* `${fmt(high24)}`\n"
+            f"📉 *24s Dusuk:* `${fmt(low24)}`\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"🔮 *RSI (14):* `{rsi}` — {rsi_label}\n"
             f"📐 *EMA 20:* `${fmt(ema20)}` — {trend}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏰ _{datetime.utcnow().strftime('%H:%M UTC')}_"
+            f"🕒 _Guncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
         )
         _cb_chat = q.message.chat if q.message else None
         _cb_in_group = bool(_cb_chat and _cb_chat.type in ("group", "supergroup"))
