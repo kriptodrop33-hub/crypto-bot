@@ -749,8 +749,13 @@ async def fib_command(update: Update, context):
         InlineKeyboardButton("1d",  callback_data=f"fib_{symbol}_1d"),
         InlineKeyboardButton("1w",  callback_data=f"fib_{symbol}_1w"),
     ]])
-    msg = await context.bot.send_photo(chat_id=chat.id, photo=buf, caption=text,
-                                        parse_mode="Markdown", reply_markup=keyboard)
+    msg = await context.bot.send_photo(
+        chat_id=chat.id,
+        photo=buf,
+        caption=text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else keyboard,
+    )
     if is_group and delay:
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
 
@@ -981,7 +986,12 @@ async def sentiment_command(update: Update, context):
         InlineKeyboardButton("🔄 Yenile",  callback_data=f"sent_{symbol}"),
         InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
     ]])
-    msg = await context.bot.send_message(chat.id, text, parse_mode="Markdown", reply_markup=keyboard)
+    msg = await context.bot.send_message(
+        chat.id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else keyboard,
+    )
     if is_group and delay:
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
 
@@ -3826,7 +3836,11 @@ async def market(update: Update, context):
         InlineKeyboardButton("⚡ 5dk Flash",  callback_data="top5"),
     ]])
     target = update.callback_query.message if is_cb else update.message
-    sent = await target.reply_text(msg_text, parse_mode="Markdown", reply_markup=keyboard)
+    sent = await target.reply_text(
+        msg_text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else keyboard,
+    )
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
@@ -3874,7 +3888,11 @@ async def top24(update: Update, context):
         InlineKeyboardButton("📊 Market",    callback_data="market"),
     ]])
     target = update.callback_query.message if is_cb else update.message
-    msg = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb24)
+    msg = await target.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else kb24,
+    )
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -3930,7 +3948,11 @@ async def top5(update: Update, context):
         InlineKeyboardButton("📊 Market",     callback_data="market"),
     ]])
     target = update.callback_query.message if is_cb else update.message
-    msg = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb5)
+    msg = await target.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else kb5,
+    )
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, msg.message_id, delay))
@@ -3960,7 +3982,11 @@ async def status(update: Update, context):
         InlineKeyboardButton("📈 24s Lider", callback_data="top24"),
     ]])
     target = update.callback_query.message if is_cb else update.message
-    sent = await target.reply_text(text, parse_mode="Markdown", reply_markup=kb_st)
+    sent = await target.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=None if is_group else kb_st,
+    )
     if is_group:
         delay = await get_member_delete_delay()
         asyncio.create_task(auto_delete(context.bot, chat.id, sent.message_id, delay))
@@ -4233,9 +4259,13 @@ async def button_handler(update: Update, context):
                     InlineKeyboardButton("1d", callback_data=f"fib_{symbol}_1d"),
                     InlineKeyboardButton("1w", callback_data=f"fib_{symbol}_1w"),
                 ]])
+                _fib_group = q.message.chat.type in ("group", "supergroup")
                 await context.bot.send_photo(
-                    chat_id=q.message.chat.id, photo=buf,
-                    caption=text, parse_mode="Markdown", reply_markup=keyboard
+                    chat_id=q.message.chat.id,
+                    photo=buf,
+                    caption=text,
+                    parse_mode="Markdown",
+                    reply_markup=None if _fib_group else keyboard,
                 )
         elif q.data == "fib_help":
             await q.message.reply_text(
@@ -4277,7 +4307,12 @@ async def button_handler(update: Update, context):
                 InlineKeyboardButton("🔄 Yenile", callback_data=f"sent_{symbol}"),
                 InlineKeyboardButton("📊 Analiz",  callback_data=f"analyse_{symbol}"),
             ]])
-            await q.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+            _sent_group = q.message.chat.type in ("group", "supergroup")
+            await q.message.reply_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=None if _sent_group else keyboard,
+            )
         return
 
     # Analiz callback (sentiment butonundan açılır)
