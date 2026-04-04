@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 
 from datetime import datetime, timedelta, time as dtime
 from collections import defaultdict
+import random
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, BotCommand, WebAppInfo
 from telegram.ext import (
@@ -27,7 +28,7 @@ from telegram.ext import (
 # ================= CONFIG =================
 
 TOKEN         = os.getenv("TELEGRAM_TOKEN")
-GROUP_CHAT_ID = int(os.getenv("GROUP_ID"))
+GROUP_CHAT_ID = int(os.getenv("GROUP_ID", "0"))
 DATABASE_URL  = os.getenv("DATABASE_URL")
 ADMIN_ID      = int(os.getenv("ADMIN_ID", "0"))        # Bot sahibinin Telegram ID'si
 BOT_USERNAME  = os.getenv("BOT_USERNAME", "botunuz")   # Örnek: KriptoDrop_alertbot (@ olmadan)
@@ -215,7 +216,7 @@ async def init_db():
             )
         """)
 
-    log.info("PostgreSQL baglantisi kuruldu.")
+    log.info("PostgreSQL bağlantısı kuruldu.")
 
 # ================= MEMORY =================
 
@@ -225,6 +226,20 @@ chart_cache:        dict = {}
 whale_vol_mem:      dict = {}
 scheduled_last_run: dict = {}
 coin_image_cache:   dict = {}
+
+# ================= HTTP SESSION =================
+# Global aiohttp session — TCP bağlantı havuzu için tek session kullan (#25)
+_http_session: aiohttp.ClientSession = None
+
+async def get_http_session() -> aiohttp.ClientSession:
+    """Tekil global aiohttp session döndürür. Socket exhaustion'dan kaçınmak için."""
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        _http_session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=15),
+            connector=aiohttp.TCPConnector(limit=50, limit_per_host=20)
+        )
+    return _http_session
 
 # ================= YARDIMCI =================
 
@@ -408,11 +423,15 @@ async def fetch_market_badge():
         return None, None, None
 
 # Bekleyen silme görevleri — restart sonrası kurtarma için
+MAX_PENDING_DELETES = 500
 _pending_deletes: list[tuple] = []   # (delete_at_ts, chat_id, message_id)
 
 async def auto_delete(bot, chat_id, message_id, delay=30):
     import time as _t
     delete_at = _t.time() + delay
+    # Max boyut kontrolü — eski kayıtları temizle
+    if len(_pending_deletes) >= MAX_PENDING_DELETES:
+        _pending_deletes[:] = _pending_deletes[-MAX_PENDING_DELETES // 2:]
     _pending_deletes.append((delete_at, chat_id, message_id))
     await asyncio.sleep(delay)
     try:
@@ -473,6 +492,11 @@ async def generate_candlestick_chart(symbol: str):
         cached_at, buf_data = chart_cache[symbol]
         if datetime.utcnow() - cached_at < timedelta(minutes=5):
             return io.BytesIO(buf_data)
+    # Cache boyut sınırı — en eski girişleri temizle
+    if len(chart_cache) >= 100:
+        oldest = sorted(chart_cache.items(), key=lambda x: x[1][0])[:20]
+        for k, _ in oldest:
+            del chart_cache[k]
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -498,9 +522,10 @@ async def generate_candlestick_chart(symbol: str):
         style = mpf.make_mpf_style(
             marketcolors=mc,
             facecolor="#0d1117", edgecolor="#30363d",
-            figcolor="#0d1117", gridcolor="#21262d", gridstyle="--",
+            figcolor="#0d1117", gridcolor="#30363d", gridstyle="--",
             rc={"axes.labelcolor":"#8b949e","xtick.color":"#8b949e",
-                "ytick.color":"#8b949e","font.size":9}
+                "ytick.color":"#8b949e","font.size":9,
+                "grid.alpha": 0.4}
         )
         buf = io.BytesIO()
         mpf.plot(
@@ -513,7 +538,7 @@ async def generate_candlestick_chart(symbol: str):
         chart_cache[symbol] = (datetime.utcnow(), buf_data)
         return io.BytesIO(buf_data)
     except Exception as e:
-        log.error(f"Grafik hatasi ({symbol}): {e}")
+        log.error(f"Grafik hatası ({symbol}): {e}")
         return None
 
 
@@ -580,9 +605,10 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
         style = mpf.make_mpf_style(
             marketcolors=mc,
             facecolor="#0d1117", edgecolor="#30363d",
-            figcolor="#0d1117", gridcolor="#21262d", gridstyle="--",
+            figcolor="#0d1117", gridcolor="#30363d", gridstyle="--",
             rc={"axes.labelcolor":"#8b949e","xtick.color":"#8b949e",
-                "ytick.color":"#8b949e","font.size":8}
+                "ytick.color":"#8b949e","font.size":8,
+                "grid.alpha": 0.4}
         )
 
         fig, axes = mpf.plot(
@@ -656,16 +682,16 @@ async def generate_fib_chart(symbol: str, interval: str = "4h", limit: int = 100
         trend_lbl  = "Yukarı Trend" if trend_up else "Aşağı Trend"
 
         text = (
-            f"📐 *{symbol} — Fibonacci Haritasi*\n"
+            f"📐 *{symbol} — Fibonacci Haritası*\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"🕰️ *Periyot:* `{interval}`\n"
             f"{trend_icon} *Trend:* {trend_lbl}\n"
-            f"↕️ *Geri Cekilme:* `%{retrace_pct}`\n"
+            f"↕️ *Geri Çekilme:* `%{retrace_pct}`\n"
             f"📈 *Swing High:* `{fp(swing_high)} USDT`\n"
             f"📉 *Swing Low:* `{fp(swing_low)} USDT`\n"
-            f"📍 *Anlik Fiyat:* `{fp(cur)} USDT`\n"
+            f"📍 *Anlık Fiyat:* `{fp(cur)} USDT`\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🧭 *Yakin Seviyeler*\n"
+            f"🧭 *Yakın Seviyeler*\n"
         )
 
         # Destek / Direnç özeti
@@ -903,7 +929,7 @@ async def fetch_sentiment(symbol: str) -> dict:
                             ll = line.strip()
                             if ll.startswith("SKOR:"):
                                 try: score = max(0.0, min(1.0, float(ll.split(":",1)[1].strip())))
-                                except: pass
+                                except Exception: pass
                             elif ll.startswith("ETIKET:"):
                                 label_raw = ll.split(":",1)[1].strip()
                             elif ll.startswith("OZET:"):
@@ -981,11 +1007,11 @@ async def sentiment_command(update: Update, context):
         f"💭 *Genel Duygu:* {result['label']}\n"
         f"📊 *Skor:* `{result['score']:.2f}` / `1.00`\n"
         f"{bar}\n"
-        f"📰 *Haber Sayisi:* `{result['news_count']}`\n"
+        f"📰 *Haber Sayısı:* `{result['news_count']}`\n"
         f"🔎 *Kaynak:* `{result['source']}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💬 *Ozet:* _{result['summary']}_\n"
-        f"🕒 _Guncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
+        f"🕒 _Güncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
     )
     is_group = chat.type in ("group", "supergroup")
     is_private = chat.type == "private"
@@ -1082,7 +1108,7 @@ async def ne_command(update: Update, context):
         else:
             terimler = " • ".join(f"`{k}`" for k in sorted(SOZLUK.keys()))
             text = (
-                f"❓ `{arama}` bulunamadi.\n"
+                f"❓ `{arama}` bulunamadı.\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📚 *Mevcut Terimler:*\n{terimler}"
             )
@@ -1289,7 +1315,7 @@ async def translate_calendar_events(events: list) -> list:
                 else:
                     log.warning(f"Takvim cevirisi Groq hata: {r.status}")
     except Exception as e:
-        log.warning(f"Takvim cevirisi basarisiz: {e}")
+        log.warning(f"Takvim çevirisi başarısız: {e}")
     return events
 
 async def fetch_crypto_calendar() -> list:
@@ -1438,7 +1464,7 @@ async def takvim_command(update: Update, context):
             text   += f"\n{imp_str} {zamanl}\n📌 *{ev['title']}*{coins}{desc}\n"
         except Exception:
             pass
-    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yuksek  •  🟡 Orta  •  🟢 Dusuk etki\n🕒 _Guncelleme: {now.strftime('%d.%m.%Y %H:%M')} UTC_"
+    text += f"\n━━━━━━━━━━━━━━━━━━━━━\n🔴 Yüksek  •  🟡 Orta  •  🟢 Düşük etki\n🕒 _Güncelleme: {now.strftime('%d.%m.%Y %H:%M')} UTC_"
 
     is_group = chat.type in ("group", "supergroup")
     delay    = (await get_member_delete_delay()) if is_group else None
@@ -1510,7 +1536,7 @@ def calc_rsi(data, period=14):
             return 100.0
         rs = avg_gain / avg_loss
         return round(100 - (100 / (1 + rs)), 2)
-    except:
+    except Exception:
         return 0.0
 
 def calc_stoch_rsi(data, rsi_period=14, stoch_period=14):
@@ -1537,7 +1563,7 @@ def calc_stoch_rsi(data, rsi_period=14, stoch_period=14):
         if hi == lo:
             return 50.0
         return round((rsi_vals[-1] - lo) / (hi - lo) * 100, 2)
-    except:
+    except Exception:
         return 50.0
 
 def calc_ema(data, period):
@@ -1550,7 +1576,7 @@ def calc_ema(data, period):
         for c in closes[period:]:
             ema = c * k + ema * (1 - k)
         return ema
-    except:
+    except Exception:
         return 0
 
 def calc_macd(data, fast=12, slow=26, signal=9):
@@ -1576,7 +1602,7 @@ def calc_macd(data, fast=12, slow=26, signal=9):
             sig_ema = m * k_sig + sig_ema * (1 - k_sig)
         histogram = macd_vals[-1] - sig_ema
         return round(macd_vals[-1], 8), round(histogram, 8)
-    except:
+    except Exception:
         return 0.0, 0.0
 
 def calc_bollinger(data, period=20, std_mult=2.0):
@@ -1594,7 +1620,7 @@ def calc_bollinger(data, period=20, std_mult=2.0):
             return 50.0
         pos = (cur - lower) / (upper - lower) * 100
         return round(_clamp(pos, -10, 110), 2)
-    except:
+    except Exception:
         return 50.0
 
 def calc_obv_trend(data, lookback=10):
@@ -1618,7 +1644,7 @@ def calc_obv_trend(data, lookback=10):
         elif late < early * 0.98:
             return -1
         return 0
-    except:
+    except Exception:
         return 0
 
 def calc_rsi_divergence(data, period=14, lookback=20):
@@ -1649,7 +1675,7 @@ def calc_rsi_divergence(data, period=14, lookback=20):
         if not price_up and rsi_up and rsi_series[-1] < 40:
             return "bullish"
         return None
-    except:
+    except Exception:
         return None
 
 def _score_label(score):
@@ -1944,7 +1970,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💎 `{symbol}`\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💵 *Anlik Fiyat:* `{format_price(price)} USDT`\n"
+            f"💵 *Anlık Fiyat:* `{format_price(price)} USDT`\n"
             f"{rank_line}"
             f"{vol_anom}"
             f"{market_ctx}"
@@ -2321,7 +2347,7 @@ async def set_callback(update: Update, context):
 
     if q.data == "set_close":
         try: await q.message.delete()
-        except: pass
+        except Exception: pass
         return
 
     if q.data == "set_toggle_alarm":
@@ -2601,7 +2627,7 @@ async def alarm_ekle_v2(update: Update, context):
                 "Kullanım: `/alarm_ekle BTCUSDT fiyat 70000`", parse_mode="Markdown"); return
         try:
             target_price = float(args[2].replace(",","."))
-        except:
+        except Exception:
             await send_temp(context.bot, update.effective_chat.id, "Fiyat değeri sayı olmalı.", parse_mode="Markdown"); return
 
         # Anlık fiyatı al, direction belirle
@@ -2638,7 +2664,7 @@ async def alarm_ekle_v2(update: Update, context):
             await send_temp(context.bot, update.effective_chat.id,
                 "Kullanım: `/alarm_ekle BTCUSDT rsi 30 asagi`", parse_mode="Markdown"); return
         try:    rsi_lvl = float(args[2])
-        except:
+        except Exception:
             await send_temp(context.bot, update.effective_chat.id, "RSI değeri sayı olmalı.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
@@ -2673,7 +2699,7 @@ async def alarm_ekle_v2(update: Update, context):
         try:
             band_low  = float(args[2].replace(",","."))
             band_high = float(args[3].replace(",","."))
-        except:
+        except Exception:
             await send_temp(context.bot, update.effective_chat.id, "Fiyat değerleri sayı olmalı.", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
@@ -2694,7 +2720,7 @@ async def alarm_ekle_v2(update: Update, context):
         return
 
     try:    threshold = float(args[1])
-    except:
+    except Exception:
         await send_temp(context.bot, update.effective_chat.id, "Eşik sayı olmalıdır. Örnek: `3.5`", parse_mode="Markdown"); return
     async with db_pool.acquire() as conn:
         await conn.execute("""
@@ -2822,7 +2848,7 @@ async def alarm_duraklat(update: Update, context):
     symbol = args[0].upper().replace("#","").replace("/","")
     if not symbol.endswith("USDT"): symbol += "USDT"
     try:    saat = float(args[1])
-    except:
+    except Exception:
         await send_temp(context.bot, update.effective_chat.id, "Saat sayı olmalı.", parse_mode="Markdown"); return
     until = datetime.utcnow() + timedelta(hours=saat)
     async with db_pool.acquire() as conn:
@@ -3076,7 +3102,7 @@ async def hedef_command(update: Update, context):
     for a in args[1:]:
         try:
             hedef_fiyatlar.append(float(a.replace(",",".")))
-        except:
+        except Exception:
             pass
 
     if not hedef_fiyatlar:
@@ -3264,7 +3290,7 @@ async def kar_command(update: Update, context):
         try:
             amount    = float(args[1].replace(",","."))
             buy_price = float(args[2].replace(",","."))
-        except:
+        except Exception:
             await send_temp(context.bot, update.effective_chat.id,
                 "Kullanım: `/kar BTCUSDT 0.5 60000`", parse_mode="Markdown"); return
 
@@ -3345,7 +3371,7 @@ async def mtf_command(update: Update, context):
         price  = float(ticker.get("lastPrice", 0))
         if price == 0 or "code" in ticker:
             try: await wait.delete()
-            except: pass
+            except Exception: pass
             await send_temp(context.bot, update.effective_chat.id,
                 f"⚠️ *{symbol}* bulunamadı veya Binance'de işlem görmüyor.\n"
                 "Sembolü kontrol edin. Örnek: `BTCUSDT`, `ETHUSDT`",
@@ -3539,9 +3565,9 @@ async def mtf_command(update: Update, context):
 
     except Exception as e:
         try: await wait.delete()
-        except: pass
-        log.error("MTF hatasi: " + str(e))
-        await send_temp(context.bot, update.effective_chat.id, "⚠️ Analiz sirasinda hata olustu.", parse_mode="Markdown")
+        except Exception: pass
+        log.error("MTF hatası: " + str(e))
+        await send_temp(context.bot, update.effective_chat.id, "⚠️ Analiz sırasında hata oluştu.", parse_mode="Markdown")
 
 
 # ================= WHALE ALARMI =================
@@ -3652,8 +3678,8 @@ async def zamanla_command(update: Update, context):
         symbol = args[1].upper().replace("#","").replace("/","")
         if not symbol.endswith("USDT"): symbol += "USDT"
         try:    h, m = map(int, args[2].split(":"))
-        except:
-            await send_temp(context.bot, update.effective_chat.id, "Saat formati: `09:00`", parse_mode="Markdown"); return
+        except Exception:
+            await send_temp(context.bot, update.effective_chat.id, "Saat formatı: `09:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
@@ -3666,8 +3692,8 @@ async def zamanla_command(update: Update, context):
 
     if args[0].lower() == "rapor" and len(args) >= 2:
         try:    h, m = map(int, args[1].split(":"))
-        except:
-            await send_temp(context.bot, update.effective_chat.id, "Saat formati: `08:00`", parse_mode="Markdown"); return
+        except Exception:
+            await send_temp(context.bot, update.effective_chat.id, "Saat formatı: `08:00`", parse_mode="Markdown"); return
         async with db_pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO scheduled_tasks(user_id,chat_id,task_type,symbol,hour,minute,active)
@@ -4267,6 +4293,17 @@ async def button_handler(update: Update, context):
     # Fibonacci callback
     if q.data.startswith("fib_"):
         await q.answer()
+        # fib_help özel kontrol — parts kontrolünden ÖNCE
+        if q.data == "fib_help":
+            await q.message.reply_text(
+                "📐 *Fibonacci Rehberi*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Kullanım: `/fib BTCUSDT`\n"
+                "Zaman dilimleri: `1h` `4h` `1d` `1w`\n\n"
+                "Fibonacci seviyeleri destek ve direnç tahmini için kullanılır.\n"
+                "📖 Detaylı bilgi: `/ne fibonacci`",
+                parse_mode="Markdown"
+            )
+            return
         parts  = q.data.split("_")   # fib_BTCUSDT_4h
         if len(parts) >= 3:
             symbol   = parts[1]
@@ -4289,15 +4326,6 @@ async def button_handler(update: Update, context):
                     parse_mode="Markdown",
                     reply_markup=keyboard,
                 )
-        elif q.data == "fib_help":
-            await q.message.reply_text(
-                "📐 *Fibonacci Rehberi*\n━━━━━━━━━━━━━━━━━━━━━\n"
-                "Kullanim: `/fib BTCUSDT`\n"
-                "Zaman dilimleri: `1h` `4h` `1d` `1w`\n\n"
-                "Fibonacci seviyeleri destek ve direnc tahmini icin kullanilir.\n"
-                "📖 Detayli bilgi: `/ne fibonacci`",
-                parse_mode="Markdown"
-            )
         return
 
     # Sentiment callback
@@ -4306,12 +4334,12 @@ async def button_handler(update: Update, context):
         if q.data == "sent_help":
             await q.message.reply_text(
                 "🧠 *Sentiment Rehberi*\n━━━━━━━━━━━━━━━━━━━━━\n"
-                "Kullanim: `/sentiment BTCUSDT`\n\n"
-                "Haber ve topluluk verilerinden duygu analizi uretir.\n"
-                "Groq AI + CryptoPanic entegrasyonu ile calisir.",
+                "Kullanım: `/sentiment BTCUSDT`\n\n"
+                "Haber ve topluluk verilerinden duygu analizi üretir.\n"
+                "Groq AI + CryptoPanic entegrasyonu ile çalışır.",
                 parse_mode="Markdown"
             )
-        elif q.data.startswith("sent_") and len(q.data) > 5:
+        elif len(q.data) > 5:
             symbol = q.data[5:]
             loading_msg = await q.message.reply_text(f"🧠 `{symbol}` analiz ediliyor...")
             result = await fetch_sentiment(symbol)
@@ -4322,10 +4350,10 @@ async def button_handler(update: Update, context):
                 f"🧠 *{symbol} — Sentiment Analizi*\n━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💭 *Genel Duygu:* {result['label']}\n"
                 f"📊 *Skor:* `{result['score']:.2f}` / `1.00`\n{bar}\n"
-                f"📰 *Haber Sayisi:* `{result['news_count']}`\n"
+                f"📰 *Haber Sayısı:* `{result['news_count']}`\n"
                 f"🔎 *Kaynak:* `{result['source']}`\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💬 *Ozet:* _{result['summary']}_"
+                f"💬 *Özet:* _{result['summary']}_"
             )
             keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔄 Yenile", callback_data=f"sent_{symbol}"),
@@ -4360,12 +4388,12 @@ async def button_handler(update: Update, context):
                 klines = await klines_resp.json()
         except Exception as e:
             try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
-            except: pass
+            except Exception: pass
             await q.message.reply_text(f"⚠️ Veri alınamadı: {e}")
             return
 
         try: await context.bot.delete_message(q.message.chat.id, loading_msg.message_id)
-        except: pass
+        except Exception: pass
 
         if ticker.get("code") or not isinstance(klines, list) or len(klines) < 14:
             await q.message.reply_text(f"⚠️ `{symbol}` için yeterli veri yok.", parse_mode="Markdown")
@@ -4402,17 +4430,17 @@ async def button_handler(update: Update, context):
             return f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
 
         text = (
-            f"🔍 *{symbol} — Teknik Ozet*\n"
+            f"🔍 *{symbol} — Teknik Özet*\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 *Anlik Fiyat:* `${fmt(price)}`  {pct_icon} `{pct24:+.2f}%`\n"
+            f"💰 *Anlık Fiyat:* `${fmt(price)}`  {pct_icon} `{pct24:+.2f}%`\n"
             f"📦 *24s Hacim:* `${vol24/1e6:.1f}M`\n"
-            f"📈 *24s Yuksek:* `${fmt(high24)}`\n"
-            f"📉 *24s Dusuk:* `${fmt(low24)}`\n"
+            f"📈 *24s Yüksek:* `${fmt(high24)}`\n"
+            f"📉 *24s Düşük:* `${fmt(low24)}`\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"🔮 *RSI (14):* `{rsi}` — {rsi_label}\n"
             f"📐 *EMA 20:* `${fmt(ema20)}` — {trend}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🕒 _Guncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
+            f"🕒 _Güncelleme: {datetime.utcnow().strftime('%H:%M UTC')}_"
         )
         _cb_chat = q.message.chat if q.message else None
         _cb_in_group = bool(_cb_chat and _cb_chat.type in ("group", "supergroup"))
@@ -4515,7 +4543,6 @@ async def button_handler(update: Update, context):
         else:
             eslesme = [k for k in SOZLUK if terim in k or k in terim]
             text_ne = SOZLUK[eslesme[0]] if eslesme else f"❓ `{terim}` bulunamadı."
-        import random
         diger2 = [k for k in SOZLUK if k != terim][:8]
         random.shuffle(diger2)
         ilgili2 = diger2[:4]
@@ -4545,7 +4572,7 @@ async def button_handler(update: Update, context):
     # Grupta sadece bu callback'ler kısıtlama olmadan çalışır
     GROUP_FREE = {
         "top24", "top5", "market", "status",
-        "ne_help", "miniapp_dm",
+        "miniapp_dm",
     }
 
     async def dm_redirect(feature_name: str):
@@ -4650,7 +4677,7 @@ async def button_handler(update: Update, context):
         await my_alarm_v2(update, context)
     elif q.data == "alarm_guide":
         await q.message.reply_text(
-            "➕ *Alarm Turleri:*\n━━━━━━━━━━━━━━━━━━\n"
+            "➕ *Alarm Türleri:*\n━━━━━━━━━━━━━━━━━━\n"
             "• `%` : `/alarm_ekle BTCUSDT 3.5`\n"
             "• Fiyat : `/alarm_ekle BTCUSDT fiyat 70000`\n"
             "• RSI : `/alarm_ekle BTCUSDT rsi 30 asagi`\n"
@@ -4663,7 +4690,7 @@ async def button_handler(update: Update, context):
         if q.from_user.id == uid:
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_alarms WHERE user_id=$1", uid)
-            await q.message.reply_text("🗑 Tum kisisel alarmlariniz silindi.")
+            await q.message.reply_text("🗑 Tüm kişisel alarmlarınız silindi.")
     elif q.data == "alarm_history":
         await alarm_gecmis(update, context)
     elif q.data.startswith("alarm_unpause_"):
@@ -4699,7 +4726,7 @@ async def button_handler(update: Update, context):
         if q.from_user.id == uid:
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM favorites WHERE user_id=$1", uid)
-            await q.message.reply_text("🗑 Tum favorileriniz silindi.")
+            await q.message.reply_text("🗑 Tüm favorileriniz silindi.")
 
     # ── MTF ──
     elif q.data.startswith("mtf_sym_"):
@@ -4930,7 +4957,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 else:               # yukarı alarm
                     triggered = rsi_now >= abs_level
                     direction = "up"
-            except:
+            except Exception:
                 pass
         elif alarm_type == "band" and band_low is not None and band_high is not None:
             cur_price = prices[-1][1]
@@ -4983,7 +5010,15 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             log.warning(f"Kişisel alarm gönderilemedi ({user_id}): {e}")
 
+    # Cooldown temizliği — 1 saatten eski kayıtları sil (#11)
+    expired_keys = [k for k, v in cooldowns.items() if now - v > timedelta(hours=1)]
+    for k in expired_keys:
+        del cooldowns[k]
+
 # ================= MINI APP WEB SUNUCUSU =================
+# NOT: Aşağıdaki MINIAPP_HTML ~1800 satır inline HTML/CSS/JS içerir.
+# Gelecekte bu kod ayrı bir 'miniapp.html' dosyasına taşınmalıdır.
+# Şim.lilik: open('miniapp.html').read() ile oku, bu string'i sil.
 
 MINIAPP_HTML = r"""<!DOCTYPE html>
 <html lang="tr">
@@ -6966,7 +7001,8 @@ async def _start_miniapp_server(bot):
                     return aiohttp_web.Response(text=_json.dumps({"ok":False,"error":str(e)}),content_type="application/json",headers=CORS_HEADERS)
             return aiohttp_web.Response(text='{"ok":false,"error":"missing params"}',content_type="application/json",headers=CORS_HEADERS)
 
-        import json as _json
+        # json zaten dosya başında import edildi, _json alias olarak kullan
+        _json = json
 
         async def _translate_news_items(items):
             if not GROQ_API_KEY or not items:
@@ -7001,7 +7037,7 @@ async def _start_miniapp_server(bot):
                         else:
                             log.warning(f"Groq hata: {r.status}")
             except Exception as e:
-                log.warning(f"Haber cevirisi basarisiz: {e}")
+                log.warning(f"Haber çevirisi başarısız: {e}")
             return items
 
         async def _fetch_rss(feeds_list, max_per=6):
@@ -7151,8 +7187,7 @@ async def _start_miniapp_server(bot):
             if not flash5up_list and not flash5dn_list:
                 try:
                     top_syms = [x["symbol"] for x in sorted(usdt, key=lambda x: float(x.get("quoteVolume",0)), reverse=True)[:100]]
-                    import json as _json5
-                    syms_param = _json5.dumps(top_syms)
+                    syms_param = json.dumps(top_syms)
                     async with aiohttp.ClientSession() as s5:
                         async with s5.get(
                             f"https://api.binance.com/api/v3/ticker?symbols={syms_param}&windowSize=5m",
@@ -7194,21 +7229,7 @@ async def _start_miniapp_server(bot):
                 text=_json.dumps(result), content_type="application/json", headers=CORS_HEADERS
             )
 
-        async def handle_price(request):
-            """Tek sembol anlık fiyat."""
-            sym = request.rel_url.query.get("symbol","BTCUSDT").upper()
-            try:
-                async with aiohttp.ClientSession() as s:
-                    async with s.get(f"https://api.binance.com/api/v3/ticker/price?symbol={sym}",
-                                     timeout=aiohttp.ClientTimeout(total=6)) as r:
-                        d = await r.json()
-                return aiohttp_web.Response(
-                    text=_json.dumps({"price":float(d.get("price",0))}),
-                    content_type="application/json", headers=CORS_HEADERS
-                )
-            except Exception as e:
-                return aiohttp_web.Response(text=_json.dumps({"error":str(e)}),
-                    content_type="application/json", headers=CORS_HEADERS)
+        # handle_price kaldırıldı — handle_price_with_change kullanılıyor (#6)
 
         async def handle_prices(request):
             """Çoklu sembol fiyatları."""
@@ -7411,6 +7432,7 @@ async def _start_miniapp_server(bot):
                         "macd4h":macd4h,"sig4h":sig4h,"hist4h":hist4h,
                         "srsi1h":srsi1h,"srsi4h":srsi4h,
                         "bb_up1h":bb_up1h,"bb_mid1h":bb_mid1h,"bb_lo1h":bb_lo1h,"bb_pct1h":bb_pct1h,
+                        "bb_up4h":bb_up4h,"bb_mid4h":bb_mid4h,"bb_lo4h":bb_lo4h,
                         "e9_1h":e9_1h,"e21_1h":e21_1h,
                         "e9_4h":e9_4h,"e21_4h":e21_4h,"e50_4h":e50_4h,"e200_4h":e200_4h,
                         "e50_1d":e50_1d,"e200_1d":e200_1d,
@@ -7578,15 +7600,39 @@ async def _start_miniapp_server(bot):
                 content_type="application/json", headers=CORS_HEADERS)
 
         async def handle_takvim_news(request):
+            # Dinamik tarihler — tekrarlayan ekonomik olayları gelecek tarihlerle hesapla
+            from datetime import date as _date
+            _today = _date.today()
+            _year = _today.year
+            _month = _today.month
+
+            def _next_event_date(day, months_ahead=0):
+                """Bir sonraki olay tarihini hesapla. Geçmişteyse gelecek aya ata."""
+                try:
+                    target_month = _month + months_ahead
+                    target_year = _year
+                    while target_month > 12:
+                        target_month -= 12
+                        target_year += 1
+                    d = _date(target_year, target_month, min(day, 28))
+                    if d < _today:
+                        target_month += 1
+                        if target_month > 12:
+                            target_month = 1
+                            target_year += 1
+                        d = _date(target_year, target_month, min(day, 28))
+                    return d.isoformat()
+                except Exception:
+                    return _today.isoformat()
+
             result = {
                 "events": [
-                    {"name":"FED Faiz Karari","date":"2025-05-07","country":"ABD","importance":"high","forecast":"Sabit bekleniyor"},
-                    {"name":"ABD TUFE (Enflasyon)","date":"2025-04-10","country":"ABD","importance":"high","forecast":""},
-                    {"name":"ABD Tarim Disi Istihdam","date":"2025-05-02","country":"ABD","importance":"high","forecast":""},
-                    {"name":"ECB Faiz Karari","date":"2025-04-17","country":"Avrupa","importance":"high","forecast":""},
-                    {"name":"ABD GSYH (Buyume)","date":"2025-04-30","country":"ABD","importance":"medium","forecast":""},
-                    {"name":"ABD Hazine Borc Tavani","date":"2025-06-01","country":"ABD","importance":"high","forecast":""},
-                    {"name":"Kripto Duzenleme Haberleri","date":"Surekli","country":"Global","importance":"medium","forecast":""},
+                    {"name":"FED Faiz Kararı","date":_next_event_date(7),"country":"ABD","importance":"high","forecast":"Sabit bekleniyor"},
+                    {"name":"ABD TÜFE (Enflasyon)","date":_next_event_date(10),"country":"ABD","importance":"high","forecast":""},
+                    {"name":"ABD Tarım Dışı İstihdam","date":_next_event_date(2),"country":"ABD","importance":"high","forecast":""},
+                    {"name":"ECB Faiz Kararı","date":_next_event_date(17),"country":"Avrupa","importance":"high","forecast":""},
+                    {"name":"ABD GSYİH (Büyüme)","date":_next_event_date(30),"country":"ABD","importance":"medium","forecast":""},
+                    {"name":"Kripto Düzenleme Haberleri","date":"Sürekli","country":"Global","importance":"medium","forecast":""},
                 ],
                 "news": []
             }
@@ -7692,10 +7738,13 @@ async def _start_miniapp_server(bot):
 
 async def binance_engine():
     uri = "wss://stream.binance.com:9443/ws/!miniTicker@arr"
+    backoff = 5  # başlangıç bekleme süresi (saniye)
+    max_backoff = 300  # maksimum 5 dakika
     while True:
         try:
             async with websockets.connect(uri, ping_interval=20) as ws:
-                log.info("Binance WebSocket baglandi.")
+                log.info("Binance WebSocket bağlandı.")
+                backoff = 5  # başarılı bağlantıda reset
                 async for msg in ws:
                     data = json.loads(msg)
                     now  = datetime.utcnow()
@@ -7713,8 +7762,9 @@ async def binance_engine():
                             if now - t <= timedelta(minutes=5)
                         ]
         except Exception as e:
-            log.error(f"WebSocket hatasi: {e} — 5 saniye sonra yeniden baglaniliyor.")
-            await asyncio.sleep(5)
+            log.error(f"WebSocket hatası: {e} — {backoff}s sonra yeniden bağlanılıyor.")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)  # Exponential backoff
 
 async def post_init(app):
     await init_db()
@@ -7760,7 +7810,7 @@ async def post_init(app):
 def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    app.job_queue.run_repeating(alarm_job,            interval=10,   first=30)
+    app.job_queue.run_repeating(alarm_job,            interval=30,   first=30)
     app.job_queue.run_repeating(whale_job,            interval=120,  first=60)
     app.job_queue.run_repeating(scheduled_job,        interval=60,   first=10)
     app.job_queue.run_repeating(hedef_job,            interval=30,   first=45)
