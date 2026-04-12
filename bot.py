@@ -6,7 +6,6 @@ import asyncio
 import websockets
 import asyncpg
 import logging
-import html
 import pandas as pd
 import mplfinance as mpf
 import matplotlib
@@ -372,11 +371,10 @@ async def get_coin_rank(symbol: str):
 
 def rank_emoji(rank):
     if rank is None:   return ""
-    # Premium Crown (10), Diamond (30), Star (100)
-    if rank <= 10:     return '<tg-emoji emoji-id="5431520149036528743">👑</tg-emoji>'
-    if rank <= 30:     return '<tg-emoji emoji-id="5431445214087802097">💎</tg-emoji>'
-    if rank <= 100:    return '<tg-emoji emoji-id="5431445214087802097">🌟</tg-emoji>'
-    return "🎖️"
+    if rank <= 10:     return "🥇"
+    if rank <= 30:     return "🥈"
+    if rank <= 100:    return "🥉"
+    return "🏅"
 
 # ================= DİĞER YARDIMCILAR =================
 
@@ -1916,22 +1914,26 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         vol_ratio = calc_volume_anomaly(k1h_24)
         mood, btc_dom, mkt_avg = await fetch_market_badge()
 
-        # get_ui artık kullanılmıyor ama ileriki bölümlerde referans varsa kalsın
-        e5,s5   = ("📈", "+") if ch5m > 0 else (("📉", "") if ch5m < 0 else ("➡️", ""))
-        e1,s1   = ("📈", "+") if ch1h > 0 else (("📉", "") if ch1h < 0 else ("➡️", ""))
-        e4,s4   = ("📈", "+") if ch4h > 0 else (("📉", "") if ch4h < 0 else ("➡️", ""))
-        e24,s24 = ("📈", "+") if ch24 > 0 else (("📉", "") if ch24 < 0 else ("➡️", ""))
-        e7,s7   = ("📈", "+") if ch7d > 0 else (("📉", "") if ch7d < 0 else ("➡️", ""))
-        e30,s30 = ("📈", "+") if ch30d > 0 else (("📉", "") if ch30d < 0 else ("➡️", ""))
+        def get_ui(val):
+            if val > 0:   return "🟢▲", "+"
+            elif val < 0: return "🔴▼", ""
+            else:         return "⚪→", ""
+
+        e5,s5   = get_ui(ch5m)
+        e1,s1   = get_ui(ch1h)
+        e4,s4   = get_ui(ch4h)
+        e24,s24 = get_ui(ch24)
+        e7,s7   = get_ui(ch7d)
+        e30,s30 = get_ui(ch30d)
 
         def rsi_label(r):
-            if r >= 80:   return '<tg-emoji emoji-id="5449520845341490234">🔥</tg-emoji> Aşırı Alım'
-            elif r >= 70: return '📈 Alım Bölgesi'
-            elif r >= 55: return '📈 Yükseliş'
-            elif r <= 20: return '<tg-emoji emoji-id="5332560877909289269">❄️</tg-emoji> Aşırı Satım'
-            elif r <= 30: return '<tg-emoji emoji-id="5431613583214704052">📉</tg-emoji> Satım Bölgesi'
-            elif r <= 45: return '<tg-emoji emoji-id="5431613583214704052">📉</tg-emoji> Düşüş'
-            else:         return '✅ Normal'
+            if r >= 80:   return "🔴 Aşırı Alım"
+            elif r >= 70: return "🟠 Alım Bölgesi"
+            elif r >= 55: return "🟡 Yükseliş"
+            elif r <= 20: return "🔵 Aşırı Satım"
+            elif r <= 30: return "🟣 Satım Bölgesi"
+            elif r <= 45: return "🟡 Düşüş"
+            else:         return "🟢 Normal"
 
         sh, lh, bh = calc_score_hourly(ticker, k1h_100, k15m, k5m, rsi14_1h)
         sd, ld, bd = calc_score_daily(ticker, k4h_42, k1h_24, k1d)
@@ -1940,92 +1942,62 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
         vol_usdt = float(ticker.get("quoteVolume", 0))
         vol_str  = f"{vol_usdt/1_000_000:.1f}M" if vol_usdt >= 1_000_000 else f"{vol_usdt/1_000:.0f}K"
 
-        # Hacim anomalisi — uyarı seviyesine göre emoji
         if vol_ratio is not None:
             if vol_ratio >= 3.0:
-                vol_anom = f'<tg-emoji emoji-id="5449520845341490234">⚡</tg-emoji> <b>Hacim:</b> <code>{vol_str} USDT</code>  <code>{vol_ratio}x</code> — Çok Yüksek!\n'
+                vol_anom = f"⚡ *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Çok Yüksek!\n"
             elif vol_ratio >= 2.0:
-                vol_anom = f'🔶 <b>Hacim:</b> <code>{vol_str} USDT</code>  <code>{vol_ratio}x</code> — Yüksek\n'
+                vol_anom = f"🔶 *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Yüksek\n"
             elif vol_ratio >= 1.5:
-                vol_anom = f'🟡 <b>Hacim:</b> <code>{vol_str} USDT</code>  <code>{vol_ratio}x</code>\n'
+                vol_anom = f"🟡 *Hacim:* `{vol_str} USDT`  `{vol_ratio}x` _(son 1sa / önceki 23sa ort.)_ — Normal Üstü\n"
             else:
-                vol_anom = f'📦 <b>Hacim:</b> <code>{vol_str} USDT</code>\n'
+                vol_anom = f"📦 *Hacim:* `{vol_str} USDT`\n"
         else:
-            vol_anom = f'📦 <b>Hacim:</b> <code>{vol_str} USDT</code>\n'
+            vol_anom = f"📦 *Hacim:* `{vol_str} USDT`\n"
 
         div_line = ""
         if diverjans == "bearish":
-            div_line = '⚠️ <b>Bearish Diverjans</b> — Fiyat çıkıyor ama RSI düşüyor\n'
+            div_line = "⚠️ *Bearish Diverjans* — Fiyat yükseliyor, RSI düşüyor!\n"
         elif diverjans == "bullish":
-            div_line = '💡 <b>Bullish Diverjans</b> — Fiyat düşüyor ama RSI yükseliyor\n'
+            div_line = "💡 *Bullish Diverjans* — Fiyat düşüyor, RSI yükseliyor!\n"
 
-        # Piyasa nabzı
+        header = f"*{extra_title}*\n"
+
+        market_ctx = ""
         if mood is not None and btc_dom is not None and mkt_avg is not None:
-            mood_icon = "🐂" if mkt_avg > 0 else ("🐻" if mkt_avg < 0 else "😐")
-            market_line = f"{mood_icon} {html.escape(mood)}  •  BTC Dom <code>{btc_dom}%</code>  •  Ort. <code>{mkt_avg:+.2f}%</code>"
-        else:
-            market_line = ""
-
-        # Performans satırları
-        def perf_row(emoji, label, ch):
-            sign = "+" if ch > 0 else ""
-            color = "🟢" if ch > 0 else ("🔴" if ch < 0 else "⚪")
-            padded = label.ljust(4)
-            return f"  {color} {emoji} {padded}  <code>{sign}{ch:.2f}%</code>"
-
-        # RSI yorumları
-        rsi_4h_lbl = rsi_label(rsi14_4h)
-        rsi_1d_lbl = rsi_label(rsi14_1d)
-
-        # Piyasa skoru rengi
-        def score_icon(s):
-            if s >= 70: return "🟢"
-            if s >= 50: return "🟡"
-            return "🔴"
-
-        # Destek/direnç satırları
-        sr_lines = ""
-        if destek:
-            dist_d = round((price - destek) / price * 100, 2)
-            sr_lines += f'  🟢 Destek  <code>{format_price(destek)}</code>  <i>(-{dist_d}%)</i>\n'
-        if direnc:
-            dist_r = round((direnc - price) / price * 100, 2)
-            sr_lines += f'  🔴 Direnç  <code>{format_price(direnc)}</code>  <i>(+{dist_r}%)</i>\n'
-
-        # ── ANA MESAJ ─────────────────────────────────────────────────────────
-        # extra_title alarm başlıklarında tg-emoji HTML içerebilir → escape etme
-        header = f'<b>{extra_title}</b>\n' if extra_title else ''
+            market_ctx = f"🌍 *Piyasa Nabzi:* {mood}  •  BTC Dominansi `{btc_dom}%`  •  Ort. `{mkt_avg:+.2f}%`\n━━━━━━━━━━━━━━━━━━\n"
 
         text = header + (
-            f'━━━━━━━━━━━━━━━━━━\n'
-            f'<tg-emoji emoji-id="5431445214087802097">💎</tg-emoji> <b>#{html.escape(symbol)}</b>'
-            f'   <tg-emoji emoji-id="5431307730993478954">💸</tg-emoji> <code>{format_price(price)} USDT</code>\n'
-            f'{vol_anom}'
-            f'{(market_line + chr(10)) if market_line else ""}'
-            f'━━━━━━━━━━━━━━━━━━\n'
-            f'<tg-emoji emoji-id="5431713488734185241">📈</tg-emoji> <b>Performans</b>\n'
-            f'{perf_row("⚡", "5dk",  ch5m)}\n'
-            f'{perf_row("🕐", "1sa",  ch1h)}\n'
-            f'{perf_row("🕓", "4sa",  ch4h)}\n'
-            f'{perf_row("📅", "24sa", ch24)}\n'
-            f'{perf_row("📆", "7gün", ch7d)}\n'
-            f'{perf_row("🗓",  "30gün",ch30d)}\n'
-            f'━━━━━━━━━━━━━━━━━━\n'
-            f'<tg-emoji emoji-id="5431613583214704052">📉</tg-emoji> <b>RSI Özeti</b>\n'
-            f'  • 4sa RSI 14 : <code>{rsi14_4h:.2f}</code> — {rsi_4h_lbl}\n'
-            f'  • 1gün RSI 14 : <code>{rsi14_1d:.2f}</code> — {rsi_1d_lbl}\n'
-            f'━━━━━━━━━━━━━━━━━━\n'
-            f'<tg-emoji emoji-id="5433887033589417060">🎯</tg-emoji> <b>Piyasa Skoru</b>\n'
-            f'  {score_icon(sh)} Saatlik  : <code>{sh}/100</code> — <i>{lh}</i>\n'
-            f'  {score_icon(sd)} Günlük   : <code>{sd}/100</code> — <i>{ld}</i>\n'
-            f'  {score_icon(sw)} Haftalık  : <code>{sw}/100</code> — <i>{lw}</i>\n'
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💎 `{symbol}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 *Anlık Fiyat:* `{format_price(price)} USDT`\n"
+            f"{rank_line}"
+            f"{vol_anom}"
+            f"{market_ctx}"
+            f"📈 *Performans*\n"
+            f"{e5} `5dk  `  `{s5}{ch5m:+.2f}%`\n"
+            f"{e1} `1sa  `  `{s1}{ch1h:+.2f}%`\n"
+            f"{e4} `4sa  `  `{s4}{ch4h:+.2f}%`\n"
+            f"{e24} `24sa `  `{s24}{ch24:+.2f}%`\n"
+            f"{e7} `7gun `  `{s7}{ch7d:+.2f}%`\n"
+            f"{e30} `30gun`  `{s30}{ch30d:+.2f}%`\n\n"
+            f"📊 *RSI Ozeti*\n"
+            f"• 4sa RSI 14  : `{rsi14_4h}` — {rsi_label(rsi14_4h)}\n"
+            f"• 1gun RSI 14 : `{rsi14_1d}` — {rsi_label(rsi14_1d)}\n"
         )
-        if sr_lines:
-            text += f'━━━━━━━━━━━━━━━━━━\n{sr_lines}'
         if div_line:
-            text += div_line
+            text += f"{div_line}\n"
+        else:
+            text += "\n"
+        text += (
+            f"📌 *Piyasa Skoru*\n"
+            f"⏱ Saatlik  : `{sh}/100` — _{lh}_\n"
+            f"📅 Gunluk   : `{sd}/100` — _{ld}_\n"
+            f"🗓 Haftalik : `{sw}/100` — _{lw}_\n"
+            f"──────────────────"
+        )
         if threshold_info:
-            text += f'<tg-emoji emoji-id="5449520845341490234">🔔</tg-emoji> Alarm Eşiği: <code>%{threshold_info}</code>'
+            text += f"\n🔔 *Alarm Eşiği:* `%{threshold_info}`"
 
         # DM'e gönderimde mesajları silme, sadece grup kanallarında sil
         is_group_chat = False
@@ -2061,7 +2033,7 @@ async def send_full_analysis(bot, chat_id, symbol, extra_title="", threshold_inf
             ])
 
         msg = await bot.send_message(chat_id=chat_id, text=text,
-                                     reply_markup=keyboard, parse_mode="HTML")
+                                     reply_markup=keyboard, parse_mode="Markdown")
 
         if alarm_mode and is_group_chat:
             alarm_delay = await get_delete_delay()
@@ -3522,7 +3494,7 @@ async def mtf_command(update: Update, context):
 
         # ── Yardımcı ─────────────────────────────────────────────
         def ch_icon(v):
-            return '<tg-emoji emoji-id="5431613583214704052">📈</tg-emoji>' if v > 0 else ('<tg-emoji emoji-id="5431613583214704052">📉</tg-emoji>' if v < 0 else "➡️")
+            return "🟢▲" if v > 0 else ("🔴▼" if v < 0 else "⚪→")
 
         def score_bar(s):
             filled = round(s / 20)
@@ -3534,37 +3506,57 @@ async def mtf_command(update: Update, context):
 
         # ── Mesaj ───────────────────────────────────────────────
         ch24_icon = ch_icon(ch24)
-        text = (
-            f'<tg-emoji emoji-id="5332560877909289269">🔮</tg-emoji> <b>{html.escape(symbol)} ANALİZ</b>\n'
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f'<tg-emoji emoji-id="5431307730993478954">💰</tg-emoji> <b>Fiyat:</b> <code>{format_price(price)} USDT</code> (%{ch24:+.2f})\n'
-            f'<tg-emoji emoji-id="5431713488734185232">📡</tg-emoji> <b>Hacim:</b> <code>{html.escape(vol_str)}</code> (Sıra: #{rank if rank else "—"})\n\n'
-        )
-
-        text += f'<b><tg-emoji emoji-id="5449520845341490234">⚡</tg-emoji> PERFORMANS</b>\n'
-        text += f"   15dk: <code>{calc_change(k15m[-2:] if k15m and len(k15m)>=2 else []):+.2f}%</code> | 1sa: <code>{calc_change(k1h[-2:] if k1h and len(k1h)>=2 else []):+.2f}%</code> \n"
-        text += f"   4sa: <code>{calc_change(k4h[-2:] if k4h and len(k4h)>=2 else []):+.2f}%</code> | 24sa: <code>{ch24:+.2f}%</code> \n"
-        text += f"   7gün: <code>{ch7d:+.2f}%</code> | 30gün: <code>{ch30d:+.2f}%</code> \n\n"
+        text  = f"📊 *{symbol} — MTF Analiz*\n"
+        text += f"━━━━━━━━━━━━━━━━━━\n"
+        text += f"💵 Fiyat\n"
+        text += f"  `{format_price(price)} USDT`\n"
+        text += f"  {ch24_icon} 24sa: `{ch24:+.2f}%`\n"
+        if rank:
+            text += f"  {re_icon} {rank_label2}: `#{rank}`  📦 `{vol_str}`\n"
+        else:
+            text += f"  📦 Hacim: `{vol_str}`\n"
         text += f"\n"
 
-        text += f'<b><tg-emoji emoji-id="5431613583214704052">📊</tg-emoji> GÖSTERGELER &amp; SKOR</b>\n'
-        text += f"   RSI (4sa/1g): <code>{rsi14_4h}</code> / <code>{rsi14_1d}</code>\n"
-        text += f'   <tg-emoji emoji-id="5433887033589417060">🎯</tg-emoji> Skor (S/G): <code>{sh}</code> / <code>{sd}</code>\n'
+        text += f"📈 *Performans*\n"
+        text += f"  {ch_icon(calc_change(k15m[-2:] if k15m and len(k15m)>=2 else []))} 15dk : `{calc_change(k15m[-2:] if k15m and len(k15m)>=2 else []):+.2f}%`\n"
+        text += f"  {ch_icon(calc_change(k1h[-2:]  if k1h  and len(k1h) >=2 else []))} 1sa  : `{calc_change(k1h[-2:]  if k1h  and len(k1h) >=2 else []):+.2f}%`\n"
+        text += f"  {ch_icon(calc_change(k4h[-2:]  if k4h  and len(k4h) >=2 else []))} 4sa  : `{calc_change(k4h[-2:]  if k4h  and len(k4h) >=2 else []):+.2f}%`\n"
+        text += f"  {ch24_icon} 24sa : `{ch24:+.2f}%`\n"
+        text += f"  {ch_icon(ch7d)}  7gün : `{ch7d:+.2f}%`\n"
+        text += f"  {ch_icon(ch30d)} 30gün: `{ch30d:+.2f}%`\n"
         text += f"\n"
 
-        text += f"━━━━━━━━━━━━━━━━━━\n\n"
+        text += f"🎯 *Piyasa Skoru*\n"
+        text += f"  ⏱ Saatlik\n"
+        text += f"  `{score_bar(sh)}` `{sh}/100` — _{lh}_\n"
+        text += f"  📅 Günlük\n"
+        text += f"  `{score_bar(sd)}` `{sd}/100` — _{ld}_\n"
+        text += f"  📆 Haftalık\n"
+        text += f"  `{score_bar(sw)}` `{sw}/100` — _{lw}_\n"
+        text += f"\n"
+
+        text += f"📉 *Zaman Dilimi (RSI · MACD · StochRSI)*\n"
+        text += tf_line(k15m, "15dk")
+        text += tf_line(k1h,  "1sa ")
+        text += tf_line(k4h,  "4sa ")
+        text += tf_line(k1d,  "1gün")
+        text += tf_line(k1w,  "1hft")
+        text += f"\n"
 
         if div_lines:
-            text += f'<b><tg-emoji emoji-id="5449520845341490234">⚡</tg-emoji> Diverjans:</b> ' + " | ".join(div_lines) + "\n\n"
+            text += f"⚡ *Diverjans*\n"
+            for dl in div_lines:
+                text += f"  {dl}\n"
+            text += f"\n"
 
         text += f"━━━━━━━━━━━━━━━━━━\n"
         text += build_sr_fib_block(k4h)
-        text += f"\n\n<i>🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım</i>"
+        text += f"\n\n_🔵 Aşırı Satım · 🟢 Normal · 🔴 Aşırı Alım_"
 
         await wait.delete()
         chat     = update.effective_chat
         is_group = chat and chat.type in ("group", "supergroup")
-        sent_msg = await send_temp(context.bot, update.effective_chat.id, text, parse_mode="HTML")
+        sent_msg = await send_temp(context.bot, update.effective_chat.id, text, parse_mode="Markdown")
         if is_group and sent_msg:
             delay = await get_member_delete_delay()
             asyncio.create_task(auto_delete(context.bot, chat.id, sent_msg.message_id, delay))
@@ -4924,24 +4916,7 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             if key in cooldowns and now - cooldowns[key] < timedelta(minutes=COOLDOWN_MINUTES):
                 continue
             cooldowns[key] = now
-            if ch5 > 0:
-                # Yükseliş: yeşil premium roket + ok
-                yon = (
-                    '<tg-emoji emoji-id="5431564861429514679">💚</tg-emoji>'
-                    ' <tg-emoji emoji-id="5431713488734185241">🚀</tg-emoji>'
-                    f' 5dk YÜKSELİŞ UYARISI'
-                    ' <tg-emoji emoji-id="5431713488734185241">🚀</tg-emoji>'
-                    ' <tg-emoji emoji-id="5431564861429514679">💚</tg-emoji>'
-                )
-            else:
-                # Düşüş: kırmızı premium emoji
-                yon = (
-                    '<tg-emoji emoji-id="5431613583214704052">❤️</tg-emoji>'
-                    ' <tg-emoji emoji-id="5431613583214704052">📉</tg-emoji>'
-                    f' 5dk DÜŞÜŞ UYARISI'
-                    ' <tg-emoji emoji-id="5431613583214704052">📉</tg-emoji>'
-                    ' <tg-emoji emoji-id="5431613583214704052">❤️</tg-emoji>'
-                )
+            yon = "⚡🟢 5dk YÜKSELİŞ UYARISI 🟢⚡" if ch5 > 0 else "⚡🔴 5dk DÜŞÜŞ UYARISI 🔴⚡"
             await send_full_analysis(context.bot, GROUP_CHAT_ID, symbol, yon, threshold, ch5_override=round(ch5, 2), alarm_mode=True)
 
     for row in user_rows:
@@ -5024,28 +4999,11 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
             log.warning(f"Alarm DB guncelleme: {e}")
             suggest_msg = ""
 
-        if direction == "up":
-            # Kişisel yükseliş alarmı — yeşil tonlar
-            yon_header = (
-                '<tg-emoji emoji-id="5431564861429514679">💚</tg-emoji>'
-                ' <tg-emoji emoji-id="5431713488734185241">🚀</tg-emoji>'
-                f' KİŞİSEL ALARM — {symbol}'
-                ' <tg-emoji emoji-id="5431713488734185241">🚀</tg-emoji>'
-                ' <tg-emoji emoji-id="5431564861429514679">💚</tg-emoji>'
-            )
-        else:
-            # Kişisel düşüş alarmı — kırmızı tonlar
-            yon_header = (
-                '<tg-emoji emoji-id="5431613583214704052">❤️</tg-emoji>'
-                ' <tg-emoji emoji-id="5449519026528838981">🔔</tg-emoji>'
-                f' KİŞİSEL ALARM — {symbol}'
-                ' <tg-emoji emoji-id="5449519026528838981">🔔</tg-emoji>'
-                ' <tg-emoji emoji-id="5431613583214704052">❤️</tg-emoji>'
-            )
+        yon = "📈🟢🟢" if direction == "up" else "📉🔴🔴"
         try:
             await send_full_analysis(
                 context.bot, user_id, symbol,
-                yon_header, threshold
+                f"🔔 KISISEL ALARM {yon} — {symbol}", threshold
             )
             if suggest_msg:
                 await context.bot.send_message(user_id, suggest_msg, parse_mode="Markdown")
