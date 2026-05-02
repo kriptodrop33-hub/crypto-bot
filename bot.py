@@ -51,6 +51,13 @@ DEFAULT_THRESHOLD = 5.0
 DEFAULT_MODE      = "both"
 MAX_SYMBOLS       = 500
 
+# ── Grup alarmı filtreleri ──
+MIN_ALARM_VOLUME_24H = 1_000_000   # Minimum 24s hacim (USDT) — altındaki coinler grup alarmı tetiklemez
+MIN_ALARM_RANK       = 300         # MarketCap sıralamasında ilk N coin (cache'de yoksa filtre atlanır)
+ALARM_BLACKLIST      = {           # Bu semboller grup alarmı tetiklemez (küçük/manipüle coinler)
+    "DEGOUSDT", "LEVERUSDT", "LOOKSUSDT",
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
@@ -226,6 +233,7 @@ chart_cache:        dict = {}
 whale_vol_mem:      dict = {}
 scheduled_last_run: dict = {}
 coin_image_cache:   dict = {}
+volume_24h_cache:   dict = {}   # symbol -> float (24s quote volume, WebSocket'ten güncellenir)
 
 # ================= HTTP SESSION =================
 # Global aiohttp session — TCP bağlantı havuzu için tek session kullan (#25)
@@ -4905,6 +4913,17 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 continue
             if now - prices[0][0] < timedelta(minutes=4):
                 continue
+
+            # ── Düşük hacimli / kara listedeki coinleri filtrele ──
+            if symbol in ALARM_BLACKLIST:
+                continue
+            vol24 = volume_24h_cache.get(symbol, 0)
+            if vol24 < MIN_ALARM_VOLUME_24H:
+                continue
+            rank = marketcap_rank_cache.get(symbol)
+            if rank is not None and rank > MIN_ALARM_RANK:
+                continue
+
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
             if mode == "both":   triggered = abs(ch5) >= threshold
             elif mode == "up":   triggered = ch5 >= threshold
@@ -6032,6 +6051,11 @@ async def binance_engine():
                             (t, p) for (t, p) in price_memory[s]
                             if now - t <= timedelta(minutes=5)
                         ]
+                        # Volume cache güncelle (miniTicker "q" = 24h quote volume)
+                        try:
+                            volume_24h_cache[s] = float(c.get("q", 0))
+                        except (ValueError, TypeError):
+                            pass
         except Exception as e:
             log.error(f"WebSocket hatası: {e} — {backoff}s sonra yeniden bağlanılıyor.")
             await asyncio.sleep(backoff)
