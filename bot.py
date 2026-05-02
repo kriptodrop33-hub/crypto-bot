@@ -46,7 +46,7 @@ def get_miniapp_url() -> str:
 BINANCE_24H    = "https://api.binance.com/api/v3/ticker/24hr"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 
-COOLDOWN_MINUTES  = 15
+COOLDOWN_MINUTES  = 60
 DEFAULT_THRESHOLD = 5.0
 DEFAULT_MODE      = "both"
 MAX_SYMBOLS       = 500
@@ -141,6 +141,12 @@ async def init_db():
         await conn.execute("""
             ALTER TABLE groups
             ADD COLUMN IF NOT EXISTS member_delete_delay INTEGER DEFAULT 3600
+        """)
+        await conn.execute("""
+            ALTER TABLE groups
+            ADD COLUMN IF NOT EXISTS min_alarm_volume BIGINT DEFAULT 1000000,
+            ADD COLUMN IF NOT EXISTS min_alarm_rank   INTEGER DEFAULT 300,
+            ADD COLUMN IF NOT EXISTS alarm_blacklist  TEXT DEFAULT ''
         """)
         await conn.execute("""
             INSERT INTO groups (chat_id, threshold, mode, delete_delay)
@@ -2224,16 +2230,31 @@ DELAY_LABEL_MAP = {
     1800: "30dk", 3600: "1sa", 7200: "2sa", 86400: "24sa"
 }
 
+# Alarm filtre presetleri
+VOLUME_PRESETS = [0, 500_000, 1_000_000, 5_000_000, 10_000_000, 50_000_000]
+VOLUME_LABEL_MAP = {
+    0: "Kapalı", 500_000: "500K", 1_000_000: "1M",
+    5_000_000: "5M", 10_000_000: "10M", 50_000_000: "50M"
+}
+RANK_PRESETS = [0, 100, 200, 300, 500]
+RANK_LABEL_MAP = {0: "Kapalı", 100: "Top 100", 200: "Top 200", 300: "Top 300", 500: "Top 500"}
+
 async def build_set_panel(context):
     async with db_pool.acquire() as conn:
         r = await conn.fetchrow(
-            "SELECT alarm_active, threshold, delete_delay, member_delete_delay FROM groups WHERE chat_id=$1",
+            "SELECT alarm_active, threshold, delete_delay, member_delete_delay, "
+            "min_alarm_volume, min_alarm_rank, alarm_blacklist "
+            "FROM groups WHERE chat_id=$1",
             GROUP_CHAT_ID
         )
     threshold    = r["threshold"]
     alarm_active = r["alarm_active"]
     del_delay    = r["delete_delay"] or 30
     mbr_delay    = r["member_delete_delay"] or 3600
+    min_vol      = r["min_alarm_volume"] if r["min_alarm_volume"] is not None else 1_000_000
+    min_rank     = r["min_alarm_rank"] if r["min_alarm_rank"] is not None else 300
+    blacklist_str = r["alarm_blacklist"] or ""
+    bl_list      = [x.strip() for x in blacklist_str.split(",") if x.strip()]
 
     threshold_buttons = []
     row = []
@@ -2274,6 +2295,33 @@ async def build_set_panel(context):
         mbr_rows.append(mbr_row)
     threshold_buttons.extend(mbr_rows)
 
+    # ── Alarm Filtreleri ──
+    threshold_buttons.append([InlineKeyboardButton("── 🛡 Alarm Filtreleri ──", callback_data="noop")])
+
+    # Min hacim presetleri
+    vol_row = []
+    for val in VOLUME_PRESETS:
+        label = f"{'✅ ' if min_vol == val else ''}{VOLUME_LABEL_MAP.get(val, str(val))}"
+        vol_row.append(InlineKeyboardButton(label, callback_data=f"set_minvol_{val}"))
+        if len(vol_row) == 3:
+            threshold_buttons.append(vol_row); vol_row = []
+    if vol_row: threshold_buttons.append(vol_row)
+
+    # Min rank presetleri
+    rank_row = []
+    for val in RANK_PRESETS:
+        label = f"{'✅ ' if min_rank == val else ''}{RANK_LABEL_MAP.get(val, str(val))}"
+        rank_row.append(InlineKeyboardButton(label, callback_data=f"set_minrank_{val}"))
+        if len(rank_row) == 3:
+            threshold_buttons.append(rank_row); rank_row = []
+    if rank_row: threshold_buttons.append(rank_row)
+
+    # Blacklist yönetimi
+    threshold_buttons.append([
+        InlineKeyboardButton("➕ Kara Listeye Ekle", callback_data="set_bl_add"),
+        InlineKeyboardButton("🗑 Kara Listeyi Temizle", callback_data="set_bl_clear"),
+    ])
+
     threshold_buttons.append([
         InlineKeyboardButton(
             f"🔔 Alarm: {'AKTİF ✅' if alarm_active else 'KAPALI ❌'}",
@@ -2296,13 +2344,21 @@ async def build_set_panel(context):
 
     alarm_delay_label = _fmt_delay(del_delay)
     mbr_delay_label   = _fmt_delay(mbr_delay)
+    vol_label = VOLUME_LABEL_MAP.get(min_vol, f"{min_vol:,}")
+    rank_label = RANK_LABEL_MAP.get(min_rank, f"Top {min_rank}") if min_rank > 0 else "Kapalı"
+    bl_label = ", ".join(bl_list) if bl_list else "Yok"
     text = (
         "⚙️ *Grup Ayarları — Admin Paneli*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🔔 *Alarm Durumu:* `{'AKTİF' if alarm_active else 'KAPALI'}`\n"
         f"🎯 *Alarm Eşiği:* `%{threshold}`\n"
         f"🗑 *Alarm Mesajı Silme:* `{alarm_delay_label}` sonra\n"
-        f"👥 *Üye Komut Silme:* `{mbr_delay_label}` sonra\n\n"
+        f"👥 *Üye Komut Silme:* `{mbr_delay_label}` sonra\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "🛡 *Alarm Filtreleri*\n"
+        f"📊 *Min Hacim (24s):* `{vol_label} USDT`\n"
+        f"🏆 *Min Sıralama:* `{rank_label}`\n"
+        f"🚫 *Kara Liste:* `{bl_label}`\n\n"
         "Ayarları aşağıdan değiştirin:"
     )
     return text, InlineKeyboardMarkup(threshold_buttons)
@@ -2419,6 +2475,46 @@ async def set_callback(update: Update, context):
             log.warning(f"set_mdelay: {e}")
         return
 
+    if q.data.startswith("set_minvol_"):
+        try:
+            val = int(q.data.replace("set_minvol_", ""))
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE groups SET min_alarm_volume=$1 WHERE chat_id=$2", val, GROUP_CHAT_ID)
+            text, keyboard = await build_set_panel(context)
+            await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.warning(f"set_minvol: {e}")
+        return
+
+    if q.data.startswith("set_minrank_"):
+        try:
+            val = int(q.data.replace("set_minrank_", ""))
+            async with db_pool.acquire() as conn:
+                await conn.execute("UPDATE groups SET min_alarm_rank=$1 WHERE chat_id=$2", val, GROUP_CHAT_ID)
+            text, keyboard = await build_set_panel(context)
+            await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        except Exception as e:
+            log.warning(f"set_minrank: {e}")
+        return
+
+    if q.data == "set_bl_add":
+        context.user_data["awaiting_blacklist"] = True
+        await q.message.reply_text(
+            "🚫 *Kara Listeye Coin Ekle*\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Coin sembolünü yazın (virgülle ayırarak birden fazla ekleyebilirsiniz):\n"
+            "Örnek: `DEGOUSDT` veya `DEGO, LEVER`",
+            parse_mode="Markdown"
+        )
+        return
+
+    if q.data == "set_bl_clear":
+        async with db_pool.acquire() as conn:
+            await conn.execute("UPDATE groups SET alarm_blacklist='' WHERE chat_id=$1", GROUP_CHAT_ID)
+        text, keyboard = await build_set_panel(context)
+        await q.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        return
+
     if q.data == "noop":
         return
 
@@ -2455,6 +2551,30 @@ async def _parse_delay_input(text: str):
     return None
 
 async def handle_threshold_input(update: Update, context):
+    # Kara listeye coin ekleme girişi
+    if context.user_data.get("awaiting_blacklist"):
+        if not await is_admin(update, context):
+            context.user_data.pop("awaiting_blacklist", None)
+            return True
+        raw = update.message.text.upper().strip()
+        new_coins = [s.strip().replace("#","").replace("/","") for s in raw.split(",") if s.strip()]
+        new_coins = [s if s.endswith("USDT") else s + "USDT" for s in new_coins if s]
+        if not new_coins:
+            await update.message.reply_text("⚠️ Geçersiz sembol. Örnek: `DEGO` veya `DEGO, LEVER`", parse_mode="Markdown")
+            return True
+        async with db_pool.acquire() as conn:
+            r = await conn.fetchrow("SELECT alarm_blacklist FROM groups WHERE chat_id=$1", GROUP_CHAT_ID)
+            existing = [x.strip() for x in (r["alarm_blacklist"] or "").split(",") if x.strip()]
+            merged = list(dict.fromkeys(existing + new_coins))  # sıralı unique
+            await conn.execute("UPDATE groups SET alarm_blacklist=$1 WHERE chat_id=$2", ",".join(merged), GROUP_CHAT_ID)
+        context.user_data.pop("awaiting_blacklist", None)
+        await update.message.reply_text(
+            f"✅ Kara listeye eklendi: `{', '.join(new_coins)}`\n"
+            f"📋 Güncel liste: `{', '.join(merged)}`",
+            parse_mode="Markdown"
+        )
+        return True
+
     # Manuel alarm silme süresi girişi
     if context.user_data.get("awaiting_delay"):
         if not await is_admin(update, context):
@@ -4898,7 +5018,8 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
 
     async with db_pool.acquire() as conn:
         group_row = await conn.fetchrow(
-            "SELECT alarm_active, threshold, mode FROM groups WHERE chat_id=$1",
+            "SELECT alarm_active, threshold, mode, min_alarm_volume, min_alarm_rank, alarm_blacklist "
+            "FROM groups WHERE chat_id=$1",
             GROUP_CHAT_ID
         )
         user_rows = await conn.fetch(
@@ -4908,6 +5029,11 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
     if group_row and group_row["alarm_active"]:
         threshold = group_row["threshold"]
         mode      = group_row["mode"]
+        # DB'den filtre ayarlarını oku (yoksa varsayılan sabitleri kullan)
+        _min_vol  = group_row["min_alarm_volume"] if group_row["min_alarm_volume"] is not None else MIN_ALARM_VOLUME_24H
+        _min_rank = group_row["min_alarm_rank"] if group_row["min_alarm_rank"] is not None else MIN_ALARM_RANK
+        _bl_str   = group_row["alarm_blacklist"] or ""
+        _blacklist = set(x.strip() for x in _bl_str.split(",") if x.strip()) | ALARM_BLACKLIST
         for symbol, prices in list(price_memory.items()):
             if len(prices) < 2:
                 continue
@@ -4915,13 +5041,13 @@ async def alarm_job(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             # ── Düşük hacimli / kara listedeki coinleri filtrele ──
-            if symbol in ALARM_BLACKLIST:
+            if symbol in _blacklist:
                 continue
             vol24 = volume_24h_cache.get(symbol, 0)
-            if vol24 < MIN_ALARM_VOLUME_24H:
+            if _min_vol > 0 and vol24 < _min_vol:
                 continue
             rank = marketcap_rank_cache.get(symbol)
-            if rank is not None and rank > MIN_ALARM_RANK:
+            if _min_rank > 0 and rank is not None and rank > _min_rank:
                 continue
 
             ch5 = ((prices[-1][1] - prices[0][1]) / prices[0][1]) * 100
